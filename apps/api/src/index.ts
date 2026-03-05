@@ -8,6 +8,7 @@ import { requireAuth } from "./middleware/auth.js";
 import { authRouter } from "./routes/auth.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { shareLinksRouter } from "./routes/shareLinks.js";
+import { profileRouter } from "./routes/profile.js";
 import { createErrorResponse } from "./lib/response.js";
 
 const app = express();
@@ -38,6 +39,7 @@ app.use("/auth", authRouter);
 app.use(requireAuth);
 app.use("/sessions", sessionsRouter);
 app.use("/share-links", shareLinksRouter);
+app.use("/profile", profileRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

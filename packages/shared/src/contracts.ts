@@ -79,10 +79,26 @@ export const sectionReactionSchema = z.object({
   reaction: z.enum(["represents", "misrepresents", "neutral"])
 });
 
+export const sectionCommentSchema = z.object({
+  section: z.string().min(1).max(200),
+  text: z.string().min(1).max(2000),
+});
+
+export const updateProfileSchema = z.object({
+  displayName: z.string().min(1).max(100).optional(),
+  avatarUrl: z.string().url().max(500).optional(),
+  notificationPreferences: z
+    .object({
+      emailInvites: z.boolean().optional(),
+      emailAnalysisComplete: z.boolean().optional(),
+    })
+    .optional(),
+});
+
 export const oauthExchangeSchema = z.object({
   email: z.string().email(),
   displayName: z.string().min(1).max(100),
-  provider: z.enum(["google"])
+  provider: z.enum(["google", "microsoft"])
 });
 
 export const apiErrorCodeSchema = z.enum([
@@ -93,6 +109,7 @@ export const apiErrorCodeSchema = z.enum([
   "async_state_error",
   "not_found",
   "rate_limited",
+  "limit_reached",
   "internal_error"
 ]);
 
@@ -118,6 +135,7 @@ export type SubmitPositionInput = z.infer<typeof submitPositionSchema>;
 export type AnalyzeSessionInput = z.infer<typeof analyzeSessionSchema>;
 export type FeedbackRatingInput = z.infer<typeof feedbackRatingSchema>;
 export type CreateShareLinkInput = z.infer<typeof createShareLinkSchema>;
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type ApiErrorCode = z.infer<typeof apiErrorCodeSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

@@ -30,6 +30,8 @@ interface CommonGroundMapProps {
   result: AnalysisResult;
   reactions?: ReactionData;
   onReact?: (section: string, reaction: ReactionValue) => void;
+  comments?: Array<{ id: string; userId: string; section: string; text: string; createdAt: string }>;
+  onComment?: (section: string, text: string) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -96,7 +98,7 @@ function ExpandableSection({
 /*  Common Ground Map                                                  */
 /* ------------------------------------------------------------------ */
 
-export function CommonGroundMap({ result, reactions, onReact }: CommonGroundMapProps) {
+export function CommonGroundMap({ result, reactions, onReact, comments, onComment }: CommonGroundMapProps) {
   const participants = Object.keys(result.steelmans);
   const conflicts = Object.entries(result.conflictMap);
   const confidence = result.confidenceScores;
@@ -133,6 +135,11 @@ export function CommonGroundMap({ result, reactions, onReact }: CommonGroundMapP
                     onReact={onReact}
                   />
                 )}
+                <CommentThread
+                  section={sectionKey}
+                  comments={comments}
+                  onComment={onComment}
+                />
               </div>
             );
           })}
@@ -159,6 +166,11 @@ export function CommonGroundMap({ result, reactions, onReact }: CommonGroundMapP
               onReact={onReact}
             />
           )}
+          <CommentThread
+            section="sharedFoundations"
+            comments={comments}
+            onComment={onComment}
+          />
         </div>
       </ExpandableSection>
 
@@ -182,6 +194,11 @@ export function CommonGroundMap({ result, reactions, onReact }: CommonGroundMapP
               onReact={onReact}
             />
           )}
+          <CommentThread
+            section="trueDisagreements"
+            comments={comments}
+            onComment={onComment}
+          />
         </div>
       </ExpandableSection>
 
@@ -277,6 +294,70 @@ function MutualBadge() {
     <div className="cgm-mutual">
       <span className="cgm-mutual__icon">🤝</span>
       <span className="cgm-mutual__text">Mutually acknowledged</span>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Section Comments / Annotations (CG-FR35)                           */
+/* ------------------------------------------------------------------ */
+
+function CommentThread({
+  section,
+  comments,
+  onComment,
+}: {
+  section: string;
+  comments?: Array<{ id: string; userId: string; section: string; text: string; createdAt: string }>;
+  onComment?: (section: string, text: string) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const filtered = comments?.filter((c) => c.section === section) ?? [];
+
+  function submit() {
+    if (!draft.trim() || !onComment) return;
+    onComment(section, draft.trim());
+    setDraft("");
+  }
+
+  return (
+    <div className="cgm-comments">
+      <button
+        type="button"
+        className="cgm-comments__toggle"
+        onClick={() => setOpen((v) => !v)}
+      >
+        💬 {filtered.length > 0 ? `${filtered.length} comment${filtered.length > 1 ? "s" : ""}` : "Add comment"}
+      </button>
+      {open && (
+        <div className="cgm-comments__thread">
+          {filtered.map((c) => (
+            <div key={c.id} className="cgm-comments__item">
+              <span className="cgm-comments__text">{c.text}</span>
+              <span className="cgm-comments__date">
+                {new Date(c.createdAt).toLocaleDateString()}
+              </span>
+            </div>
+          ))}
+          {onComment && (
+            <div className="cgm-comments__form">
+              <input
+                type="text"
+                maxLength={2000}
+                placeholder="Write a comment…"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+              />
+              <button type="button" onClick={submit} disabled={!draft.trim()}>
+                Post
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

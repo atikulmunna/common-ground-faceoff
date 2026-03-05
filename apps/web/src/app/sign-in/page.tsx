@@ -95,18 +95,31 @@ export default function SignInPage() {
         {mode === "login" ? "Need an account? Register" : "Already have an account? Sign In"}
       </button>
 
-      {process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true" && (
+      {(process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true" ||
+        process.env.NEXT_PUBLIC_MICROSOFT_AUTH_ENABLED === "true") && (
         <>
           <div className="oauth-divider" style={{ textAlign: "center", margin: "0.5rem 0", color: "#888" }}>
             — or —
           </div>
-          <button
-            className="secondary"
-            onClick={() => signIn("google", { callbackUrl: "/" })}
-            type="button"
-          >
-            Continue with Google
-          </button>
+          {process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true" && (
+            <button
+              className="secondary"
+              onClick={() => signIn("google", { callbackUrl: "/" })}
+              type="button"
+            >
+              Continue with Google
+            </button>
+          )}
+          {process.env.NEXT_PUBLIC_MICROSOFT_AUTH_ENABLED === "true" && (
+            <button
+              className="secondary"
+              onClick={() => signIn("azure-ad", { callbackUrl: "/" })}
+              type="button"
+              style={{ marginTop: "0.4rem" }}
+            >
+              Continue with Microsoft
+            </button>
+          )}
         </>
       )}
     </section>

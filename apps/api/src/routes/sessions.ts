@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
+import PDFDocument from "pdfkit";
 import {
   analyzeSessionSchema,
   createSessionSchema,
   createShareLinkSchema,
   feedbackRatingSchema,
   inviteParticipantSchema,
+  sectionCommentSchema,
   sectionReactionSchema,
   submitPositionSchema
 } from "@common-ground/shared";
@@ -23,7 +25,7 @@ export const sessionsRouter = Router();
 /* ------------------------------------------------------------------ */
 
 sessionsRouter.get("/", async (req, res) => {
-  const { status, q, page } = req.query;
+  const { status, q, page, from, to } = req.query;
 
   const where: Record<string, unknown> = {
     participants: { some: { userId: req.user.id } },
@@ -35,6 +37,22 @@ sessionsRouter.get("/", async (req, res) => {
 
   if (q && typeof q === "string" && q.trim().length > 0) {
     where.topic = { contains: q.trim(), mode: "insensitive" };
+  }
+
+  if (from && typeof from === "string") {
+    const d = new Date(from);
+    if (!isNaN(d.getTime())) {
+      where.createdAt = { ...(where.createdAt as object ?? {}), gte: d };
+    }
+  }
+
+  if (to && typeof to === "string") {
+    const d = new Date(to);
+    if (!isNaN(d.getTime())) {
+      // set to end of the day
+      d.setHours(23, 59, 59, 999);
+      where.createdAt = { ...(where.createdAt as object ?? {}), lte: d };
+    }
   }
 
   const pageNum = Math.max(1, Number(page) || 1);
@@ -128,6 +146,15 @@ sessionsRouter.post("/:id/invite", requireSessionAccess, async (req, res) => {
 
   if (session.creatorUserId !== req.user.id && req.user.role !== "institutional_admin") {
     res.status(403).json(createErrorResponse("authz_error", "Only creator or admin can invite"));
+    return;
+  }
+
+  // CG-FR11: Enforce participant limits based on creator's tier
+  const creator = await prisma.user.findUnique({ where: { id: session.creatorUserId }, select: { tier: true } });
+  const maxParticipants = creator?.tier === "free" ? 2 : 6;
+  const currentCount = await prisma.sessionParticipant.count({ where: { sessionId: req.params.id } });
+  if (currentCount >= maxParticipants) {
+    res.status(403).json(createErrorResponse("limit_reached", `Participant limit reached (${maxParticipants} for ${creator?.tier ?? "free"} tier)`));
     return;
   }
 
@@ -502,13 +529,45 @@ sessionsRouter.get("/:id/reactions", requireSessionAccess, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  Section Comments / Annotations (CG-FR35)                           */
+/* ------------------------------------------------------------------ */
+
+sessionsRouter.post("/:id/comments", requireSessionAccess, async (req, res) => {
+  const parse = sectionCommentSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json(createErrorResponse("validation_error", "Invalid comment payload", parse.error.flatten()));
+    return;
+  }
+
+  const comment = await prisma.sectionComment.create({
+    data: {
+      sessionId: req.params.id,
+      userId: req.user.id,
+      section: parse.data.section,
+      text: parse.data.text,
+    },
+  });
+
+  res.status(201).json(createSuccessResponse({ comment }));
+});
+
+sessionsRouter.get("/:id/comments", requireSessionAccess, async (req, res) => {
+  const comments = await prisma.sectionComment.findMany({
+    where: { sessionId: req.params.id },
+    orderBy: { createdAt: "asc" },
+  });
+
+  res.json(createSuccessResponse({ comments }));
+});
+
+/* ------------------------------------------------------------------ */
 /*  Export (CG-FR37, CG-FR40)                                          */
 /* ------------------------------------------------------------------ */
 
 sessionsRouter.get("/:id/export/:format", requireSessionAccess, async (req, res) => {
   const format = req.params.format;
-  if (!["json", "markdown", "md"].includes(format)) {
-    res.status(400).json(createErrorResponse("validation_error", "Supported export formats: json, markdown"));
+  if (!["json", "markdown", "md", "pdf"].includes(format)) {
+    res.status(400).json(createErrorResponse("validation_error", "Supported export formats: json, markdown, pdf"));
     return;
   }
 
@@ -572,10 +631,80 @@ sessionsRouter.get("/:id/export/:format", requireSessionAccess, async (req, res)
     return;
   }
 
-  // Markdown export
+  // Shared helpers for markdown and PDF
   const steelmans = (analysis.steelmans as Record<string, string>) ?? {};
   const conflicts = (analysis.conflictMap as Record<string, string[]>) ?? {};
   const confidence = (analysis.confidenceScores as { sharedFoundations?: number; disagreements?: number }) ?? {};
+
+  if (format === "pdf") {
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="common-ground-${session.id}.pdf"`);
+
+    const doc = new PDFDocument({ margin: 50 });
+    doc.pipe(res);
+
+    // Title
+    doc.fontSize(20).text("Common Ground Map", { align: "center" });
+    doc.moveDown(0.5);
+
+    // Metadata (CG-FR40)
+    doc.fontSize(10).fillColor("#666");
+    doc.text(`Topic: ${session.topic}`);
+    doc.text(`Date: ${session.createdAt.toISOString().split("T")[0]}`);
+    doc.text(`Analysis Version: ${analysis.analysisVersion ?? "v1"}`);
+    doc.text(`Model: ${analysis.llmProvider} / ${analysis.modelVersion}`);
+    doc.text(`Participants: ${session.participants.map((p) => session.anonymousMode ? "Participant" : p.user.displayName).join(", ")}`);
+    doc.moveDown(1);
+
+    // Steelmanned Positions
+    doc.fontSize(14).fillColor("#000").text("Steelmanned Positions", { underline: true });
+    doc.moveDown(0.3);
+    for (const [label, text] of Object.entries(steelmans)) {
+      doc.fontSize(12).text(label, { underline: true });
+      doc.fontSize(10).fillColor("#333").text(String(text));
+      doc.fillColor("#000").moveDown(0.5);
+    }
+
+    // Shared Foundations
+    doc.fontSize(14).fillColor("#000").text("Shared Foundations", { underline: true });
+    if (confidence.sharedFoundations != null) {
+      doc.fontSize(9).fillColor("#888").text(`Confidence: ${Math.round(confidence.sharedFoundations * 100)}%`);
+    }
+    doc.fontSize(10).fillColor("#333").text(analysis.sharedFoundations);
+    doc.fillColor("#000").moveDown(0.5);
+
+    // True Disagreements
+    doc.fontSize(14).fillColor("#000").text("True Points of Disagreement", { underline: true });
+    if (confidence.disagreements != null) {
+      doc.fontSize(9).fillColor("#888").text(`Confidence: ${Math.round(confidence.disagreements * 100)}%`);
+    }
+    doc.fontSize(10).fillColor("#333").text(analysis.trueDisagreements);
+    doc.fillColor("#000").moveDown(0.5);
+
+    // Conflict Classification
+    if (Object.keys(conflicts).length > 0) {
+      doc.fontSize(14).fillColor("#000").text("Conflict Classification", { underline: true });
+      doc.moveDown(0.3);
+      for (const [category, descriptions] of Object.entries(conflicts)) {
+        doc.fontSize(11).text(category.charAt(0).toUpperCase() + category.slice(1));
+        for (const desc of descriptions) {
+          doc.fontSize(10).fillColor("#333").text(`  • ${desc}`);
+        }
+        doc.fillColor("#000").moveDown(0.3);
+      }
+    }
+
+    doc.moveDown(1);
+    doc.fontSize(8).fillColor("#999").text(
+      `Exported from Common Ground on ${new Date().toISOString().split("T")[0]}`,
+      { align: "center" }
+    );
+
+    doc.end();
+    return;
+  }
+
+  // Markdown export
 
   let md = `# Common Ground Map\n\n`;
   md += `**Topic:** ${session.topic}\n`;

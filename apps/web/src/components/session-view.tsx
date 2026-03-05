@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 
 import { ReadabilityMeter } from "./readability-meter";
 import { CommonGroundMap } from "./common-ground-map";
+import { GuidedPrompt } from "./guided-prompt";
 import { apiGet, apiPost } from "../lib-api";
 import { checkContentPolicy } from "../lib/content-policy";
 
@@ -70,6 +71,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const [mutualAcks, setMutualAcks] = useState<Record<string, boolean>>({});
   const [rounds, setRounds] = useState<RoundSummary[]>([]);
   const [showComparison, setShowComparison] = useState(false);
+  const [comments, setComments] = useState<Array<{ id: string; userId: string; section: string; text: string; createdAt: string }>>([]);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -139,15 +141,37 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     }
   }, [sessionId]);
 
+  const fetchComments = useCallback(async () => {
+    try {
+      const res = await apiGet<{
+        success: boolean;
+        data: { comments: Array<{ id: string; userId: string; section: string; text: string; createdAt: string }> } | null;
+      }>(`/sessions/${sessionId}/comments`);
+      setComments(res.data?.comments ?? []);
+    } catch {
+      // silent
+    }
+  }, [sessionId]);
+
+  async function handleComment(section: string, text: string) {
+    try {
+      await apiPost(`/sessions/${sessionId}/comments`, { section, text });
+      await fetchComments();
+    } catch {
+      // silent
+    }
+  }
+
   useEffect(() => {
     void refreshSession();
     void fetchRounds();
+    void fetchComments();
     const timer = setInterval(() => {
       void refreshAnalysis();
       void refreshReactions();
     }, 3000);
     return () => clearInterval(timer);
-  }, [refreshAnalysis, refreshSession, refreshReactions, fetchRounds]);
+  }, [refreshAnalysis, refreshSession, refreshReactions, fetchRounds, fetchComments]);
 
   async function submitPosition() {
     setBusy(true);
@@ -226,6 +250,9 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         <h2>Your Position</h2>
         {showEditor ? (
           <>
+            {!hasSubmitted && (
+              <GuidedPrompt onApply={(text) => setPositionText((prev) => prev ? prev + "\n\n" + text : text)} />
+            )}
             <textarea
               rows={8}
               minLength={100}
@@ -279,6 +306,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               result={analysis.result}
               reactions={{ mine: myReactions, mutual: mutualAcks }}
               onReact={handleReact}
+              comments={comments}
+              onComment={handleComment}
             />
 
             {/* Re-entry & round comparison controls */}
@@ -423,7 +452,7 @@ function RatingRow({
 function ExportPanel({ sessionId }: { sessionId: string }) {
   const [exporting, setExporting] = useState(false);
 
-  async function downloadExport(format: "json" | "markdown") {
+  async function downloadExport(format: "json" | "markdown" | "pdf") {
     setExporting(true);
     try {
       const { getSession } = await import("next-auth/react");
@@ -436,7 +465,7 @@ function ExportPanel({ sessionId }: { sessionId: string }) {
       if (!res.ok) throw new Error(`Export failed (${res.status})`);
 
       const blob = await res.blob();
-      const ext = format === "json" ? "json" : "md";
+      const ext = format === "json" ? "json" : format === "pdf" ? "pdf" : "md";
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -457,6 +486,9 @@ function ExportPanel({ sessionId }: { sessionId: string }) {
         </button>
         <button onClick={() => downloadExport("markdown")} disabled={exporting}>
           {exporting ? "Exporting…" : "Markdown"}
+        </button>
+        <button onClick={() => downloadExport("pdf")} disabled={exporting}>
+          {exporting ? "Exporting…" : "PDF"}
         </button>
       </div>
     </div>

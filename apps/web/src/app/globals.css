@@ -624,6 +624,21 @@ button.secondary {
   background: var(--card);
 }
 
+.dash-date-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.dash-date-label input {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: var(--card);
+}
+
 .dash-empty {
   text-align: center;
   color: var(--muted);
@@ -711,3 +726,56 @@ button.secondary {
   border-radius: 3px;
   transition: width 0.2s;
 }
+
+/* ---- Section Comments (CG-FR35) ---- */
+.cgm-comments { margin-top: 0.4rem; }
+.cgm-comments__toggle {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 0.85rem; padding: 0.2rem 0;
+}
+.cgm-comments__toggle:hover { color: var(--accent); }
+.cgm-comments__thread {
+  margin-top: 0.3rem; padding: 0.5rem;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 0.4rem;
+}
+.cgm-comments__item {
+  display: flex; justify-content: space-between; gap: 0.5rem;
+  padding: 0.25rem 0; border-bottom: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+.cgm-comments__item:last-of-type { border-bottom: none; }
+.cgm-comments__date { color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
+.cgm-comments__form {
+  display: flex; gap: 0.3rem; margin-top: 0.4rem;
+}
+.cgm-comments__form input {
+  flex: 1; padding: 0.3rem 0.5rem; font-size: 0.85rem;
+  border: 1px solid var(--line); border-radius: 0.3rem;
+}
+.cgm-comments__form button {
+  padding: 0.3rem 0.7rem; font-size: 0.82rem;
+}
+
+/* ---- Guided Prompt Framework (CG-FR16) ---- */
+.guided-prompt {
+  background: #f0f9ff; border: 1px solid #bae6fd;
+  border-radius: 0.5rem; padding: 1rem; margin-bottom: 0.75rem;
+}
+.guided-prompt__header {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.guided-prompt__header h3 { margin: 0; font-size: 1rem; }
+.guided-prompt__dismiss {
+  background: none; border: none; cursor: pointer;
+  font-size: 1.1rem; color: var(--muted); line-height: 1;
+}
+.guided-prompt__intro {
+  font-size: 0.85rem; color: var(--muted); margin: 0.3rem 0 0.6rem;
+}
+.guided-prompt__field { margin-bottom: 0.5rem; }
+.guided-prompt__label { font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 0.15rem; }
+.guided-prompt__input {
+  width: 100%; padding: 0.35rem 0.5rem; font-size: 0.85rem;
+  border: 1px solid var(--line); border-radius: 0.3rem; resize: vertical;
+}
+.guided-prompt__actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }

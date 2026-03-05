@@ -1,6 +1,7 @@
 import { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
+import AzureADProvider from "next-auth/providers/azure-ad";
 
 const API_BASE = process.env.API_BASE_URL ?? "http://localhost:4000";
 
@@ -51,6 +52,15 @@ export const authOptions: NextAuthOptions = {
             clientSecret: process.env.GOOGLE_CLIENT_SECRET
           })
         ]
+      : []),
+    ...(process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET && process.env.AZURE_AD_TENANT_ID
+      ? [
+          AzureADProvider({
+            clientId: process.env.AZURE_AD_CLIENT_ID,
+            clientSecret: process.env.AZURE_AD_CLIENT_SECRET,
+            tenantId: process.env.AZURE_AD_TENANT_ID
+          })
+        ]
       : [])
   ],
   session: {
@@ -63,15 +73,16 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user, account }) {
       if (user) {
-        if (account?.provider === "google") {
-          // Exchange Google profile for API tokens
+        if (account?.provider === "google" || account?.provider === "azure-ad") {
+          // Exchange OAuth profile for API tokens
+          const providerName = account.provider === "azure-ad" ? "microsoft" : "google";
           const res = await fetch(`${API_BASE}/auth/oauth-exchange`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               email: user.email,
               displayName: user.name ?? user.email?.split("@")[0] ?? "User",
-              provider: "google"
+              provider: providerName
             })
           });
           const json = await res.json();

@@ -51,3 +51,22 @@ export async function apiPost<T>(path: string, body: unknown, serverToken?: stri
 
   return response.json() as Promise<T>;
 }
+
+export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    ...(await getAuthHeaders()),
+  };
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(`PATCH ${path} failed with ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
+}

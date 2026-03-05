@@ -51,6 +51,8 @@ export default function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [loading, setLoading] = useState(true);
 
   const fetchSessions = useCallback(async () => {
@@ -59,6 +61,8 @@ export default function DashboardPage() {
       const params = new URLSearchParams();
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (query) params.set("q", query);
+      if (dateFrom) params.set("from", dateFrom);
+      if (dateTo) params.set("to", dateTo);
       params.set("page", String(page));
       const qs = params.toString();
       const res = await apiGet<DashboardResponse>(`/sessions${qs ? `?${qs}` : ""}`);
@@ -70,7 +74,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, query, page]);
+  }, [statusFilter, query, page, dateFrom, dateTo]);
 
   useEffect(() => {
     void fetchSessions();
@@ -115,6 +119,25 @@ export default function DashboardPage() {
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
+
+          <label className="dash-date-label">
+            From
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+              aria-label="Filter from date"
+            />
+          </label>
+          <label className="dash-date-label">
+            To
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+              aria-label="Filter to date"
+            />
+          </label>
         </div>
 
         {loading ? (
