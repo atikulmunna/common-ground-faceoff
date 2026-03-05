@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SessionStatus {
+  draft
+  collecting_positions
+  queued
+  running
+  completed
+  failed
+  needs_input
+}
+
+enum ParticipantRole {
+  session_creator
+  session_participant
+  observer
+}
+
+enum UserTier {
+  free
+  pro
+  enterprise
+}
+
+enum ModerationSeverity {
+  low
+  medium
+  high
+  critical
+}
+
+model User {
+  id               String               @id @default(cuid())
+  email            String               @unique
+  displayName      String
+  passwordHash     String?
+  emailVerified    Boolean              @default(false)
+  tier             UserTier             @default(free)
+  role             String               @default("individual_user")
+  mfaEnabled       Boolean              @default(false)
+  mfaSecret        String?
+  failedLoginCount Int                  @default(0)
+  lockedUntil      DateTime?
+  createdAt        DateTime             @default(now())
+  lastLoginAt      DateTime?
+  sessions         Session[]            @relation("SessionCreator")
+  participants     SessionParticipant[]
+  feedback         FeedbackRating[]
+  refreshTokens    RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Session {
+  id                String               @id @default(cuid())
+  topic             String
+  status            SessionStatus         @default(draft)
+  creatorUserId     String
+  creator           User                 @relation("SessionCreator", fields: [creatorUserId], references: [id])
+  anonymousMode     Boolean              @default(false)
+  deadline          DateTime?
+  createdAt         DateTime             @default(now())
+  analyzedAt        DateTime?
+  participants      SessionParticipant[]
+  analysisResults   AnalysisResult[]
+  analysisEvents    AnalysisEvent[]
+  shareLinks        ShareLink[]
+}
+
+model SessionParticipant {
+  id                   String            @id @default(cuid())
+  sessionId             String
+  userId                String
+  role                  ParticipantRole  @default(session_participant)
+  canExport             Boolean           @default(false)
+  positionText          String?
+  positionSubmittedAt   DateTime?
+  session               Session           @relation(fields: [sessionId], references: [id])
+  user                  User              @relation(fields: [userId], references: [id])
+
+  @@unique([sessionId, userId])
+}
+
+model AnalysisResult {
+  id                        String   @id @default(cuid())
+  sessionId                  String
+  roundNumber                Int      @default(1)
+  parentSessionOrRoundId     String?
+  pipelineRunId              String
+  analysisVersion            String
+  promptTemplateVersion      String
+  inputHash                  String
+  steelmans                  Json
+  conflictMap                Json
+  sharedFoundations          String
+  trueDisagreements          String
+  confidenceScores           Json
+  llmProvider                String
+  modelVersion               String
+  status                     SessionStatus
+  createdAt                  DateTime @default(now())
+  session                    Session  @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId, roundNumber])
+}
+
+model AnalysisEvent {
+  id            String   @id @default(cuid())
+  sessionId      String
+  pipelineRunId  String
+  eventType      String
+  fromState      String?
+  toState        String?
+  reasonCode     String?
+  actorType      String
+  createdAt      DateTime @default(now())
+  session        Session  @relation(fields: [sessionId], references: [id])
+}
+
+model ShareLink {
+  id                String   @id @default(cuid())
+  sessionId          String
+  token              String   @unique
+  scope              String   @default("read_only")
+  createdByUserId    String
+  revoked            Boolean  @default(false)
+  revocationReason   String?
+  expiresAt          DateTime?
+  createdAt          DateTime @default(now())
+  session            Session  @relation(fields: [sessionId], references: [id])
+}
+
+model FeedbackRating {
+  id            String   @id @default(cuid())
+  sessionId      String
+  userId         String
+  faithfulness   Int
+  neutrality     Int
+  comment        String?
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@index([sessionId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  eventType  String
+  actorId    String?
+  actorEmail String?
+  ip         String?
+  detail     String?
+  createdAt  DateTime @default(now())
+
+  @@index([eventType])
+  @@index([actorId])
+}

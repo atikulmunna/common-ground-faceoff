@@ -1,0 +1,17 @@
+{
+  "name": "@common-ground/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "types": "index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "echo config lint placeholder",
+    "test": "echo config test placeholder"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}
