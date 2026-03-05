@@ -48,6 +48,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedbackSaved, setFeedbackSaved] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -56,6 +58,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       const self = response.data?.session.participants.find((participant) => participant.positionText !== null);
       if (self?.positionText) {
         setPositionText(self.positionText);
+        setHasSubmitted(true);
       }
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "Failed to load session");
@@ -87,6 +90,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         positionText,
         roundNumber: 1
       });
+      setHasSubmitted(true);
+      setEditing(false);
       await refreshSession();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Failed to submit position");
@@ -121,6 +126,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   }
 
   const status = useMemo(() => analysis?.status ?? session?.status ?? "draft", [analysis?.status, session?.status]);
+  const isLocked = ["queued", "running", "completed"].includes(status);
+  const showEditor = !hasSubmitted || editing;
 
   return (
     <section className="grid">
@@ -131,23 +138,43 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 
       <article className="card grid">
         <h2>Your Position</h2>
-        <textarea
-          rows={8}
-          minLength={100}
-          maxLength={5000}
-          placeholder="Submit your position in 100-5000 characters"
-          value={positionText}
-          onChange={(event) => setPositionText(event.target.value)}
-        />
-        <ReadabilityMeter text={positionText} />
-        <div style={{ display: "flex", gap: "0.8rem" }}>
-          <button onClick={submitPosition} disabled={busy || positionText.length < 100}>
-            {busy ? "Working..." : "Submit Position"}
-          </button>
-          <button className="secondary" onClick={triggerAnalysis} disabled={busy}>
-            Trigger Analysis
-          </button>
-        </div>
+        {showEditor ? (
+          <>
+            <textarea
+              rows={8}
+              minLength={100}
+              maxLength={5000}
+              placeholder="Submit your position in 100-5000 characters"
+              value={positionText}
+              onChange={(event) => setPositionText(event.target.value)}
+            />
+            <ReadabilityMeter text={positionText} />
+            <div style={{ display: "flex", gap: "0.8rem" }}>
+              <button onClick={submitPosition} disabled={busy || positionText.length < 100}>
+                {busy ? "Working..." : hasSubmitted ? "Save Changes" : "Submit Position"}
+              </button>
+              {hasSubmitted && (
+                <button className="secondary" onClick={() => setEditing(false)}>
+                  Cancel
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="cgm-position-preview">
+              <p>{positionText}</p>
+            </div>
+            <div style={{ display: "flex", gap: "0.8rem" }}>
+              {!isLocked && (
+                <button onClick={() => setEditing(true)}>Edit Position</button>
+              )}
+              <button className="secondary" onClick={triggerAnalysis} disabled={busy || isLocked}>
+                {isLocked ? "Analysis Started" : "Trigger Analysis"}
+              </button>
+            </div>
+          </>
+        )}
       </article>
 
       <article className="card grid">

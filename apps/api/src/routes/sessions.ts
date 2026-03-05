@@ -111,6 +111,18 @@ sessionsRouter.post("/:id/positions", requireSessionAccess, async (req, res) => 
     return;
   }
 
+  // CG-FR17: Block edits once analysis has been triggered
+  const session = await prisma.session.findUnique({ where: { id: req.params.id } });
+  if (!session) {
+    res.status(404).json(createErrorResponse("not_found", "Session not found"));
+    return;
+  }
+  const lockedStatuses = ["queued", "running", "completed"];
+  if (lockedStatuses.includes(session.status)) {
+    res.status(409).json(createErrorResponse("async_state_error", "Positions cannot be edited after analysis has been triggered"));
+    return;
+  }
+
   const participant = await prisma.sessionParticipant.findUnique({
     where: {
       sessionId_userId: {

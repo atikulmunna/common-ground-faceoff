@@ -355,3 +355,18 @@ button.secondary {
 .cgm-rating__star--active {
   color: #f59e0b;
 }
+
+/* -- Position preview (submitted, read-only) -------------------------- */
+
+.cgm-position-preview {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem;
+  line-height: 1.6;
+}
+
+.cgm-position-preview p {
+  margin: 0;
+  white-space: pre-wrap;
+}
