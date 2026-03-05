@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ReadabilityMeter } from "./readability-meter";
 import { CommonGroundMap } from "./common-ground-map";
 import { apiGet, apiPost } from "../lib-api";
+import { checkContentPolicy } from "../lib/content-policy";
 
 type SessionResponse = {
   success: boolean;
@@ -128,6 +129,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const status = useMemo(() => analysis?.status ?? session?.status ?? "draft", [analysis?.status, session?.status]);
   const isLocked = ["queued", "running", "completed"].includes(status);
   const showEditor = !hasSubmitted || editing;
+  const policyWarnings = useMemo(() => checkContentPolicy(positionText), [positionText]);
 
   return (
     <section className="grid">
@@ -149,6 +151,15 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               onChange={(event) => setPositionText(event.target.value)}
             />
             <ReadabilityMeter text={positionText} />
+            {policyWarnings.length > 0 && (
+              <div className="cgm-policy-warnings">
+                {policyWarnings.map((w) => (
+                  <p key={w.category} className="cgm-policy-warning">
+                    ⚠ {w.message}
+                  </p>
+                ))}
+              </div>
+            )}
             <div style={{ display: "flex", gap: "0.8rem" }}>
               <button onClick={submitPosition} disabled={busy || positionText.length < 100}>
                 {busy ? "Working..." : hasSubmitted ? "Save Changes" : "Submit Position"}
@@ -181,6 +192,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         {analysis?.result ? (
           <>
             <CommonGroundMap result={analysis.result} />
+            <ExportPanel sessionId={sessionId} />
             <FeedbackPanel
               onSubmit={submitFeedback}
               saved={feedbackSaved}
@@ -290,6 +302,49 @@ function RatingRow({
             ★
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function ExportPanel({ sessionId }: { sessionId: string }) {
+  const [exporting, setExporting] = useState(false);
+
+  async function downloadExport(format: "json" | "markdown") {
+    setExporting(true);
+    try {
+      const { getSession } = await import("next-auth/react");
+      const session = await getSession();
+      const token = session?.user?.accessToken;
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+      const res = await fetch(`${base}/sessions/${sessionId}/export/${format}`, {
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+
+      const blob = await res.blob();
+      const ext = format === "json" ? "json" : "md";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `common-ground-${sessionId}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <div className="cgm-export">
+      <h3>Export</h3>
+      <div className="cgm-export__buttons">
+        <button onClick={() => downloadExport("json")} disabled={exporting}>
+          {exporting ? "Exporting…" : "JSON"}
+        </button>
+        <button onClick={() => downloadExport("markdown")} disabled={exporting}>
+          {exporting ? "Exporting…" : "Markdown"}
+        </button>
       </div>
     </div>
   );

@@ -320,3 +320,121 @@ sessionsRouter.post("/:id/share-links", requireSessionAccess, async (req, res) =
 
   res.status(201).json(createSuccessResponse({ shareLink }));
 });
+
+/* ------------------------------------------------------------------ */
+/*  Export (CG-FR37, CG-FR40)                                          */
+/* ------------------------------------------------------------------ */
+
+sessionsRouter.get("/:id/export/:format", requireSessionAccess, async (req, res) => {
+  const format = req.params.format;
+  if (!["json", "markdown", "md"].includes(format)) {
+    res.status(400).json(createErrorResponse("validation_error", "Supported export formats: json, markdown"));
+    return;
+  }
+
+  const session = await prisma.session.findUnique({
+    where: { id: req.params.id },
+    include: {
+      participants: {
+        include: {
+          user: { select: { displayName: true, email: true } }
+        }
+      }
+    }
+  });
+
+  if (!session) {
+    res.status(404).json(createErrorResponse("not_found", "Session not found"));
+    return;
+  }
+
+  const analysis = await prisma.analysisResult.findFirst({
+    where: { sessionId: req.params.id, status: "completed" },
+    orderBy: [{ roundNumber: "desc" }, { createdAt: "desc" }]
+  });
+
+  if (!analysis) {
+    res.status(422).json(createErrorResponse("async_state_error", "No completed analysis to export"));
+    return;
+  }
+
+  const exportData = {
+    session: {
+      id: session.id,
+      topic: session.topic,
+      createdAt: session.createdAt,
+      analyzedAt: session.analyzedAt,
+      anonymousMode: session.anonymousMode,
+    },
+    participants: session.participants.map((p) => ({
+      displayName: session.anonymousMode ? `Participant` : p.user.displayName,
+      role: p.role,
+    })),
+    analysis: {
+      version: analysis.analysisVersion,
+      promptTemplateVersion: analysis.promptTemplateVersion,
+      roundNumber: analysis.roundNumber,
+      llmProvider: analysis.llmProvider,
+      modelVersion: analysis.modelVersion,
+      steelmans: analysis.steelmans,
+      conflictMap: analysis.conflictMap,
+      sharedFoundations: analysis.sharedFoundations,
+      trueDisagreements: analysis.trueDisagreements,
+      confidenceScores: analysis.confidenceScores,
+      createdAt: analysis.createdAt,
+    },
+  };
+
+  if (format === "json") {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Disposition", `attachment; filename="common-ground-${session.id}.json"`);
+    res.json(exportData);
+    return;
+  }
+
+  // Markdown export
+  const steelmans = (analysis.steelmans as Record<string, string>) ?? {};
+  const conflicts = (analysis.conflictMap as Record<string, string[]>) ?? {};
+  const confidence = (analysis.confidenceScores as { sharedFoundations?: number; disagreements?: number }) ?? {};
+
+  let md = `# Common Ground Map\n\n`;
+  md += `**Topic:** ${session.topic}\n`;
+  md += `**Date:** ${session.createdAt.toISOString().split("T")[0]}\n`;
+  md += `**Analysis Version:** ${analysis.analysisVersion ?? "v1"}\n`;
+  md += `**Model:** ${analysis.llmProvider} / ${analysis.modelVersion}\n\n`;
+  md += `---\n\n`;
+
+  md += `## Steelmanned Positions\n\n`;
+  for (const [label, text] of Object.entries(steelmans)) {
+    md += `### ${label}\n\n${text}\n\n`;
+  }
+
+  md += `## Shared Foundations\n\n`;
+  if (confidence.sharedFoundations != null) {
+    md += `*Confidence: ${Math.round(confidence.sharedFoundations * 100)}%*\n\n`;
+  }
+  md += `${analysis.sharedFoundations}\n\n`;
+
+  md += `## True Points of Disagreement\n\n`;
+  if (confidence.disagreements != null) {
+    md += `*Confidence: ${Math.round(confidence.disagreements * 100)}%*\n\n`;
+  }
+  md += `${analysis.trueDisagreements}\n\n`;
+
+  if (Object.keys(conflicts).length > 0) {
+    md += `## Conflict Classification\n\n`;
+    for (const [category, descriptions] of Object.entries(conflicts)) {
+      md += `### ${category.charAt(0).toUpperCase() + category.slice(1)}\n\n`;
+      for (const desc of descriptions) {
+        md += `- ${desc}\n`;
+      }
+      md += `\n`;
+    }
+  }
+
+  md += `---\n\n*Exported from Common Ground on ${new Date().toISOString().split("T")[0]}*\n`;
+
+  res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="common-ground-${session.id}.md"`);
+  res.send(md);
+});
