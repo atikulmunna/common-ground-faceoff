@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 
 import { ReadabilityMeter } from "./readability-meter";
 import { CommonGroundMap } from "./common-ground-map";
@@ -55,6 +56,8 @@ type RoundSummary = {
 };
 
 export function SessionView({ sessionId }: { sessionId: string }) {
+  const { data: authSession } = useSession();
+  const currentUserId = authSession?.user?.id;
   const [positionText, setPositionText] = useState("");
   const [session, setSession] = useState<SessionData | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse["data"] | null>(null);
@@ -72,15 +75,17 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     try {
       const response = await apiGet<SessionResponse>(`/sessions/${sessionId}`);
       setSession(response.data?.session ?? null);
-      const self = response.data?.session.participants.find((participant) => participant.positionText !== null);
-      if (self?.positionText) {
-        setPositionText(self.positionText);
-        setHasSubmitted(true);
+      if (currentUserId) {
+        const self = response.data?.session.participants.find((p) => p.userId === currentUserId);
+        if (self?.positionText) {
+          setPositionText(self.positionText);
+          setHasSubmitted(true);
+        }
       }
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "Failed to load session");
     }
-  }, [sessionId]);
+  }, [sessionId, currentUserId]);
 
   const refreshAnalysis = useCallback(async () => {
     try {
@@ -102,9 +107,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       }>(`/sessions/${sessionId}/reactions`);
       if (res.data) {
         const mine: Record<string, "represents" | "misrepresents" | "neutral"> = {};
-        const selfId = session?.participants.find((p) => p.positionText !== null)?.userId;
         for (const r of res.data.reactions) {
-          if (r.userId === selfId) mine[r.section] = r.reaction;
+          if (r.userId === currentUserId) mine[r.section] = r.reaction;
         }
         setMyReactions(mine);
         setMutualAcks(res.data.mutualAcknowledgments);
@@ -112,7 +116,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     } catch {
       // silent
     }
-  }, [sessionId, session]);
+  }, [sessionId, currentUserId]);
 
   async function handleReact(section: string, reaction: "represents" | "misrepresents" | "neutral") {
     try {

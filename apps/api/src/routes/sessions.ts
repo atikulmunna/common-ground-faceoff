@@ -18,6 +18,59 @@ import { runAnalysis } from "../services/analysisService.js";
 
 export const sessionsRouter = Router();
 
+/* ------------------------------------------------------------------ */
+/*  Dashboard (CG-FR41, FR42, FR43)                                    */
+/* ------------------------------------------------------------------ */
+
+sessionsRouter.get("/", async (req, res) => {
+  const { status, q, page } = req.query;
+
+  const where: Record<string, unknown> = {
+    participants: { some: { userId: req.user.id } },
+  };
+
+  if (status && typeof status === "string" && status !== "all") {
+    where.status = status;
+  }
+
+  if (q && typeof q === "string" && q.trim().length > 0) {
+    where.topic = { contains: q.trim(), mode: "insensitive" };
+  }
+
+  const pageNum = Math.max(1, Number(page) || 1);
+  const pageSize = 20;
+  const skip = (pageNum - 1) * pageSize;
+
+  const [sessions, total] = await Promise.all([
+    prisma.session.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: pageSize,
+      select: {
+        id: true,
+        topic: true,
+        status: true,
+        createdAt: true,
+        analyzedAt: true,
+        _count: { select: { participants: true } },
+      },
+    }),
+    prisma.session.count({ where }),
+  ]);
+
+  const rows = sessions.map((s) => ({
+    id: s.id,
+    topic: s.topic,
+    status: s.status,
+    createdAt: s.createdAt,
+    analyzedAt: s.analyzedAt,
+    participantCount: s._count.participants,
+  }));
+
+  res.json(createSuccessResponse({ sessions: rows, total, page: pageNum, pageSize }));
+});
+
 sessionsRouter.get("/demo-list", async (_req, res) => {
   const sessions = await prisma.session.findMany({
     orderBy: { createdAt: "desc" },

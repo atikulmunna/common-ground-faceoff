@@ -575,3 +575,139 @@ button.secondary {
   margin-top: 0.3rem;
   line-height: 1.5;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Dashboard (CG-FR41–43)                                             */
+/* ------------------------------------------------------------------ */
+
+.dash-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.dash-header h1 { margin: 0; }
+.dash-create-btn {
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+  padding: 0.5rem 1.2rem;
+  border-radius: 8px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dash-controls {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.dash-search {
+  display: flex;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 200px;
+}
+.dash-search input {
+  flex: 1;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+.dash-controls select {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: var(--card);
+}
+
+.dash-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 2rem 0;
+}
+
+.dash-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.dash-table th {
+  text-align: left;
+  padding: 0.6rem 0.5rem;
+  border-bottom: 2px solid var(--line);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.dash-table td {
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+.dash-table tr:last-child td { border-bottom: none; }
+.dash-table a {
+  font-weight: 500;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.badge--ok   { background: #dcfce7; color: #166534; }
+.badge--warn { background: #fef9c3; color: #854d0e; }
+.badge--err  { background: #fee2e2; color: #991b1b; }
+.badge--info { background: #dbeafe; color: #1e40af; }
+.badge--muted { background: #f1f5f9; color: #64748b; }
+
+.dash-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.dash-pagination button {
+  padding: 0.3rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Readability meter enhancements                                     */
+/* ------------------------------------------------------------------ */
+
+.readability-meter {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.4rem;
+}
+.readability-meter__item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.readability-meter__bar {
+  width: 80px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.readability-meter__fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.2s;
+}
