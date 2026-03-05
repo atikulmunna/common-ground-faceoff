@@ -44,7 +44,19 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   res.status(500).json(createErrorResponse("internal_error", "Internal server error"));
 });
 
+import { shutdownQueue } from "./services/queueService.js";
+
 const port = Number(process.env.PORT ?? 4100);
-app.listen(port, "127.0.0.1", () => {
+const server = app.listen(port, "127.0.0.1", () => {
   console.log(`API listening on http://localhost:${port}`);
+});
+
+// Graceful shutdown
+process.on("SIGTERM", async () => {
+  await shutdownQueue();
+  server.close();
+});
+process.on("SIGINT", async () => {
+  await shutdownQueue();
+  server.close();
 });

@@ -61,12 +61,33 @@ export const authOptions: NextAuthOptions = {
     signIn: "/sign-in"
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
-        token.id = user.id;
-        token.role = (user as unknown as { role: string }).role;
-        token.accessToken = (user as unknown as { accessToken: string }).accessToken;
-        token.refreshToken = (user as unknown as { refreshToken: string }).refreshToken;
+        if (account?.provider === "google") {
+          // Exchange Google profile for API tokens
+          const res = await fetch(`${API_BASE}/auth/oauth-exchange`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: user.email,
+              displayName: user.name ?? user.email?.split("@")[0] ?? "User",
+              provider: "google"
+            })
+          });
+          const json = await res.json();
+          if (res.ok && json.success) {
+            token.id = json.data.user.id;
+            token.role = json.data.user.role;
+            token.accessToken = json.data.accessToken;
+            token.refreshToken = json.data.refreshToken;
+          }
+        } else {
+          // Credentials provider — user already has API tokens
+          token.id = user.id;
+          token.role = (user as unknown as { role: string }).role;
+          token.accessToken = (user as unknown as { accessToken: string }).accessToken;
+          token.refreshToken = (user as unknown as { refreshToken: string }).refreshToken;
+        }
       }
       return token;
     },

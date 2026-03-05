@@ -96,13 +96,18 @@ export default function SignInPage() {
       </button>
 
       {process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true" && (
-        <button
-          className="secondary"
-          onClick={() => signIn("google", { callbackUrl: "/" })}
-          type="button"
-        >
-          Continue with Google
-        </button>
+        <>
+          <div className="oauth-divider" style={{ textAlign: "center", margin: "0.5rem 0", color: "#888" }}>
+            — or —
+          </div>
+          <button
+            className="secondary"
+            onClick={() => signIn("google", { callbackUrl: "/" })}
+            type="button"
+          >
+            Continue with Google
+          </button>
+        </>
       )}
     </section>
   );

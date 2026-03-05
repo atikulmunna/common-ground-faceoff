@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { registerSchema, loginSchema, refreshTokenSchema } from "@common-ground/shared";
+import { registerSchema, loginSchema, refreshTokenSchema, oauthExchangeSchema } from "@common-ground/shared";
 
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
@@ -190,6 +190,69 @@ authRouter.post("/refresh", async (req, res) => {
     createSuccessResponse({
       accessToken,
       refreshToken: newRefresh.token
+    })
+  );
+});
+
+// POST /auth/oauth-exchange — exchange OAuth profile for API tokens
+authRouter.post("/oauth-exchange", async (req, res) => {
+  const parse = oauthExchangeSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json(
+      createErrorResponse("validation_error", "Invalid OAuth payload", parse.error.flatten())
+    );
+    return;
+  }
+
+  const { email, displayName, provider } = parse.data;
+
+  // Upsert user: create without password if new, or return existing user
+  let user = await prisma.user.findUnique({ where: { email } });
+
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        email,
+        displayName,
+        // No passwordHash for OAuth-only users
+        role: "individual_user"
+      }
+    });
+  }
+
+  // Update lastLoginAt
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() }
+  });
+
+  const accessToken = signAccessToken({ sub: user.id, email: user.email, role: user.role });
+  const refresh = generateRefreshToken();
+
+  await prisma.refreshToken.create({
+    data: {
+      token: refresh.token,
+      userId: user.id,
+      expiresAt: refresh.expiresAt
+    }
+  });
+
+  // Audit log
+  await prisma.auditLog.create({
+    data: {
+      eventType: "oauth_login",
+      actorId: user.id,
+      actorEmail: user.email,
+      ip: req.ip,
+      detail: `provider:${provider}`
+    }
+  });
+
+  res.json(
+    createSuccessResponse({
+      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
+      accessToken,
+      refreshToken: refresh.token
     })
   );
 });

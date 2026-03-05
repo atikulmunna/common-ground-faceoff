@@ -79,6 +79,12 @@ export const sectionReactionSchema = z.object({
   reaction: z.enum(["represents", "misrepresents", "neutral"])
 });
 
+export const oauthExchangeSchema = z.object({
+  email: z.string().email(),
+  displayName: z.string().min(1).max(100),
+  provider: z.enum(["google"])
+});
+
 export const apiErrorCodeSchema = z.enum([
   "validation_error",
   "auth_error",

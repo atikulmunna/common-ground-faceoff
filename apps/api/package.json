@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "echo api lint placeholder",
-    "test": "echo api test placeholder",
+    "test": "vitest run",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts"
@@ -20,10 +20,12 @@
     "@mistralai/mistralai": "^1.14.1",
     "@prisma/client": "^5.20.0",
     "bcrypt": "^6.0.0",
+    "bullmq": "^5.70.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "express-rate-limit": "^8.2.1",
+    "ioredis": "^5.10.0",
     "jsonwebtoken": "^9.0.3",
     "openai": "^6.25.0",
     "uuid": "^10.0.0",
@@ -35,9 +37,11 @@
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.7.4",
+    "@vitest/coverage-v8": "^4.0.18",
     "prisma": "^5.20.0",
     "tsx": "^4.19.1",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^4.0.18"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
