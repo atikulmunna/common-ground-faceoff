@@ -402,11 +402,19 @@ export async function runAnalysis(input: BuildAnalysisInput) {
     throw err;
   }
 
+  // Determine round number and lineage (CG-FR68)
+  const previousRound = await prisma.analysisResult.findFirst({
+    where: { sessionId: input.sessionId, status: "completed" },
+    orderBy: { roundNumber: "desc" },
+    select: { id: true, roundNumber: true },
+  });
+  const roundNumber = (previousRound?.roundNumber ?? 0) + 1;
+
   const result = await prisma.analysisResult.create({
     data: {
       sessionId: input.sessionId,
-      roundNumber: 1,
-      parentSessionOrRoundId: null,
+      roundNumber,
+      parentSessionOrRoundId: previousRound?.id ?? null,
       pipelineRunId,
       analysisVersion: input.analysisVersion,
       promptTemplateVersion: input.promptTemplateVersion,
@@ -489,11 +497,19 @@ export async function completeQueuedAnalysis(
     return;
   }
 
+  // Determine round number and lineage (CG-FR68)
+  const previousRound = await prisma.analysisResult.findFirst({
+    where: { sessionId, status: "completed" },
+    orderBy: { roundNumber: "desc" },
+    select: { id: true, roundNumber: true },
+  });
+  const roundNumber = (previousRound?.roundNumber ?? 0) + 1;
+
   await prisma.analysisResult.create({
     data: {
       sessionId,
-      roundNumber: 1,
-      parentSessionOrRoundId: null,
+      roundNumber,
+      parentSessionOrRoundId: previousRound?.id ?? null,
       pipelineRunId,
       analysisVersion: "v1",
       promptTemplateVersion: "tpl-v1",

@@ -42,6 +42,18 @@ type AnalysisResponse = {
   } | null;
 };
 
+type RoundSummary = {
+  id: string;
+  roundNumber: number;
+  parentSessionOrRoundId: string | null;
+  sharedFoundations: string;
+  trueDisagreements: string;
+  steelmans: Record<string, string>;
+  conflictMap: Record<string, string[]>;
+  confidenceScores?: { sharedFoundations: number; disagreements: number };
+  createdAt: string;
+};
+
 export function SessionView({ sessionId }: { sessionId: string }) {
   const [positionText, setPositionText] = useState("");
   const [session, setSession] = useState<SessionData | null>(null);
@@ -53,6 +65,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [myReactions, setMyReactions] = useState<Record<string, "represents" | "misrepresents" | "neutral">>({});
   const [mutualAcks, setMutualAcks] = useState<Record<string, boolean>>({});
+  const [rounds, setRounds] = useState<RoundSummary[]>([]);
+  const [showComparison, setShowComparison] = useState(false);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -109,14 +123,27 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     }
   }
 
+  const fetchRounds = useCallback(async () => {
+    try {
+      const res = await apiGet<{
+        success: boolean;
+        data: { rounds: RoundSummary[] } | null;
+      }>(`/sessions/${sessionId}/rounds`);
+      setRounds(res.data?.rounds ?? []);
+    } catch {
+      // silent
+    }
+  }, [sessionId]);
+
   useEffect(() => {
     void refreshSession();
+    void fetchRounds();
     const timer = setInterval(() => {
       void refreshAnalysis();
       void refreshReactions();
     }, 3000);
     return () => clearInterval(timer);
-  }, [refreshAnalysis, refreshSession, refreshReactions]);
+  }, [refreshAnalysis, refreshSession, refreshReactions, fetchRounds]);
 
   async function submitPosition() {
     setBusy(true);
@@ -159,6 +186,24 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       comment: comment || undefined,
     });
     setFeedbackSaved(true);
+  }
+
+  async function handleReenter() {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiPost(`/sessions/${sessionId}/reenter`, {});
+      setEditing(true);
+      setHasSubmitted(false);
+      setFeedbackSaved(false);
+      setAnalysis(null);
+      setShowComparison(false);
+      await refreshSession();
+    } catch (reenterError) {
+      setError(reenterError instanceof Error ? reenterError.message : "Failed to initiate re-entry");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const status = useMemo(() => analysis?.status ?? session?.status ?? "draft", [analysis?.status, session?.status]);
@@ -231,6 +276,31 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               reactions={{ mine: myReactions, mutual: mutualAcks }}
               onReact={handleReact}
             />
+
+            {/* Re-entry & round comparison controls */}
+            <div className="cgm-reentry">
+              <button onClick={handleReenter} disabled={busy}>
+                {busy ? "Working..." : "Revise & Re-enter"}
+              </button>
+              {rounds.length > 1 && (
+                <button
+                  className="secondary"
+                  onClick={() => setShowComparison((v) => !v)}
+                >
+                  {showComparison ? "Hide Round Comparison" : `Compare Rounds (${rounds.length})`}
+                </button>
+              )}
+              {rounds.length <= 1 && (
+                <button className="secondary" onClick={fetchRounds} disabled={busy}>
+                  Load Round History
+                </button>
+              )}
+            </div>
+
+            {showComparison && rounds.length > 1 && (
+              <RoundComparison rounds={rounds} />
+            )}
+
             <ExportPanel sessionId={sessionId} />
             <FeedbackPanel
               onSubmit={submitFeedback}
@@ -384,6 +454,82 @@ function ExportPanel({ sessionId }: { sessionId: string }) {
         <button onClick={() => downloadExport("markdown")} disabled={exporting}>
           {exporting ? "Exporting…" : "Markdown"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Round Comparison (CG-FR69)                                         */
+/* ------------------------------------------------------------------ */
+
+function RoundComparison({ rounds }: { rounds: RoundSummary[] }) {
+  const [selectedA, setSelectedA] = useState(0);
+  const [selectedB, setSelectedB] = useState(Math.min(1, rounds.length - 1));
+
+  const roundA = rounds[selectedA];
+  const roundB = rounds[selectedB];
+
+  if (!roundA || !roundB) return null;
+
+  return (
+    <div className="cgm-round-compare">
+      <h3>Round Comparison</h3>
+      <div className="cgm-round-compare__selectors">
+        <label>
+          Left:
+          <select value={selectedA} onChange={(e) => setSelectedA(Number(e.target.value))}>
+            {rounds.map((r, i) => (
+              <option key={r.id} value={i}>Round {r.roundNumber}</option>
+            ))}
+          </select>
+        </label>
+        <span className="cgm-round-compare__vs">vs</span>
+        <label>
+          Right:
+          <select value={selectedB} onChange={(e) => setSelectedB(Number(e.target.value))}>
+            {rounds.map((r, i) => (
+              <option key={r.id} value={i}>Round {r.roundNumber}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="cgm-round-compare__panels">
+        <RoundPanel round={roundA} />
+        <RoundPanel round={roundB} />
+      </div>
+    </div>
+  );
+}
+
+function RoundPanel({ round }: { round: RoundSummary }) {
+  return (
+    <div className="cgm-round-panel">
+      <div className="cgm-round-panel__header">
+        <strong>Round {round.roundNumber}</strong>
+        <span className="cgm-round-panel__date">
+          {new Date(round.createdAt).toLocaleDateString()}
+        </span>
+      </div>
+
+      <div className="cgm-round-panel__section">
+        <h4>Shared Foundations</h4>
+        <p>{round.sharedFoundations}</p>
+      </div>
+
+      <div className="cgm-round-panel__section">
+        <h4>True Disagreements</h4>
+        <p>{round.trueDisagreements}</p>
+      </div>
+
+      <div className="cgm-round-panel__section">
+        <h4>Steelmans</h4>
+        {Object.entries(round.steelmans as Record<string, string>).map(([label, text]) => (
+          <div key={label} className="cgm-round-panel__steelman">
+            <strong>{label}:</strong> <span>{text}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

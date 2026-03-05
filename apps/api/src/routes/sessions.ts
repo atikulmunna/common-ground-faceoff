@@ -323,6 +323,80 @@ sessionsRouter.post("/:id/share-links", requireSessionAccess, async (req, res) =
 });
 
 /* ------------------------------------------------------------------ */
+/*  Re-entry (CG-FR36, CG-FR68)                                        */
+/* ------------------------------------------------------------------ */
+
+sessionsRouter.post("/:id/reenter", requireSessionAccess, async (req, res) => {
+  const session = await prisma.session.findUnique({ where: { id: req.params.id } });
+  if (!session) {
+    res.status(404).json(createErrorResponse("not_found", "Session not found"));
+    return;
+  }
+
+  if (session.creatorUserId !== req.user.id) {
+    res.status(403).json(createErrorResponse("authz_error", "Only the session creator can initiate re-entry"));
+    return;
+  }
+
+  if (session.status !== "completed") {
+    res.status(409).json(createErrorResponse("async_state_error", "Re-entry is only available after a completed analysis"));
+    return;
+  }
+
+  await prisma.session.update({
+    where: { id: req.params.id },
+    data: { status: "collecting_positions" },
+  });
+
+  const latestRound = await prisma.analysisResult.findFirst({
+    where: { sessionId: req.params.id },
+    orderBy: { roundNumber: "desc" },
+    select: { roundNumber: true },
+  });
+
+  await prisma.analysisEvent.create({
+    data: {
+      sessionId: req.params.id,
+      pipelineRunId: "reentry",
+      eventType: "reentry_initiated",
+      fromState: "completed",
+      toState: "collecting_positions",
+      reasonCode: `round_${(latestRound?.roundNumber ?? 1) + 1}`,
+      actorType: "user",
+    },
+  });
+
+  res.json(createSuccessResponse({ status: "collecting_positions", nextRound: (latestRound?.roundNumber ?? 1) + 1 }));
+});
+
+/* ------------------------------------------------------------------ */
+/*  Rounds listing & comparison (CG-FR69)                              */
+/* ------------------------------------------------------------------ */
+
+sessionsRouter.get("/:id/rounds", requireSessionAccess, async (req, res) => {
+  const rounds = await prisma.analysisResult.findMany({
+    where: { sessionId: req.params.id, status: "completed" },
+    orderBy: { roundNumber: "asc" },
+    select: {
+      id: true,
+      roundNumber: true,
+      parentSessionOrRoundId: true,
+      analysisVersion: true,
+      steelmans: true,
+      conflictMap: true,
+      sharedFoundations: true,
+      trueDisagreements: true,
+      confidenceScores: true,
+      llmProvider: true,
+      modelVersion: true,
+      createdAt: true,
+    },
+  });
+
+  res.json(createSuccessResponse({ rounds }));
+});
+
+/* ------------------------------------------------------------------ */
 /*  Reactions (CG-FR33, CG-FR34)                                       */
 /* ------------------------------------------------------------------ */
 
