@@ -19,6 +19,8 @@ type SessionData = {
   id: string;
   topic: string;
   status: string;
+  anonymousMode: boolean;
+  deadline: string | null;
   participants: Array<{
     id: string;
     userId: string;
@@ -72,6 +74,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const [rounds, setRounds] = useState<RoundSummary[]>([]);
   const [showComparison, setShowComparison] = useState(false);
   const [comments, setComments] = useState<Array<{ id: string; userId: string; section: string; text: string; createdAt: string }>>([]);
+  const [reportSent, setReportSent] = useState(false);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -238,12 +241,43 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const isLocked = ["queued", "running", "completed"].includes(status);
   const showEditor = !hasSubmitted || editing;
   const policyWarnings = useMemo(() => checkContentPolicy(positionText), [positionText]);
+  const deadlinePassed = session?.deadline ? new Date(session.deadline) < new Date() : false;
+
+  async function handleReport() {
+    const reason = prompt("Describe the issue (at least 10 characters):");
+    if (!reason || reason.length < 10) return;
+    try {
+      await apiPost(`/moderation/report/${sessionId}`, { reason });
+      setReportSent(true);
+    } catch {
+      setError("Failed to submit report");
+    }
+  }
 
   return (
     <section className="grid">
       <article className="card">
         <h1>{session?.topic ?? "Session"}</h1>
-        <p>Status: <strong>{status}</strong></p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <p>Status: <strong>{status}</strong></p>
+            {session?.deadline && (
+              <p className={deadlinePassed ? "text-muted" : ""}>
+                Deadline: {new Date(session.deadline).toLocaleString()}
+                {deadlinePassed && " (passed)"}
+              </p>
+            )}
+            {session?.anonymousMode && <p><em>Anonymous mode enabled</em></p>}
+          </div>
+          <button
+            className="secondary"
+            onClick={handleReport}
+            disabled={reportSent}
+            style={{ alignSelf: "flex-start" }}
+          >
+            {reportSent ? "Reported" : "🚩 Report"}
+          </button>
+        </div>
       </article>
 
       <article className="card grid">

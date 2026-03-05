@@ -125,6 +125,27 @@ authRouter.post("/login", async (req, res) => {
     }
   });
 
+  // CG-FR06: If MFA is enabled, require second factor before issuing tokens
+  if (user.mfaEnabled) {
+    await prisma.auditLog.create({
+      data: {
+        eventType: "mfa_challenge_issued",
+        actorId: user.id,
+        actorEmail: user.email,
+        ip: req.ip,
+      },
+    });
+
+    res.json(
+      createSuccessResponse({
+        mfaRequired: true,
+        tempTicket: user.id,
+        email: user.email,
+      })
+    );
+    return;
+  }
+
   const accessToken = signAccessToken({ sub: user.id, email: user.email, role: user.role });
   const refresh = generateRefreshToken();
 

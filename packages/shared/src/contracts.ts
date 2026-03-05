@@ -101,6 +101,27 @@ export const oauthExchangeSchema = z.object({
   provider: z.enum(["google", "microsoft"])
 });
 
+export const mfaSetupVerifySchema = z.object({
+  token: z.string().length(6)
+});
+
+export const mfaLoginVerifySchema = z.object({
+  email: z.string().email(),
+  token: z.string().length(6),
+  tempTicket: z.string().min(1)
+});
+
+export const reportContentSchema = z.object({
+  reason: z.string().min(10).max(1000),
+  section: z.string().max(200).optional(),
+});
+
+export const moderationActionSchema = z.object({
+  action: z.enum(["approve", "edit", "delete"]),
+  notes: z.string().max(2000).optional(),
+  editedContent: z.string().max(5000).optional(),
+});
+
 export const apiErrorCodeSchema = z.enum([
   "validation_error",
   "auth_error",
@@ -110,6 +131,7 @@ export const apiErrorCodeSchema = z.enum([
   "not_found",
   "rate_limited",
   "limit_reached",
+  "mfa_required",
   "internal_error"
 ]);
 
@@ -139,6 +161,9 @@ export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type ApiErrorCode = z.infer<typeof apiErrorCodeSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type MfaLoginVerifyInput = z.infer<typeof mfaLoginVerifySchema>;
+export type ReportContentInput = z.infer<typeof reportContentSchema>;
+export type ModerationActionInput = z.infer<typeof moderationActionSchema>;
 
 export interface AnalysisResultDto {
   sessionId: string;

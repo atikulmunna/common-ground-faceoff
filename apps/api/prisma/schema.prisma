@@ -197,3 +197,24 @@ model SectionComment {
 
   @@index([sessionId])
 }
+
+model ModerationFlag {
+  id            String             @id @default(cuid())
+  sessionId     String
+  reportedBy    String
+  reason        String
+  section       String?
+  severity      ModerationSeverity @default(medium)
+  autoDetected  Boolean            @default(false)
+  status        String             @default("pending")  // pending, approved, edited, deleted, appealed
+  reviewedBy    String?
+  reviewNotes   String?
+  editedContent String?
+  appealText    String?
+  appealStatus  String?            // pending_appeal, upheld, overturned
+  createdAt     DateTime           @default(now())
+  reviewedAt    DateTime?
+
+  @@index([sessionId])
+  @@index([status])
+}

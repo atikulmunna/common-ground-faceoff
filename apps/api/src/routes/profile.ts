@@ -18,6 +18,7 @@ profileRouter.get("/", async (req, res) => {
       notificationPrefs: true,
       tier: true,
       role: true,
+      mfaEnabled: true,
       createdAt: true,
     },
   });

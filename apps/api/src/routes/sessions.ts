@@ -17,6 +17,7 @@ import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { requireSessionAccess } from "../middleware/rbac.js";
 import { enqueueAnalysis } from "../services/queueService.js";
 import { runAnalysis } from "../services/analysisService.js";
+import { detectSeverity } from "./moderation.js";
 
 export const sessionsRouter = Router();
 
@@ -204,6 +205,12 @@ sessionsRouter.post("/:id/positions", requireSessionAccess, async (req, res) => 
     return;
   }
 
+  // CG-FR12: Enforce submission deadline
+  if (session.deadline && new Date(session.deadline) < new Date()) {
+    res.status(409).json(createErrorResponse("async_state_error", "The position submission deadline has passed"));
+    return;
+  }
+
   const participant = await prisma.sessionParticipant.findUnique({
     where: {
       sessionId_userId: {
@@ -225,6 +232,29 @@ sessionsRouter.post("/:id/positions", requireSessionAccess, async (req, res) => 
       positionSubmittedAt: new Date()
     }
   });
+
+  // CG-FR50, CG-FR64: Auto-flag for High/Critical severity content
+  const check = detectSeverity(parse.data.positionText);
+  if (check.flagged && (check.severity === "high" || check.severity === "critical")) {
+    await prisma.moderationFlag.create({
+      data: {
+        sessionId: req.params.id,
+        reportedBy: "system",
+        reason: `Auto-detected ${check.severity} content`,
+        severity: check.severity,
+        autoDetected: true,
+        status: "pending",
+      },
+    });
+
+    // CG-FR51: Suspend session for critical content
+    if (check.severity === "critical") {
+      await prisma.session.update({
+        where: { id: req.params.id },
+        data: { status: "needs_input" },
+      });
+    }
+  }
 
   res.json(createSuccessResponse({ participant: updated }));
 });
@@ -296,11 +326,16 @@ sessionsRouter.get("/:id", requireSessionAccess, async (req, res) => {
 
   const sessionWithPrivacy = {
     ...session,
-    participants: session.participants.map((participant: { userId: string; positionText: string | null }) => {
+    participants: session.participants.map((participant: { userId: string; positionText: string | null; user: { id: string; email: string; displayName: string } }) => {
       const canSeeRaw = participant.userId === req.user.id || session.status === "completed";
+      // CG-FR14: In anonymous mode, hide other participant identities until analysis is complete
+      const hideIdentity = session.anonymousMode && session.status !== "completed" && participant.userId !== req.user.id;
       return {
         ...participant,
-        positionText: canSeeRaw ? participant.positionText : null
+        positionText: canSeeRaw ? participant.positionText : null,
+        user: hideIdentity
+          ? { id: participant.user.id, email: "anonymous", displayName: "Anonymous Participant" }
+          : participant.user,
       };
     })
   };
@@ -363,6 +398,27 @@ sessionsRouter.post("/:id/feedback", requireSessionAccess, async (req, res) => {
   });
 
   res.status(201).json(createSuccessResponse({ feedback }));
+});
+
+/* ------------------------------------------------------------------ */
+/*  CG-FR58: Post-analysis ratings summary                             */
+/* ------------------------------------------------------------------ */
+
+sessionsRouter.get("/:id/feedback", requireSessionAccess, async (req, res) => {
+  const ratings = await prisma.feedbackRating.findMany({
+    where: { sessionId: req.params.id },
+    select: { faithfulness: true, neutrality: true, userId: true, comment: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const count = ratings.length;
+  const avgFaithfulness = count > 0 ? ratings.reduce((s, r) => s + r.faithfulness, 0) / count : null;
+  const avgNeutrality = count > 0 ? ratings.reduce((s, r) => s + r.neutrality, 0) / count : null;
+
+  res.json(createSuccessResponse({
+    ratings,
+    summary: { count, avgFaithfulness, avgNeutrality },
+  }));
 });
 
 sessionsRouter.post("/:id/share-links", requireSessionAccess, async (req, res) => {
