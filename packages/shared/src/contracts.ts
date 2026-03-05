@@ -74,6 +74,11 @@ export const createShareLinkSchema = z.object({
   scope: z.enum(["read_only"]).default("read_only")
 });
 
+export const sectionReactionSchema = z.object({
+  section: z.string().min(1).max(200),
+  reaction: z.enum(["represents", "misrepresents", "neutral"])
+});
+
 export const apiErrorCodeSchema = z.enum([
   "validation_error",
   "auth_error",

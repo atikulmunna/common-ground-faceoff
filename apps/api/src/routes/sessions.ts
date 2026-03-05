@@ -6,6 +6,7 @@ import {
   createShareLinkSchema,
   feedbackRatingSchema,
   inviteParticipantSchema,
+  sectionReactionSchema,
   submitPositionSchema
 } from "@common-ground/shared";
 
@@ -319,6 +320,58 @@ sessionsRouter.post("/:id/share-links", requireSessionAccess, async (req, res) =
   });
 
   res.status(201).json(createSuccessResponse({ shareLink }));
+});
+
+/* ------------------------------------------------------------------ */
+/*  Reactions (CG-FR33, CG-FR34)                                       */
+/* ------------------------------------------------------------------ */
+
+sessionsRouter.post("/:id/reactions", requireSessionAccess, async (req, res) => {
+  const parse = sectionReactionSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json(createErrorResponse("validation_error", "Invalid reaction payload", parse.error.flatten()));
+    return;
+  }
+
+  const reaction = await prisma.sectionReaction.upsert({
+    where: {
+      sessionId_userId_section: {
+        sessionId: req.params.id,
+        userId: req.user.id,
+        section: parse.data.section,
+      },
+    },
+    update: { reaction: parse.data.reaction },
+    create: {
+      sessionId: req.params.id,
+      userId: req.user.id,
+      section: parse.data.section,
+      reaction: parse.data.reaction,
+    },
+  });
+
+  res.json(createSuccessResponse({ reaction }));
+});
+
+sessionsRouter.get("/:id/reactions", requireSessionAccess, async (req, res) => {
+  const reactions = await prisma.sectionReaction.findMany({
+    where: { sessionId: req.params.id },
+    orderBy: { createdAt: "asc" },
+  });
+
+  // Group by section and compute mutual acknowledgment
+  const bySection: Record<string, { userId: string; reaction: string }[]> = {};
+  for (const r of reactions) {
+    if (!bySection[r.section]) bySection[r.section] = [];
+    bySection[r.section].push({ userId: r.userId, reaction: r.reaction });
+  }
+
+  const mutualAcknowledgments: Record<string, boolean> = {};
+  for (const [section, entries] of Object.entries(bySection)) {
+    mutualAcknowledgments[section] = entries.length >= 2 && entries.every((e) => e.reaction === "represents");
+  }
+
+  res.json(createSuccessResponse({ reactions, mutualAcknowledgments }));
 });
 
 /* ------------------------------------------------------------------ */

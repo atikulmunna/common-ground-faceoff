@@ -17,8 +17,19 @@ interface AnalysisResult {
   };
 }
 
+type ReactionValue = "represents" | "misrepresents" | "neutral";
+
+interface ReactionData {
+  /** Map of section key → current user's reaction */
+  mine: Record<string, ReactionValue>;
+  /** Map of section key → true when all participants agree "represents" */
+  mutual: Record<string, boolean>;
+}
+
 interface CommonGroundMapProps {
   result: AnalysisResult;
+  reactions?: ReactionData;
+  onReact?: (section: string, reaction: ReactionValue) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -85,7 +96,7 @@ function ExpandableSection({
 /*  Common Ground Map                                                  */
 /* ------------------------------------------------------------------ */
 
-export function CommonGroundMap({ result }: CommonGroundMapProps) {
+export function CommonGroundMap({ result, reactions, onReact }: CommonGroundMapProps) {
   const participants = Object.keys(result.steelmans);
   const conflicts = Object.entries(result.conflictMap);
   const confidence = result.confidenceScores;
@@ -106,12 +117,25 @@ export function CommonGroundMap({ result }: CommonGroundMapProps) {
       {/* ---- Two-column Steelmans ---- */}
       <ExpandableSection title="Steelmanned Positions" defaultOpen={true}>
         <div className="cgm-columns">
-          {participants.map((label) => (
-            <div key={label} className="cgm-columns__panel">
-              <div className="cgm-columns__label">{label}</div>
-              <p className="cgm-columns__text">{result.steelmans[label]}</p>
-            </div>
-          ))}
+          {participants.map((label) => {
+            const sectionKey = `steelman:${label}`;
+            return (
+              <div key={label} className="cgm-columns__panel">
+                <div className="cgm-columns__label">{label}</div>
+                <p className="cgm-columns__text">{result.steelmans[label]}</p>
+                {reactions?.mutual[sectionKey] && (
+                  <MutualBadge />
+                )}
+                {onReact && (
+                  <ReactionButtons
+                    section={sectionKey}
+                    current={reactions?.mine[sectionKey]}
+                    onReact={onReact}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       </ExpandableSection>
 
@@ -127,6 +151,14 @@ export function CommonGroundMap({ result }: CommonGroundMapProps) {
       >
         <div className="cgm-overlap">
           <p>{result.sharedFoundations}</p>
+          {reactions?.mutual["sharedFoundations"] && <MutualBadge />}
+          {onReact && (
+            <ReactionButtons
+              section="sharedFoundations"
+              current={reactions?.mine["sharedFoundations"]}
+              onReact={onReact}
+            />
+          )}
         </div>
       </ExpandableSection>
 
@@ -142,6 +174,14 @@ export function CommonGroundMap({ result }: CommonGroundMapProps) {
       >
         <div className="cgm-disagreements">
           <p>{result.trueDisagreements}</p>
+          {reactions?.mutual["trueDisagreements"] && <MutualBadge />}
+          {onReact && (
+            <ReactionButtons
+              section="trueDisagreements"
+              current={reactions?.mine["trueDisagreements"]}
+              onReact={onReact}
+            />
+          )}
         </div>
       </ExpandableSection>
 
@@ -188,5 +228,55 @@ function ConfidenceTag({ score }: { score: number }) {
     <span className={`cgm-confidence-tag ${cls}`}>
       {text}
     </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Reaction buttons (CG-FR33)                                         */
+/* ------------------------------------------------------------------ */
+
+const REACTION_OPTIONS: { value: ReactionValue; emoji: string; label: string }[] = [
+  { value: "represents", emoji: "👍", label: "Represents my view" },
+  { value: "neutral", emoji: "😐", label: "Neutral" },
+  { value: "misrepresents", emoji: "👎", label: "Misrepresents my view" },
+];
+
+function ReactionButtons({
+  section,
+  current,
+  onReact,
+}: {
+  section: string;
+  current?: ReactionValue;
+  onReact: (section: string, reaction: ReactionValue) => void;
+}) {
+  return (
+    <div className="cgm-reactions">
+      {REACTION_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          className={`cgm-reactions__btn ${current === opt.value ? "cgm-reactions__btn--active" : ""}`}
+          onClick={() => onReact(section, opt.value)}
+          title={opt.label}
+        >
+          <span>{opt.emoji}</span>
+          <span className="cgm-reactions__label">{opt.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Mutual acknowledgment badge (CG-FR34)                              */
+/* ------------------------------------------------------------------ */
+
+function MutualBadge() {
+  return (
+    <div className="cgm-mutual">
+      <span className="cgm-mutual__icon">🤝</span>
+      <span className="cgm-mutual__text">Mutually acknowledged</span>
+    </div>
   );
 }

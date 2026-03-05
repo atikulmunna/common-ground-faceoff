@@ -51,6 +51,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const [feedbackSaved, setFeedbackSaved] = useState(false);
   const [editing, setEditing] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [myReactions, setMyReactions] = useState<Record<string, "represents" | "misrepresents" | "neutral">>({});
+  const [mutualAcks, setMutualAcks] = useState<Record<string, boolean>>({});
 
   const refreshSession = useCallback(async () => {
     try {
@@ -75,13 +77,46 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     }
   }, [sessionId]);
 
+  const refreshReactions = useCallback(async () => {
+    try {
+      const res = await apiGet<{
+        success: boolean;
+        data: {
+          reactions: Array<{ userId: string; section: string; reaction: "represents" | "misrepresents" | "neutral" }>;
+          mutualAcknowledgments: Record<string, boolean>;
+        } | null;
+      }>(`/sessions/${sessionId}/reactions`);
+      if (res.data) {
+        const mine: Record<string, "represents" | "misrepresents" | "neutral"> = {};
+        const selfId = session?.participants.find((p) => p.positionText !== null)?.userId;
+        for (const r of res.data.reactions) {
+          if (r.userId === selfId) mine[r.section] = r.reaction;
+        }
+        setMyReactions(mine);
+        setMutualAcks(res.data.mutualAcknowledgments);
+      }
+    } catch {
+      // silent
+    }
+  }, [sessionId, session]);
+
+  async function handleReact(section: string, reaction: "represents" | "misrepresents" | "neutral") {
+    try {
+      await apiPost(`/sessions/${sessionId}/reactions`, { section, reaction });
+      await refreshReactions();
+    } catch {
+      // silent
+    }
+  }
+
   useEffect(() => {
     void refreshSession();
     const timer = setInterval(() => {
       void refreshAnalysis();
+      void refreshReactions();
     }, 3000);
     return () => clearInterval(timer);
-  }, [refreshAnalysis, refreshSession]);
+  }, [refreshAnalysis, refreshSession, refreshReactions]);
 
   async function submitPosition() {
     setBusy(true);
@@ -191,7 +226,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       <article className="card grid">
         {analysis?.result ? (
           <>
-            <CommonGroundMap result={analysis.result} />
+            <CommonGroundMap
+              result={analysis.result}
+              reactions={{ mine: myReactions, mutual: mutualAcks }}
+              onReact={handleReact}
+            />
             <ExportPanel sessionId={sessionId} />
             <FeedbackPanel
               onSubmit={submitFeedback}

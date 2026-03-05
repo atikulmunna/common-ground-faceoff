@@ -412,3 +412,58 @@ button.secondary {
   padding: 0.5rem 1rem;
   font-size: 0.85rem;
 }
+
+/* ---- Reactions (CG-FR33) ---- */
+.cgm-reactions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cgm-reactions__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.cgm-reactions__btn:hover {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: #6366f1;
+}
+
+.cgm-reactions__btn--active {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: #6366f1;
+  font-weight: 600;
+}
+
+.cgm-reactions__label {
+  white-space: nowrap;
+}
+
+/* ---- Mutual acknowledgment (CG-FR34) ---- */
+.cgm-mutual {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  font-size: 0.8rem;
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.cgm-mutual__icon {
+  font-size: 1rem;
+}

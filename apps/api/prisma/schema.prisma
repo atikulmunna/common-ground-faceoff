@@ -159,6 +159,19 @@ model FeedbackRating {
   @@index([sessionId])
 }
 
+model SectionReaction {
+  id            String   @id @default(cuid())
+  sessionId      String
+  userId         String
+  section        String   // e.g. "steelman:ParticipantA", "sharedFoundations", "trueDisagreements"
+  reaction       String   // "represents", "misrepresents", "neutral"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([sessionId, userId, section])
+  @@index([sessionId])
+}
+
 model AuditLog {
   id         String   @id @default(cuid())
   eventType  String
