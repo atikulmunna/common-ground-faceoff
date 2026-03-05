@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ReadabilityMeter } from "./readability-meter";
+import { CommonGroundMap } from "./common-ground-map";
 import { apiGet, apiPost } from "../lib-api";
 
 type SessionResponse = {
@@ -31,7 +32,11 @@ type AnalysisResponse = {
       sharedFoundations: string;
       trueDisagreements: string;
       steelmans: Record<string, string>;
-      conflictMap: Record<string, unknown>;
+      conflictMap: Record<string, string[]>;
+      confidenceScores?: {
+        sharedFoundations: number;
+        disagreements: number;
+      };
     } | null;
   } | null;
 };
@@ -106,11 +111,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     }
   }
 
-  async function submitFeedback() {
+  async function submitFeedback(faithfulness: number, neutrality: number, comment: string) {
     await apiPost(`/sessions/${sessionId}/feedback`, {
-      faithfulness: 4,
-      neutrality: 4,
-      comment: "MVP feedback placeholder"
+      faithfulness,
+      neutrality,
+      comment: comment || undefined,
     });
     setFeedbackSaved(true);
   }
@@ -146,28 +151,119 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       </article>
 
       <article className="card grid">
-        <h2>Common Ground Map</h2>
         {analysis?.result ? (
           <>
-            <div className="grid two">
-              <div className="card">
-                <h3>Shared Foundations</h3>
-                <p>{analysis.result.sharedFoundations}</p>
-              </div>
-              <div className="card">
-                <h3>True Disagreements</h3>
-                <p>{analysis.result.trueDisagreements}</p>
-              </div>
-            </div>
-            <pre className="card" style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(analysis.result.conflictMap, null, 2)}</pre>
-            <button onClick={submitFeedback} disabled={feedbackSaved}>{feedbackSaved ? "Feedback saved" : "Submit 4/5 MVP feedback"}</button>
+            <CommonGroundMap result={analysis.result} />
+            <FeedbackPanel
+              onSubmit={submitFeedback}
+              saved={feedbackSaved}
+            />
           </>
         ) : (
-          <p>Analysis not ready yet. Current state: {status}</p>
+          <AnalysisStatus status={status} />
         )}
       </article>
 
       {error ? <p style={{ color: "#b91c1c" }}>{error}</p> : null}
     </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sub-components                                                     */
+/* ------------------------------------------------------------------ */
+
+const STATUS_MESSAGES: Record<string, { label: string; description: string }> = {
+  draft: { label: "Draft", description: "Waiting for participants to submit positions." },
+  collecting_positions: { label: "Collecting", description: "Participants are submitting their positions." },
+  queued: { label: "Queued", description: "Analysis is queued and will begin shortly." },
+  running: { label: "Analyzing", description: "AI analysis is in progress\u2026" },
+  failed: { label: "Failed", description: "Analysis encountered an error. Please try again." },
+  needs_input: { label: "Needs Input", description: "Additional input is required before analysis can complete." },
+};
+
+function AnalysisStatus({ status }: { status: string }) {
+  const info = STATUS_MESSAGES[status] ?? { label: status, description: "" };
+  const isActive = status === "queued" || status === "running";
+
+  return (
+    <div className="cgm-status">
+      <div className="cgm-status__icon">{isActive ? "⏳" : "📋"}</div>
+      <h2 className="cgm-status__label">{info.label}</h2>
+      <p className="cgm-status__desc">{info.description}</p>
+      {isActive && <div className="cgm-status__pulse" />}
+    </div>
+  );
+}
+
+function FeedbackPanel({
+  onSubmit,
+  saved,
+}: {
+  onSubmit: (faithfulness: number, neutrality: number, comment: string) => void;
+  saved: boolean;
+}) {
+  const [faithfulness, setFaithfulness] = useState(0);
+  const [neutrality, setNeutrality] = useState(0);
+  const [comment, setComment] = useState("");
+
+  if (saved) {
+    return (
+      <div className="cgm-feedback cgm-feedback--saved">
+        <span>✓ Feedback submitted. Thank you!</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="cgm-feedback">
+      <h3>Rate this analysis</h3>
+      <div className="cgm-feedback__row">
+        <RatingRow label="Steelman Faithfulness" value={faithfulness} onChange={setFaithfulness} />
+        <RatingRow label="Neutrality" value={neutrality} onChange={setNeutrality} />
+      </div>
+      <textarea
+        className="cgm-feedback__comment"
+        placeholder="Optional comment…"
+        rows={2}
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+      />
+      <button
+        onClick={() => onSubmit(faithfulness, neutrality, comment)}
+        disabled={faithfulness === 0 || neutrality === 0}
+      >
+        Submit Feedback
+      </button>
+    </div>
+  );
+}
+
+function RatingRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="cgm-rating">
+      <span className="cgm-rating__label">{label}</span>
+      <div className="cgm-rating__stars">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            className={`cgm-rating__star ${n <= value ? "cgm-rating__star--active" : ""}`}
+            onClick={() => onChange(n)}
+            aria-label={`${n} out of 5`}
+          >
+            ★
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
