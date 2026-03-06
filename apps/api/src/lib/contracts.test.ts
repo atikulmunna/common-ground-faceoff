@@ -7,6 +7,11 @@ import {
   feedbackRatingSchema,
   sectionReactionSchema,
   oauthExchangeSchema,
+  samlLoginSchema,
+  createOrganizationSchema,
+  createCohortSchema,
+  cohortMemberSchema,
+  adminCreateSessionSchema,
 } from "@common-ground/shared";
 
 describe("shared contracts", () => {
@@ -114,6 +119,94 @@ describe("shared contracts", () => {
         email: "user@example.com",
         displayName: "User",
         provider: "facebook",
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("samlLoginSchema", () => {
+    it("accepts valid org slug", () => {
+      const result = samlLoginSchema.safeParse({ orgSlug: "acme-corp" });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects empty org slug", () => {
+      const result = samlLoginSchema.safeParse({ orgSlug: "" });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("createOrganizationSchema", () => {
+    it("accepts valid organization", () => {
+      const result = createOrganizationSchema.safeParse({
+        name: "Acme Corp",
+        slug: "acme-corp",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects slug with uppercase", () => {
+      const result = createOrganizationSchema.safeParse({
+        name: "Acme",
+        slug: "Acme-Corp",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects slug with spaces", () => {
+      const result = createOrganizationSchema.safeParse({
+        name: "Test Org",
+        slug: "test org",
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("createCohortSchema", () => {
+    it("accepts valid cohort name", () => {
+      const result = createCohortSchema.safeParse({ name: "Fall 2026 Cohort" });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects empty name", () => {
+      const result = createCohortSchema.safeParse({ name: "" });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("cohortMemberSchema", () => {
+    it("accepts valid email", () => {
+      const result = cohortMemberSchema.safeParse({ email: "student@uni.edu" });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects invalid email", () => {
+      const result = cohortMemberSchema.safeParse({ email: "not-an-email" });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("adminCreateSessionSchema", () => {
+    it("accepts valid admin session", () => {
+      const result = adminCreateSessionSchema.safeParse({
+        topic: "A topic that is at least ten chars",
+        participantEmails: ["a@b.com", "c@d.com"],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects fewer than 2 participant emails", () => {
+      const result = adminCreateSessionSchema.safeParse({
+        topic: "A topic that is at least ten chars",
+        participantEmails: ["a@b.com"],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects more than 6 participant emails", () => {
+      const result = adminCreateSessionSchema.safeParse({
+        topic: "A topic that is at least ten chars",
+        participantEmails: Array.from({ length: 7 }, (_, i) => `u${i}@b.com`),
       });
       expect(result.success).toBe(false);
     });

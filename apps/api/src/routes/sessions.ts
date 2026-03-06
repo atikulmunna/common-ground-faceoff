@@ -803,3 +803,37 @@ sessionsRouter.get("/:id/export/:format", requireSessionAccess, async (req, res)
   res.setHeader("Content-Disposition", `attachment; filename="common-ground-${session.id}.md"`);
   res.send(md);
 });
+
+/* ------------------------------------------------------------------ */
+/*  CG-FR07: Session heartbeat — touch lastActivityAt                  */
+/* ------------------------------------------------------------------ */
+
+sessionsRouter.post("/:id/heartbeat", requireSessionAccess, async (req, res) => {
+  const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+  const session = await prisma.session.findUnique({ where: { id: req.params.id } });
+  if (!session) {
+    res.status(404).json(createErrorResponse("not_found", "Session not found"));
+    return;
+  }
+
+  // Check if the session has timed out based on lastActivityAt
+  if (session.lastActivityAt) {
+    const elapsed = Date.now() - new Date(session.lastActivityAt).getTime();
+    if (elapsed >= TIMEOUT_MS && session.status === "collecting_positions") {
+      await prisma.session.update({
+        where: { id: req.params.id },
+        data: { status: "needs_input" },
+      });
+      res.json(createSuccessResponse({ status: "expired", message: "Session expired due to inactivity" }));
+      return;
+    }
+  }
+
+  await prisma.session.update({
+    where: { id: req.params.id },
+    data: { lastActivityAt: new Date() },
+  });
+
+  res.json(createSuccessResponse({ status: "active", lastActivityAt: new Date().toISOString() }));
+});

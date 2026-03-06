@@ -165,6 +165,54 @@ export type MfaLoginVerifyInput = z.infer<typeof mfaLoginVerifySchema>;
 export type ReportContentInput = z.infer<typeof reportContentSchema>;
 export type ModerationActionInput = z.infer<typeof moderationActionSchema>;
 
+/* ------------------------------------------------------------------ */
+/*  Batch 4: SAML, Institutional Admin, PII pipeline                   */
+/* ------------------------------------------------------------------ */
+
+export const samlLoginSchema = z.object({
+  orgSlug: z.string().min(1).max(100),
+});
+
+export const createOrganizationSchema = z.object({
+  name: z.string().min(1).max(200),
+  slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
+  samlEntryPoint: z.string().url().optional(),
+  samlCert: z.string().optional(),
+  samlIssuer: z.string().optional(),
+  forceAnonymous: z.boolean().default(false),
+});
+
+export const createCohortSchema = z.object({
+  name: z.string().min(1).max(200),
+});
+
+export const cohortMemberSchema = z.object({
+  email: z.string().email(),
+});
+
+export const adminCreateSessionSchema = z.object({
+  topic: z.string().min(10).max(500),
+  participantEmails: z.array(z.string().email()).min(2).max(6),
+  anonymousMode: z.boolean().default(false),
+  deadline: z.string().datetime().optional(),
+});
+
+export const analyticsExportSchema = z.object({
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+});
+
+export const sessionHeartbeatSchema = z.object({
+  sessionId: z.string().min(1),
+});
+
+export type SamlLoginInput = z.infer<typeof samlLoginSchema>;
+export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
+export type CreateCohortInput = z.infer<typeof createCohortSchema>;
+export type CohortMemberInput = z.infer<typeof cohortMemberSchema>;
+export type AdminCreateSessionInput = z.infer<typeof adminCreateSessionSchema>;
+export type AnalyticsExportInput = z.infer<typeof analyticsExportSchema>;
+
 export interface AnalysisResultDto {
   sessionId: string;
   pipelineRunId: string;

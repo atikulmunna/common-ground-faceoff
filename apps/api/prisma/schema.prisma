@@ -36,6 +36,13 @@ enum ModerationSeverity {
   critical
 }
 
+enum RedactionStage {
+  detect
+  mask
+  validate
+  uncertainty_check
+}
+
 model User {
   id               String               @id @default(cuid())
   email            String               @unique
@@ -48,6 +55,8 @@ model User {
   role             String               @default("individual_user")
   mfaEnabled       Boolean              @default(false)
   mfaSecret        String?
+  organizationId   String?
+  samlNameId       String?
   failedLoginCount Int                  @default(0)
   lockedUntil      DateTime?
   createdAt        DateTime             @default(now())
@@ -56,6 +65,8 @@ model User {
   participants     SessionParticipant[]
   feedback         FeedbackRating[]
   refreshTokens    RefreshToken[]
+  organization     Organization?        @relation(fields: [organizationId], references: [id])
+  cohortMemberships CohortMembership[]
 }
 
 model RefreshToken {
@@ -77,6 +88,8 @@ model Session {
   creator           User                 @relation("SessionCreator", fields: [creatorUserId], references: [id])
   anonymousMode     Boolean              @default(false)
   deadline          DateTime?
+  lastActivityAt    DateTime?
+  maxParticipants   Int                  @default(6)
   createdAt         DateTime             @default(now())
   analyzedAt        DateTime?
   participants      SessionParticipant[]
@@ -194,6 +207,56 @@ model SectionComment {
   section   String
   text      String
   createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+model Organization {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  samlEntryPoint  String?
+  samlCert        String?
+  samlIssuer      String?
+  forceAnonymous  Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  users           User[]
+  cohorts         Cohort[]
+}
+
+model Cohort {
+  id        String   @id @default(cuid())
+  orgId     String
+  name      String
+  createdAt DateTime @default(now())
+  org       Organization @relation(fields: [orgId], references: [id])
+  members   CohortMembership[]
+
+  @@index([orgId])
+}
+
+model CohortMembership {
+  id        String   @id @default(cuid())
+  cohortId  String
+  userId    String
+  addedAt   DateTime @default(now())
+  cohort    Cohort   @relation(fields: [cohortId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([cohortId, userId])
+}
+
+model RedactionLog {
+  id             String          @id @default(cuid())
+  sessionId      String
+  participantId  String
+  stage          RedactionStage
+  findingsCount  Int             @default(0)
+  confidence     Float
+  blocked        Boolean         @default(false)
+  metadata       Json?
+  createdAt      DateTime        @default(now())
 
   @@index([sessionId])
 }

@@ -173,7 +173,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       void refreshAnalysis();
       void refreshReactions();
     }, 3000);
-    return () => clearInterval(timer);
+    // CG-FR07: Heartbeat to keep session alive server-side
+    const heartbeat = setInterval(() => {
+      void apiPost(`/sessions/${sessionId}/heartbeat`, {}).catch(() => {});
+    }, 60_000);
+    return () => { clearInterval(timer); clearInterval(heartbeat); };
   }, [refreshAnalysis, refreshSession, refreshReactions, fetchRounds, fetchComments]);
 
   async function submitPosition() {

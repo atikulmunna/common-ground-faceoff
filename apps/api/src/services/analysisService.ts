@@ -325,8 +325,24 @@ export async function runAnalysis(input: BuildAnalysisInput) {
     throw new Error("Combined payload exceeds asynchronous max threshold");
   }
 
-  // PII redaction
+  // PII redaction (CG-FR59: 4-stage pipeline with audit logging)
   const redaction = redactPII(combined);
+
+  // Log each redaction stage to RedactionLog
+  for (const stage of redaction.stages) {
+    await prisma.redactionLog.create({
+      data: {
+        sessionId: input.sessionId,
+        participantId: "combined",
+        stage: stage.stage,
+        findingsCount: stage.findingsCount,
+        confidence: stage.confidence,
+        blocked: stage.blocked,
+        metadata: stage.findings ? { findings: stage.findings.map(f => ({ type: f.type, position: f.position })) } : undefined,
+      },
+    });
+  }
+
   if (redaction.blocked) {
     await prisma.session.update({
       where: { id: input.sessionId },

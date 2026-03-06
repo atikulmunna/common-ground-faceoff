@@ -11,6 +11,8 @@ import { shareLinksRouter } from "./routes/shareLinks.js";
 import { profileRouter } from "./routes/profile.js";
 import { mfaRouter } from "./routes/mfa.js";
 import { moderationRouter } from "./routes/moderation.js";
+import { samlRouter } from "./routes/saml.js";
+import { adminRouter } from "./routes/admin.js";
 import { createErrorResponse } from "./lib/response.js";
 
 const app = express();
@@ -38,6 +40,10 @@ app.get("/health", (_req, res) => {
 app.use("/auth", authRouter);
 // MFA verify-login is public; setup/disable need auth (handled below)
 app.post("/mfa/verify-login", mfaRouter);
+// SAML SSO routes are public (CG-FR03)
+app.use("/saml", samlRouter);
+// Shared link public read-only view (CG-FR38)
+app.get("/share-links/view/:token", shareLinksRouter);
 
 // All routes below require a valid JWT
 app.use(requireAuth);
@@ -46,6 +52,7 @@ app.use("/share-links", shareLinksRouter);
 app.use("/profile", profileRouter);
 app.use("/mfa", mfaRouter);
 app.use("/moderation", moderationRouter);
+app.use("/admin", adminRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

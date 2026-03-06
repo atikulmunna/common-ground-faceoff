@@ -47,6 +47,7 @@ export async function runRetentionCleanup() {
   await prisma.analysisResult.deleteMany({ where: { sessionId: { in: sessionIds } } });
   await prisma.shareLink.deleteMany({ where: { sessionId: { in: sessionIds } } });
   await prisma.moderationFlag.deleteMany({ where: { sessionId: { in: sessionIds } } });
+  await prisma.redactionLog.deleteMany({ where: { sessionId: { in: sessionIds } } });
   await prisma.sessionParticipant.deleteMany({ where: { sessionId: { in: sessionIds } } });
   await prisma.session.deleteMany({ where: { id: { in: sessionIds } } });
 

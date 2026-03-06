@@ -15,6 +15,7 @@ export function AuthNav() {
       <nav style={{ display: "flex", gap: "0.8rem", alignItems: "center" }}>
         <Link href="/">Dashboard</Link>
         <Link href="/create">Create Session</Link>
+        {session.user.role === "institutional_admin" && <Link href={"/admin" as never}>Admin</Link>}
         <Link href="/profile">Profile</Link>
         <span style={{ color: "#475569" }}>{session.user.email}</span>
         <button
