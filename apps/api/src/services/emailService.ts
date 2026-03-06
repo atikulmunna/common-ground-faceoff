@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------ */
-/*  Email service — SendGrid integration (CG-FR10, CG-FR13)            */
+/*  Email service — Resend integration (CG-FR10, CG-FR13)              */
 /*  Sends session invitations and notification emails.                 */
 /* ------------------------------------------------------------------ */
 
@@ -10,28 +10,25 @@ interface EmailPayload {
   html: string;
 }
 
-const SENDGRID_API_URL = "https://api.sendgrid.com/v3/mail/send";
-const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL ?? "noreply@commonground.app";
-const FROM_NAME = "Common Ground";
+const RESEND_API_URL = "https://api.resend.com/emails";
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "Common Ground <onboarding@resend.dev>";
 
 async function sendEmail(payload: EmailPayload): Promise<boolean> {
-  const apiKey = process.env.SENDGRID_API_KEY;
+  const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    console.warn("[Email] SENDGRID_API_KEY not set — email not sent to", payload.to);
+    console.warn("[Email] RESEND_API_KEY not set — email not sent to", payload.to);
     return false;
   }
 
   const body = {
-    personalizations: [{ to: [{ email: payload.to }] }],
-    from: { email: FROM_EMAIL, name: FROM_NAME },
+    from: FROM_EMAIL,
+    to: [payload.to],
     subject: payload.subject,
-    content: [
-      { type: "text/plain", value: payload.text },
-      { type: "text/html", value: payload.html },
-    ],
+    text: payload.text,
+    html: payload.html,
   };
 
-  const response = await fetch(SENDGRID_API_URL, {
+  const response = await fetch(RESEND_API_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -41,7 +38,7 @@ async function sendEmail(payload: EmailPayload): Promise<boolean> {
   });
 
   if (!response.ok) {
-    console.error("[Email] SendGrid error:", response.status, await response.text());
+    console.error("[Email] Resend error:", response.status, await response.text());
     return false;
   }
 
