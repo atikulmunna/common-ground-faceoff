@@ -887,6 +887,70 @@ button, .dash-pagination button, .cgm-reactions button {
   }
 }
 
+/* ---- Visible focus ring for all interactive elements (NFR42) ---- */
+[tabindex]:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Screen reader-only utility (NFR43) ---- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Ensure minimum contrast ratios (WCAG 1.4.3 — 4.5:1) ---- */
+.badge--warn { color: #713f12; } /* Darken for 4.5:1 on yellow bg */
+.badge--muted { color: #334155; } /* Darken for 4.5:1 on gray bg */
+
+/* ---- Error/success messages visible to all (NFR41) ---- */
+[role="alert"] {
+  border-left: 4px solid #dc2626;
+  padding-left: 0.75rem;
+}
+[role="status"] {
+  border-left: 4px solid var(--accent);
+  padding-left: 0.75rem;
+}
+
+/* ---- Ensure links are distinguishable (WCAG 1.4.1) ---- */
+a:not([class]) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* ---- Keyboard navigation visible indicator for table rows ---- */
+.dash-table tr:focus-within {
+  background: rgba(15, 118, 110, 0.06);
+}
+
+/* ---- Form validation states accessible (WCAG 1.3.1, 3.3.1) ---- */
+input[aria-invalid="true"],
+textarea[aria-invalid="true"],
+select[aria-invalid="true"] {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 1px #dc2626;
+}
+
+/* ---- Disabled buttons have sufficient contrast ---- */
+button:disabled,
+button[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #94a3b8;
+  color: #1e293b;
+}
+
 /* ---- High-contrast tweaks ---- */
 @media (prefers-contrast: more) {
   :root {
@@ -895,5 +959,28 @@ button, .dash-pagination button, .cgm-reactions button {
   }
   button {
     border: 2px solid var(--text);
+  }
+  a {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+  }
+  .badge {
+    border: 1px solid currentColor;
+  }
+  :focus-visible {
+    outline-width: 4px;
+  }
+}
+
+/* ---- Forced colors / Windows High Contrast Mode (NFR43) ---- */
+@media (forced-colors: active) {
+  button {
+    border: 1px solid ButtonText;
+  }
+  .badge {
+    border: 1px solid currentColor;
+  }
+  .skip-link {
+    border: 2px solid LinkText;
   }
 }

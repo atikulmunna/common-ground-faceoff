@@ -1,4 +1,17 @@
 import "dotenv/config";
+
+// --- Datadog APM (must init before other imports) ---
+if (process.env.DD_API_KEY) {
+  const { default: tracer } = await import("dd-trace");
+  tracer.init({
+    service: "common-ground-api",
+    env: process.env.NODE_ENV ?? "development",
+    logInjection: true,
+    runtimeMetrics: true,
+    profiling: process.env.NODE_ENV === "production",
+  });
+}
+
 import * as Sentry from "@sentry/node";
 import express from "express";
 import cors from "cors";
