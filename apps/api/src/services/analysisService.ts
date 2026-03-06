@@ -297,6 +297,13 @@ function estimateStatus(totalChars: number): "queued" | "running" {
   return totalChars > 4000 ? "queued" : "running";
 }
 
+/** CG-FR57: estimate completion time based on character count & mode */
+export function estimateCompletionSeconds(totalChars: number): number {
+  if (totalChars <= 4000) return 60; // sync: ≤60s per SRS
+  // Async: linear estimate ~1s per 100 chars with 30s base
+  return Math.min(600, 30 + Math.ceil(totalChars / 100));
+}
+
 export async function runAnalysis(input: BuildAnalysisInput) {
   const session = await prisma.session.findUniqueOrThrow({
     where: { id: input.sessionId },
@@ -372,10 +379,12 @@ export async function runAnalysis(input: BuildAnalysisInput) {
 
   const pipelineRunId = randomUUID();
   const targetStatus = estimateStatus(totalChars);
+  const etaSeconds = estimateCompletionSeconds(totalChars);
+  const estimatedCompletionAt = new Date(Date.now() + etaSeconds * 1000);
 
   await prisma.session.update({
     where: { id: input.sessionId },
-    data: { status: targetStatus },
+    data: { status: targetStatus, estimatedCompletionAt },
   });
 
   await prisma.analysisEvent.create({

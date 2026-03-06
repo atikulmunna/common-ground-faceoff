@@ -103,6 +103,12 @@ export function CommonGroundMap({ result, reactions, onReact, comments, onCommen
   const conflicts = Object.entries(result.conflictMap);
   const confidence = result.confidenceScores;
 
+  // CG-FR34: Count mutual acknowledgments
+  const mutualCount = reactions?.mutual
+    ? Object.values(reactions.mutual).filter(Boolean).length
+    : 0;
+  const totalSections = participants.length + 2; // steelmans + sharedFoundations + trueDisagreements
+
   return (
     <div className="cgm">
       {/* ---- Header ---- */}
@@ -115,6 +121,14 @@ export function CommonGroundMap({ result, reactions, onReact, comments, onCommen
           </div>
         )}
       </div>
+
+      {/* CG-FR34: Mutual acknowledgment summary */}
+      {mutualCount > 0 && (
+        <div className="cgm-mutual-summary" role="status" aria-label={`${mutualCount} of ${totalSections} sections mutually acknowledged`}>
+          <span aria-hidden="true">🤝</span>
+          <strong>{mutualCount}</strong> of {totalSections} sections mutually acknowledged by all participants
+        </div>
+      )}
 
       {/* ---- Two-column Steelmans ---- */}
       <ExpandableSection title="Steelmanned Positions" defaultOpen={true}>
@@ -291,9 +305,9 @@ function ReactionButtons({
 
 function MutualBadge() {
   return (
-    <div className="cgm-mutual">
-      <span className="cgm-mutual__icon">🤝</span>
-      <span className="cgm-mutual__text">Mutually acknowledged</span>
+    <div className="cgm-mutual" role="status" aria-label="Both parties accept this steelman">
+      <span className="cgm-mutual__icon" aria-hidden="true">🤝</span>
+      <span className="cgm-mutual__text">Mutually acknowledged — both parties accept this representation</span>
     </div>
   );
 }

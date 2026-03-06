@@ -14,13 +14,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body>
         <AuthProvider>
-          <main>
-            <header className="card" style={{ marginBottom: "1rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
-                <strong>Common Ground MVP</strong>
-                <AuthNav />
-              </div>
-            </header>
+          {/* CG-NFR20: Skip to main content for keyboard/screen reader users */}
+          <a href="#main-content" className="skip-link">
+            Skip to main content
+          </a>
+          <header className="card site-header" role="banner" style={{ marginBottom: "1rem" }}>
+            <nav aria-label="Main navigation" style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
+              <strong>Common Ground MVP</strong>
+              <AuthNav />
+            </nav>
+          </header>
+          <main id="main-content" role="main">
             {children}
           </main>
         </AuthProvider>

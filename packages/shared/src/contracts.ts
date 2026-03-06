@@ -231,3 +231,34 @@ export interface AnalysisResultDto {
   llmProvider: string;
   createdAt: string;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Batch 5: Stripe Billing, Email Invitations, Async ETA             */
+/* ------------------------------------------------------------------ */
+
+export const emailInvitationSchema = z.object({
+  email: z.string().email(),
+  message: z.string().max(500).optional(),
+});
+
+export const billingCheckoutSchema = z.object({
+  priceId: z.string().min(1),
+  successUrl: z.string().url(),
+  cancelUrl: z.string().url(),
+});
+
+export const billingPortalSchema = z.object({
+  returnUrl: z.string().url(),
+});
+
+export const stripeWebhookEventSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  data: z.object({
+    object: z.record(z.unknown()),
+  }),
+});
+
+export type EmailInvitationInput = z.infer<typeof emailInvitationSchema>;
+export type BillingCheckoutInput = z.infer<typeof billingCheckoutSchema>;
+export type BillingPortalInput = z.infer<typeof billingPortalSchema>;

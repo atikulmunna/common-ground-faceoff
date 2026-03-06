@@ -12,6 +12,10 @@ import {
   createCohortSchema,
   cohortMemberSchema,
   adminCreateSessionSchema,
+  emailInvitationSchema,
+  billingCheckoutSchema,
+  billingPortalSchema,
+  stripeWebhookEventSchema,
 } from "@common-ground/shared";
 
 describe("shared contracts", () => {
@@ -207,6 +211,98 @@ describe("shared contracts", () => {
       const result = adminCreateSessionSchema.safeParse({
         topic: "A topic that is at least ten chars",
         participantEmails: Array.from({ length: 7 }, (_, i) => `u${i}@b.com`),
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  /* ---- Batch 5 schemas ---- */
+
+  describe("emailInvitationSchema", () => {
+    it("accepts valid email with optional message", () => {
+      const result = emailInvitationSchema.safeParse({
+        email: "invite@example.com",
+        message: "Please join!",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts email without message", () => {
+      const result = emailInvitationSchema.safeParse({ email: "invite@example.com" });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects invalid email", () => {
+      const result = emailInvitationSchema.safeParse({ email: "not-email" });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects message exceeding 500 chars", () => {
+      const result = emailInvitationSchema.safeParse({
+        email: "a@b.com",
+        message: "x".repeat(501),
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("billingCheckoutSchema", () => {
+    it("accepts valid checkout payload", () => {
+      const result = billingCheckoutSchema.safeParse({
+        priceId: "price_abc123",
+        successUrl: "https://example.com/success",
+        cancelUrl: "https://example.com/cancel",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects missing priceId", () => {
+      const result = billingCheckoutSchema.safeParse({
+        priceId: "",
+        successUrl: "https://example.com/success",
+        cancelUrl: "https://example.com/cancel",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects non-URL successUrl", () => {
+      const result = billingCheckoutSchema.safeParse({
+        priceId: "price_abc123",
+        successUrl: "not-a-url",
+        cancelUrl: "https://example.com/cancel",
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("billingPortalSchema", () => {
+    it("accepts valid return URL", () => {
+      const result = billingPortalSchema.safeParse({
+        returnUrl: "https://example.com/billing",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects non-URL", () => {
+      const result = billingPortalSchema.safeParse({ returnUrl: "bad" });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("stripeWebhookEventSchema", () => {
+    it("accepts valid webhook event", () => {
+      const result = stripeWebhookEventSchema.safeParse({
+        id: "evt_abc123",
+        type: "checkout.session.completed",
+        data: { object: { id: "cs_test_123" } },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects missing data", () => {
+      const result = stripeWebhookEventSchema.safeParse({
+        id: "evt_abc123",
+        type: "checkout.session.completed",
       });
       expect(result.success).toBe(false);
     });

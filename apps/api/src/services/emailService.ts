@@ -1,0 +1,152 @@
+/* ------------------------------------------------------------------ */
+/*  Email service — SendGrid integration (CG-FR10, CG-FR13)            */
+/*  Sends session invitations and notification emails.                 */
+/* ------------------------------------------------------------------ */
+
+interface EmailPayload {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}
+
+const SENDGRID_API_URL = "https://api.sendgrid.com/v3/mail/send";
+const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL ?? "noreply@commonground.app";
+const FROM_NAME = "Common Ground";
+
+async function sendEmail(payload: EmailPayload): Promise<boolean> {
+  const apiKey = process.env.SENDGRID_API_KEY;
+  if (!apiKey) {
+    console.warn("[Email] SENDGRID_API_KEY not set — email not sent to", payload.to);
+    return false;
+  }
+
+  const body = {
+    personalizations: [{ to: [{ email: payload.to }] }],
+    from: { email: FROM_EMAIL, name: FROM_NAME },
+    subject: payload.subject,
+    content: [
+      { type: "text/plain", value: payload.text },
+      { type: "text/html", value: payload.html },
+    ],
+  };
+
+  const response = await fetch(SENDGRID_API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    console.error("[Email] SendGrid error:", response.status, await response.text());
+    return false;
+  }
+
+  return true;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Invitation email (CG-FR10, CG-FR13)                                */
+/* ------------------------------------------------------------------ */
+
+export async function sendSessionInvitation(options: {
+  recipientEmail: string;
+  inviterName: string;
+  sessionTopic: string;
+  sessionId: string;
+  message?: string;
+}): Promise<boolean> {
+  const appUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const joinLink = `${appUrl}/session/${encodeURIComponent(options.sessionId)}`;
+
+  const subject = `You're invited to a Common Ground session: ${options.sessionTopic}`;
+
+  const text = [
+    `Hi,`,
+    ``,
+    `${options.inviterName} has invited you to a Common Ground session.`,
+    ``,
+    `Topic: ${options.sessionTopic}`,
+    options.message ? `Message: ${options.message}` : "",
+    ``,
+    `Join the session: ${joinLink}`,
+    ``,
+    `Common Ground is an AI-mediated platform for productive discourse.`,
+    `If you don't have an account, you'll be prompted to create one.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a2e;">You're Invited to Common Ground</h2>
+      <p><strong>${escapeHtml(options.inviterName)}</strong> has invited you to share your perspective on:</p>
+      <blockquote style="border-left: 4px solid #6366f1; padding: 12px 16px; margin: 16px 0; background: #f8f9fa; border-radius: 4px;">
+        ${escapeHtml(options.sessionTopic)}
+      </blockquote>
+      ${options.message ? `<p style="color: #555;"><em>"${escapeHtml(options.message)}"</em></p>` : ""}
+      <p>
+        <a href="${escapeHtml(joinLink)}" style="display: inline-block; padding: 12px 24px; background: #6366f1; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600;">
+          Join Session
+        </a>
+      </p>
+      <p style="color: #888; font-size: 14px; margin-top: 24px;">
+        Common Ground is an AI-mediated platform for productive discourse. 
+        If you don't have an account, you'll be prompted to create one.
+      </p>
+    </div>
+  `;
+
+  return sendEmail({ to: options.recipientEmail, subject, text, html });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Analysis complete notification                                     */
+/* ------------------------------------------------------------------ */
+
+export async function sendAnalysisCompleteNotification(options: {
+  recipientEmail: string;
+  sessionTopic: string;
+  sessionId: string;
+}): Promise<boolean> {
+  const appUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const viewLink = `${appUrl}/session/${encodeURIComponent(options.sessionId)}`;
+
+  const subject = `Analysis complete: ${options.sessionTopic}`;
+
+  const text = [
+    `Hi,`,
+    ``,
+    `The AI analysis for "${options.sessionTopic}" is now complete.`,
+    `View the Common Ground Map: ${viewLink}`,
+  ].join("\n");
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a2e;">Analysis Complete</h2>
+      <p>The AI analysis for <strong>${escapeHtml(options.sessionTopic)}</strong> is ready.</p>
+      <p>
+        <a href="${escapeHtml(viewLink)}" style="display: inline-block; padding: 12px 24px; background: #6366f1; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600;">
+          View Common Ground Map
+        </a>
+      </p>
+    </div>
+  `;
+
+  return sendEmail({ to: options.recipientEmail, subject, text, html });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}

@@ -779,3 +779,121 @@ button.secondary {
   border: 1px solid var(--line); border-radius: 0.3rem; resize: vertical;
 }
 .guided-prompt__actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+
+/* ================================================================== */
+/*  WCAG 2.1 AA Accessibility – CG-NFR20                              */
+/* ================================================================== */
+
+/* ---- Skip-to-content link (visible on focus) ---- */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 0.5rem;
+  z-index: 9999;
+  padding: 0.6rem 1.2rem;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.9rem;
+  border-radius: 0 0 0.4rem 0.4rem;
+  text-decoration: none;
+  transition: top 0.15s;
+}
+.skip-link:focus {
+  top: 0;
+  outline: 3px solid var(--text);
+  outline-offset: 2px;
+}
+
+/* ---- Focus-visible outlines for keyboard navigation ---- */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Minimum touch-target size (WCAG 2.5.5 – 44 × 44 px) ---- */
+button, .dash-pagination button, .cgm-reactions button {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* ---- ETA display (CG-FR57) ---- */
+.cgm-status__eta {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ---- Mutual acknowledgment summary (CG-FR34) ---- */
+.cgm-mutual-summary {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  color: #166534;
+  font-weight: 500;
+}
+
+/* ---- Email invite form (CG-FR10/13) ---- */
+.cgm-invite-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.cgm-invite-form input,
+.cgm-invite-form textarea {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.3rem;
+}
+.cgm-invite-form textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+.cgm-invite-result {
+  margin-top: 0.3rem;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.3rem;
+}
+.cgm-invite-result--ok {
+  background: #dcfce7;
+  color: #166534;
+}
+.cgm-invite-result--err {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* ---- Reduced-motion preference (WCAG 2.3.3) ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- High-contrast tweaks ---- */
+@media (prefers-contrast: more) {
+  :root {
+    --line: #666;
+    --muted: #333;
+  }
+  button {
+    border: 2px solid var(--text);
+  }
+}

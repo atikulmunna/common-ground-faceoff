@@ -57,6 +57,7 @@ model User {
   mfaSecret        String?
   organizationId   String?
   samlNameId       String?
+  stripeCustomerId String?              @unique
   failedLoginCount Int                  @default(0)
   lockedUntil      DateTime?
   createdAt        DateTime             @default(now())
@@ -67,6 +68,8 @@ model User {
   refreshTokens    RefreshToken[]
   organization     Organization?        @relation(fields: [organizationId], references: [id])
   cohortMemberships CohortMembership[]
+  subscription     Subscription?
+  emailInvitations EmailInvitation[]
 }
 
 model RefreshToken {
@@ -90,12 +93,14 @@ model Session {
   deadline          DateTime?
   lastActivityAt    DateTime?
   maxParticipants   Int                  @default(6)
+  estimatedCompletionAt DateTime?
   createdAt         DateTime             @default(now())
   analyzedAt        DateTime?
   participants      SessionParticipant[]
   analysisResults   AnalysisResult[]
   analysisEvents    AnalysisEvent[]
   shareLinks        ShareLink[]
+  emailInvitations  EmailInvitation[]
 }
 
 model SessionParticipant {
@@ -280,4 +285,50 @@ model ModerationFlag {
 
   @@index([sessionId])
   @@index([status])
+}
+
+model Subscription {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  stripeCustomerId      String   @unique
+  stripeSubscriptionId  String   @unique
+  stripePriceId         String
+  status                String   @default("active")
+  currentPeriodStart    DateTime
+  currentPeriodEnd      DateTime
+  cancelAtPeriodEnd     Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+model EmailInvitation {
+  id          String    @id @default(cuid())
+  sessionId   String
+  email       String
+  invitedById String
+  status      String    @default("pending") // pending, sent, accepted, expired
+  sentAt      DateTime?
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  session     Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  invitedBy   User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, email])
+  @@index([sessionId])
+  @@index([email])
+}
+
+model WebhookEvent {
+  id         String   @id @default(cuid())
+  provider   String
+  eventId    String
+  eventType  String
+  processed  Boolean  @default(false)
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  @@unique([provider, eventId])
 }

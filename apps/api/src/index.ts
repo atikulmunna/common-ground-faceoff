@@ -13,6 +13,7 @@ import { mfaRouter } from "./routes/mfa.js";
 import { moderationRouter } from "./routes/moderation.js";
 import { samlRouter } from "./routes/saml.js";
 import { adminRouter } from "./routes/admin.js";
+import { billingRouter } from "./routes/billing.js";
 import { createErrorResponse } from "./lib/response.js";
 
 const app = express();
@@ -44,6 +45,8 @@ app.post("/mfa/verify-login", mfaRouter);
 app.use("/saml", samlRouter);
 // Shared link public read-only view (CG-FR38)
 app.get("/share-links/view/:token", shareLinksRouter);
+// Stripe webhook (public, uses signature verification — CG-FR67)
+app.post("/billing/webhook", billingRouter);
 
 // All routes below require a valid JWT
 app.use(requireAuth);
@@ -53,6 +56,7 @@ app.use("/profile", profileRouter);
 app.use("/mfa", mfaRouter);
 app.use("/moderation", moderationRouter);
 app.use("/admin", adminRouter);
+app.use("/billing", billingRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

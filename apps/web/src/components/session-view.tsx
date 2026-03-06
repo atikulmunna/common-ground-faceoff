@@ -33,6 +33,7 @@ type AnalysisResponse = {
   success: boolean;
   data: {
     status: "queued" | "running" | "completed" | "failed" | "needs_input";
+    estimatedCompletionAt: string | null;
     result: {
       sharedFoundations: string;
       trueDisagreements: string;
@@ -278,11 +279,19 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             onClick={handleReport}
             disabled={reportSent}
             style={{ alignSelf: "flex-start" }}
+            aria-label="Report this session"
           >
             {reportSent ? "Reported" : "🚩 Report"}
           </button>
         </div>
       </article>
+
+      {/* CG-FR10: Email invitation panel (visible to session creator before analysis) */}
+      {session && !isLocked && session.participants.some(
+        (p) => p.userId === currentUserId && p.role === "session_creator"
+      ) && (
+        <InvitePanel sessionId={sessionId} />
+      )}
 
       <article className="card grid">
         <h2>Your Position</h2>
@@ -301,7 +310,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             />
             <ReadabilityMeter text={positionText} />
             {policyWarnings.length > 0 && (
-              <div className="cgm-policy-warnings">
+              <div className="cgm-policy-warnings" role="alert">
                 {policyWarnings.map((w) => (
                   <p key={w.category} className="cgm-policy-warning">
                     ⚠ {w.message}
@@ -310,7 +319,20 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               </div>
             )}
             <div style={{ display: "flex", gap: "0.8rem" }}>
-              <button onClick={submitPosition} disabled={busy || positionText.length < 100}>
+              <button
+                onClick={() => {
+                  // CG-FR19: Require explicit confirmation if content policy warnings exist
+                  if (policyWarnings.length > 0) {
+                    const confirmed = window.confirm(
+                      "Your text has content policy warnings. Are you sure you want to submit?"
+                    );
+                    if (!confirmed) return;
+                  }
+                  submitPosition();
+                }}
+                disabled={busy || positionText.length < 100}
+                aria-label={hasSubmitted ? "Save position changes" : "Submit your position"}
+              >
                 {busy ? "Working..." : hasSubmitted ? "Save Changes" : "Submit Position"}
               </button>
               {hasSubmitted && (
@@ -379,7 +401,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             />
           </>
         ) : (
-          <AnalysisStatus status={status} />
+          <AnalysisStatus status={status} estimatedCompletionAt={analysis?.estimatedCompletionAt ?? null} />
         )}
       </article>
 
@@ -401,16 +423,41 @@ const STATUS_MESSAGES: Record<string, { label: string; description: string }> = 
   needs_input: { label: "Needs Input", description: "Additional input is required before analysis can complete." },
 };
 
-function AnalysisStatus({ status }: { status: string }) {
+function AnalysisStatus({ status, estimatedCompletionAt }: { status: string; estimatedCompletionAt: string | null }) {
   const info = STATUS_MESSAGES[status] ?? { label: status, description: "" };
   const isActive = status === "queued" || status === "running";
 
+  // CG-FR57: Compute remaining time for async ETA
+  const [etaLabel, setEtaLabel] = useState<string | null>(null);
+  useEffect(() => {
+    if (!estimatedCompletionAt || !isActive) {
+      setEtaLabel(null);
+      return;
+    }
+    function updateEta() {
+      const remaining = Math.max(0, Math.ceil((new Date(estimatedCompletionAt!).getTime() - Date.now()) / 1000));
+      if (remaining <= 0) {
+        setEtaLabel("completing soon…");
+      } else if (remaining < 60) {
+        setEtaLabel(`~${remaining}s remaining`);
+      } else {
+        setEtaLabel(`~${Math.ceil(remaining / 60)}min remaining`);
+      }
+    }
+    updateEta();
+    const timer = setInterval(updateEta, 5000);
+    return () => clearInterval(timer);
+  }, [estimatedCompletionAt, isActive]);
+
   return (
-    <div className="cgm-status">
-      <div className="cgm-status__icon">{isActive ? "⏳" : "📋"}</div>
+    <div className="cgm-status" role="status" aria-live="polite">
+      <div className="cgm-status__icon" aria-hidden="true">{isActive ? "⏳" : "📋"}</div>
       <h2 className="cgm-status__label">{info.label}</h2>
       <p className="cgm-status__desc">{info.description}</p>
-      {isActive && <div className="cgm-status__pulse" />}
+      {isActive && etaLabel && (
+        <p className="cgm-status__eta">{etaLabel}</p>
+      )}
+      {isActive && <div className="cgm-status__pulse" aria-hidden="true" />}
     </div>
   );
 }
@@ -530,6 +577,69 @@ function ExportPanel({ sessionId }: { sessionId: string }) {
         </button>
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  CG-FR10/13: Email Invitation Panel                                 */
+/* ------------------------------------------------------------------ */
+
+function InvitePanel({ sessionId }: { sessionId: string }) {
+  const [email, setEmail] = useState("");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  async function handleInvite(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email) return;
+    setSending(true);
+    setResult(null);
+    try {
+      await apiPost(`/sessions/${sessionId}/email-invite`, {
+        email,
+        message: message || undefined,
+      });
+      setResult(`Invitation sent to ${email}`);
+      setEmail("");
+      setMessage("");
+    } catch (err) {
+      setResult(err instanceof Error ? err.message : "Failed to send invitation");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <article className="card grid">
+      <h3>Invite Participant</h3>
+      <form onSubmit={handleInvite} className="cgm-invite-form">
+        <label htmlFor="invite-email">Email address</label>
+        <input
+          id="invite-email"
+          type="email"
+          placeholder="participant@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          aria-label="Participant email address"
+        />
+        <label htmlFor="invite-message">Message (optional)</label>
+        <input
+          id="invite-message"
+          type="text"
+          placeholder="Add a personal message…"
+          maxLength={500}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          aria-label="Personal message for invitation"
+        />
+        <button type="submit" disabled={sending || !email}>
+          {sending ? "Sending…" : "Send Invitation"}
+        </button>
+      </form>
+      {result && <p className="cgm-invite-result">{result}</p>}
+    </article>
   );
 }
 

@@ -5,6 +5,7 @@ import {
   analyzeSessionSchema,
   createSessionSchema,
   createShareLinkSchema,
+  emailInvitationSchema,
   feedbackRatingSchema,
   inviteParticipantSchema,
   sectionCommentSchema,
@@ -18,6 +19,7 @@ import { requireSessionAccess } from "../middleware/rbac.js";
 import { enqueueAnalysis } from "../services/queueService.js";
 import { runAnalysis } from "../services/analysisService.js";
 import { detectSeverity } from "./moderation.js";
+import { sendSessionInvitation } from "../services/emailService.js";
 
 export const sessionsRouter = Router();
 
@@ -183,7 +185,111 @@ sessionsRouter.post("/:id/invite", requireSessionAccess, async (req, res) => {
     }
   });
 
-  res.json(createSuccessResponse({ participant, invitation: "queued_email_placeholder" }));
+  // CG-FR10/13: Send email invitation via SendGrid & track it
+  const inviter = await prisma.user.findUnique({ where: { id: req.user.id }, select: { displayName: true } });
+  const emailInvite = await prisma.emailInvitation.upsert({
+    where: { sessionId_email: { sessionId: req.params.id, email: parse.data.email } },
+    update: { status: "pending" },
+    create: {
+      sessionId: req.params.id,
+      email: parse.data.email,
+      invitedById: req.user.id,
+      status: "pending",
+    },
+  });
+
+  const emailSent = await sendSessionInvitation({
+    recipientEmail: parse.data.email,
+    inviterName: inviter?.displayName ?? "A user",
+    sessionTopic: session.topic,
+    sessionId: req.params.id,
+  });
+
+  if (emailSent) {
+    await prisma.emailInvitation.update({
+      where: { id: emailInvite.id },
+      data: { status: "sent", sentAt: new Date() },
+    });
+  }
+
+  res.json(createSuccessResponse({ participant, invitation: emailSent ? "sent" : "queued" }));
+});
+
+/* ------------------------------------------------------------------ */
+/*  CG-FR10/13: Email invitation with optional message                 */
+/* ------------------------------------------------------------------ */
+
+sessionsRouter.post("/:id/email-invite", requireSessionAccess, async (req, res) => {
+  const parse = emailInvitationSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json(createErrorResponse("validation_error", "Invalid email invite payload", parse.error.flatten()));
+    return;
+  }
+
+  const session = await prisma.session.findUnique({ where: { id: req.params.id } });
+  if (!session) {
+    res.status(404).json(createErrorResponse("not_found", "Session not found"));
+    return;
+  }
+
+  if (session.creatorUserId !== req.user.id && req.user.role !== "institutional_admin") {
+    res.status(403).json(createErrorResponse("authz_error", "Only creator or admin can send invitations"));
+    return;
+  }
+
+  // Enforce participant limits
+  const creator = await prisma.user.findUnique({ where: { id: session.creatorUserId }, select: { tier: true } });
+  const maxParticipants = creator?.tier === "free" ? 2 : 6;
+  const currentCount = await prisma.sessionParticipant.count({ where: { sessionId: req.params.id } });
+  if (currentCount >= maxParticipants) {
+    res.status(403).json(createErrorResponse("limit_reached", `Participant limit reached (${maxParticipants})`));
+    return;
+  }
+
+  // Upsert the invited user
+  const invitedUser = await prisma.user.upsert({
+    where: { email: parse.data.email },
+    update: {},
+    create: {
+      email: parse.data.email,
+      displayName: parse.data.email.split("@")[0],
+    },
+  });
+
+  await prisma.sessionParticipant.upsert({
+    where: { sessionId_userId: { sessionId: req.params.id, userId: invitedUser.id } },
+    update: { role: "session_participant" },
+    create: { sessionId: req.params.id, userId: invitedUser.id, role: "session_participant" },
+  });
+
+  const inviter = await prisma.user.findUnique({ where: { id: req.user.id }, select: { displayName: true } });
+  const emailInvite = await prisma.emailInvitation.upsert({
+    where: { sessionId_email: { sessionId: req.params.id, email: parse.data.email } },
+    update: { status: "pending" },
+    create: {
+      sessionId: req.params.id,
+      email: parse.data.email,
+      invitedById: req.user.id,
+      status: "pending",
+    },
+  });
+
+  const emailSent = await sendSessionInvitation({
+    recipientEmail: parse.data.email,
+    inviterName: inviter?.displayName ?? "A user",
+    sessionTopic: session.topic,
+    sessionId: req.params.id,
+    message: parse.data.message,
+  });
+
+  if (emailSent) {
+    await prisma.emailInvitation.update({
+      where: { id: emailInvite.id },
+      data: { status: "sent", sentAt: new Date() },
+    });
+  }
+
+  res.json(createSuccessResponse({ status: emailSent ? "sent" : "pending", email: parse.data.email }));
 });
 
 sessionsRouter.post("/:id/positions", requireSessionAccess, async (req, res) => {
@@ -275,12 +381,18 @@ sessionsRouter.post("/:id/analyze", requireSessionAccess, async (req, res) => {
 
     if (result.status === "queued") {
       enqueueAnalysis({ sessionId: req.params.id, pipelineRunId: result.pipelineRunId });
+      // CG-FR57: Include estimated completion time for async runs
+      const updatedSession = await prisma.session.findUnique({
+        where: { id: req.params.id },
+        select: { estimatedCompletionAt: true },
+      });
       res.status(202).json(
         createSuccessResponse({
           status: "queued",
           pipelineRunId: result.pipelineRunId,
           analysisVersion: parse.data.analysisVersion,
-          promptTemplateVersion: parse.data.promptTemplateVersion
+          promptTemplateVersion: parse.data.promptTemplateVersion,
+          estimatedCompletionAt: updatedSession?.estimatedCompletionAt ?? null,
         })
       );
       return;
@@ -292,7 +404,8 @@ sessionsRouter.post("/:id/analyze", requireSessionAccess, async (req, res) => {
         pipelineRunId: result.pipelineRunId,
         analysisVersion: parse.data.analysisVersion,
         promptTemplateVersion: parse.data.promptTemplateVersion,
-        result: result.status === "completed" ? result.result : null
+        result: result.status === "completed" ? result.result : null,
+        estimatedCompletionAt: null,
       })
     );
   } catch (error) {
@@ -349,7 +462,10 @@ sessionsRouter.get("/:id/analysis", requireSessionAccess, async (req, res) => {
     orderBy: [{ roundNumber: "desc" }, { createdAt: "desc" }]
   });
 
-  const session = await prisma.session.findUnique({ where: { id: req.params.id } });
+  const session = await prisma.session.findUnique({
+    where: { id: req.params.id },
+    select: { status: true, estimatedCompletionAt: true },
+  });
 
   if (!session) {
     res.status(404).json(createErrorResponse("not_found", "Session not found"));
@@ -363,7 +479,8 @@ sessionsRouter.get("/:id/analysis", requireSessionAccess, async (req, res) => {
         pipelineRunId: null,
         analysisVersion: null,
         promptTemplateVersion: null,
-        result: null
+        result: null,
+        estimatedCompletionAt: session.estimatedCompletionAt,
       })
     );
     return;
@@ -375,7 +492,8 @@ sessionsRouter.get("/:id/analysis", requireSessionAccess, async (req, res) => {
       pipelineRunId: result.pipelineRunId,
       analysisVersion: result.analysisVersion,
       promptTemplateVersion: result.promptTemplateVersion,
-      result
+      result,
+      estimatedCompletionAt: session.estimatedCompletionAt,
     })
   );
 });

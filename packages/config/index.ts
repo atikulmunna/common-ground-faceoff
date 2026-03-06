@@ -17,6 +17,10 @@ export const envSchema = z.object({
   GROQ_API_KEY: z.string().min(1).optional(),
   OPENROUTER_API_KEY: z.string().min(1).optional(),
   SENDGRID_API_KEY: z.string().min(1).optional(),
+  STRIPE_SECRET_KEY: z.string().min(1).optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
+  STRIPE_PRICE_PRO: z.string().min(1).optional(),
+  STRIPE_PRICE_ENTERPRISE: z.string().min(1).optional(),
   SENTRY_DSN: z.string().min(1).optional()
 });
 
