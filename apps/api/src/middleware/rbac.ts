@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 
 import { prisma } from "../lib/prisma.js";
+import { logDeniedAction } from "./authorization.js";
 
 export async function requireSessionAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   const sessionId = req.params.id;
@@ -25,15 +26,8 @@ export async function requireSessionAccess(req: Request, res: Response, next: Ne
   const isModerator = req.user.role === "moderator";
 
   if (!isCreator && !isParticipant && !isAdmin && !isModerator) {
-    await prisma.analysisEvent.create({
-      data: {
-        sessionId,
-        pipelineRunId: "authz",
-        eventType: "authz_denied",
-        actorType: req.user.role,
-        reasonCode: "session_access_denied"
-      }
-    });
+    // CG-FR62: Log denied access with IP to AuditLog
+    await logDeniedAction(req, "view_own_position", sessionId);
 
     res.status(403).json({
       success: false,

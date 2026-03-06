@@ -3,6 +3,7 @@ import { reportContentSchema, moderationActionSchema } from "@common-ground/shar
 
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
+import { logDeniedAction } from "../middleware/authorization.js";
 
 export const moderationRouter = Router();
 
@@ -12,7 +13,7 @@ export const moderationRouter = Router();
 
 const HATE_PATTERNS = [
   /\b(kill|murder|attack|bomb|shoot)\b.*\b(you|them|people|group)\b/i,
-  /\b(hate|exterminate|eliminate)\b.*\b(race|ethnic|religion|gender)\b/i,
+  /\b(hate|exterminate|eliminate)\b.*\b(race|racial|ethnic|ethnicity|religion|religious|gender)\b/i,
 ];
 
 export function detectSeverity(text: string): { flagged: boolean; severity: "low" | "medium" | "high" | "critical" } {
@@ -82,6 +83,7 @@ moderationRouter.post("/report/:sessionId", async (req, res) => {
 
 moderationRouter.get("/queue", async (req, res) => {
   if (req.user.role !== "moderator" && req.user.role !== "institutional_admin") {
+    await logDeniedAction(req, "moderate_flagged_content");
     res.status(403).json(createErrorResponse("authz_error", "Moderator access required"));
     return;
   }
@@ -112,6 +114,7 @@ moderationRouter.get("/queue", async (req, res) => {
 
 moderationRouter.post("/:flagId/review", async (req, res) => {
   if (req.user.role !== "moderator" && req.user.role !== "institutional_admin") {
+    await logDeniedAction(req, "moderate_flagged_content", req.params.flagId);
     res.status(403).json(createErrorResponse("authz_error", "Moderator access required"));
     return;
   }

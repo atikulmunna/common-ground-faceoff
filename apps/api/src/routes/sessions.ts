@@ -16,10 +16,12 @@ import {
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { requireSessionAccess } from "../middleware/rbac.js";
+import { requirePermission, logDeniedAction } from "../middleware/authorization.js";
 import { enqueueAnalysis } from "../services/queueService.js";
 import { runAnalysis } from "../services/analysisService.js";
 import { detectSeverity } from "./moderation.js";
 import { sendSessionInvitation } from "../services/emailService.js";
+import { uploadExport } from "../services/storageService.js";
 
 export const sessionsRouter = Router();
 
@@ -107,7 +109,7 @@ sessionsRouter.get("/demo-list", async (_req, res) => {
   res.json(createSuccessResponse({ sessions }));
 });
 
-sessionsRouter.post("/", async (req, res) => {
+sessionsRouter.post("/", requirePermission("create_session"), async (req, res) => {
   const parse = createSessionSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json(createErrorResponse("validation_error", "Invalid session payload", parse.error.flatten()));
@@ -134,7 +136,7 @@ sessionsRouter.post("/", async (req, res) => {
   res.status(201).json(createSuccessResponse({ session }));
 });
 
-sessionsRouter.post("/:id/invite", requireSessionAccess, async (req, res) => {
+sessionsRouter.post("/:id/invite", requireSessionAccess, requirePermission("invite_participants", { sessionScoped: true }), async (req, res) => {
   const parse = inviteParticipantSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json(createErrorResponse("validation_error", "Invalid invite payload", parse.error.flatten()));
@@ -144,11 +146,6 @@ sessionsRouter.post("/:id/invite", requireSessionAccess, async (req, res) => {
   const session = await prisma.session.findUnique({ where: { id: req.params.id } });
   if (!session) {
     res.status(404).json(createErrorResponse("not_found", "Session not found"));
-    return;
-  }
-
-  if (session.creatorUserId !== req.user.id && req.user.role !== "institutional_admin") {
-    res.status(403).json(createErrorResponse("authz_error", "Only creator or admin can invite"));
     return;
   }
 
@@ -219,7 +216,7 @@ sessionsRouter.post("/:id/invite", requireSessionAccess, async (req, res) => {
 /*  CG-FR10/13: Email invitation with optional message                 */
 /* ------------------------------------------------------------------ */
 
-sessionsRouter.post("/:id/email-invite", requireSessionAccess, async (req, res) => {
+sessionsRouter.post("/:id/email-invite", requireSessionAccess, requirePermission("invite_participants", { sessionScoped: true }), async (req, res) => {
   const parse = emailInvitationSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json(createErrorResponse("validation_error", "Invalid email invite payload", parse.error.flatten()));
@@ -229,11 +226,6 @@ sessionsRouter.post("/:id/email-invite", requireSessionAccess, async (req, res) 
   const session = await prisma.session.findUnique({ where: { id: req.params.id } });
   if (!session) {
     res.status(404).json(createErrorResponse("not_found", "Session not found"));
-    return;
-  }
-
-  if (session.creatorUserId !== req.user.id && req.user.role !== "institutional_admin") {
-    res.status(403).json(createErrorResponse("authz_error", "Only creator or admin can send invitations"));
     return;
   }
 
@@ -365,7 +357,7 @@ sessionsRouter.post("/:id/positions", requireSessionAccess, async (req, res) => 
   res.json(createSuccessResponse({ participant: updated }));
 });
 
-sessionsRouter.post("/:id/analyze", requireSessionAccess, async (req, res) => {
+sessionsRouter.post("/:id/analyze", requireSessionAccess, requirePermission("trigger_analysis", { sessionScoped: true }), async (req, res) => {
   const parse = analyzeSessionSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json(createErrorResponse("validation_error", "Invalid analyze payload", parse.error.flatten()));
@@ -651,6 +643,34 @@ sessionsRouter.get("/:id/rounds", requireSessionAccess, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  CG-FR68: Per-round position snapshots                              */
+/* ------------------------------------------------------------------ */
+
+sessionsRouter.get("/:id/rounds/:roundNumber/positions", requireSessionAccess, async (req, res) => {
+  const roundNumber = Number(req.params.roundNumber);
+  if (!Number.isInteger(roundNumber) || roundNumber < 1) {
+    res.status(400).json(createErrorResponse("validation_error", "roundNumber must be a positive integer"));
+    return;
+  }
+
+  const snapshots = await prisma.positionSnapshot.findMany({
+    where: {
+      sessionId: req.params.id,
+      roundNumber,
+    },
+    select: {
+      userId: true,
+      roundNumber: true,
+      positionText: true,
+      snapshotAt: true,
+    },
+    orderBy: { snapshotAt: "asc" },
+  });
+
+  res.json(createSuccessResponse({ snapshots }));
+});
+
+/* ------------------------------------------------------------------ */
 /*  Reactions (CG-FR33, CG-FR34)                                       */
 /* ------------------------------------------------------------------ */
 
@@ -738,7 +758,7 @@ sessionsRouter.get("/:id/comments", requireSessionAccess, async (req, res) => {
 /*  Export (CG-FR37, CG-FR40)                                          */
 /* ------------------------------------------------------------------ */
 
-sessionsRouter.get("/:id/export/:format", requireSessionAccess, async (req, res) => {
+sessionsRouter.get("/:id/export/:format", requireSessionAccess, requirePermission("export_session", { sessionScoped: true }), async (req, res) => {
   const format = req.params.format;
   if (!["json", "markdown", "md", "pdf"].includes(format)) {
     res.status(400).json(createErrorResponse("validation_error", "Supported export formats: json, markdown, pdf"));
@@ -799,9 +819,12 @@ sessionsRouter.get("/:id/export/:format", requireSessionAccess, async (req, res)
   };
 
   if (format === "json") {
+    const jsonContent = JSON.stringify(exportData, null, 2);
+    // Fire-and-forget R2 upload
+    uploadExport({ sessionId: session.id, format: "json", content: jsonContent, contentType: "application/json" }).catch(() => {});
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Content-Disposition", `attachment; filename="common-ground-${session.id}.json"`);
-    res.json(exportData);
+    res.send(jsonContent);
     return;
   }
 
@@ -815,6 +838,15 @@ sessionsRouter.get("/:id/export/:format", requireSessionAccess, async (req, res)
     res.setHeader("Content-Disposition", `attachment; filename="common-ground-${session.id}.pdf"`);
 
     const doc = new PDFDocument({ margin: 50 });
+
+    // Collect PDF buffer for R2 upload
+    const pdfChunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => pdfChunks.push(chunk));
+    doc.on("end", () => {
+      const pdfBuffer = Buffer.concat(pdfChunks);
+      uploadExport({ sessionId: session.id, format: "pdf", content: pdfBuffer, contentType: "application/pdf" }).catch(() => {});
+    });
+
     doc.pipe(res);
 
     // Title
@@ -917,6 +949,8 @@ sessionsRouter.get("/:id/export/:format", requireSessionAccess, async (req, res)
 
   md += `---\n\n*Exported from Common Ground on ${new Date().toISOString().split("T")[0]}*\n`;
 
+  // Fire-and-forget R2 upload
+  uploadExport({ sessionId: session.id, format: "md", content: md, contentType: "text/markdown; charset=utf-8" }).catch(() => {});
   res.setHeader("Content-Type", "text/markdown; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="common-ground-${session.id}.md"`);
   res.send(md);

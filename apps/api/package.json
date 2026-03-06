@@ -15,6 +15,7 @@
     "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1003.0",
     "@common-ground/config": "0.1.0",
     "@common-ground/shared": "0.1.0",
     "@mistralai/mistralai": "^1.14.1",

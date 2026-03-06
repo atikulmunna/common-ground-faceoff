@@ -402,6 +402,34 @@ export async function runAnalysis(input: BuildAnalysisInput) {
     return { status: "queued" as const, pipelineRunId };
   }
 
+  // CG-FR68: Snapshot per-round positions before running analysis
+  const currentRound = await prisma.analysisResult.findFirst({
+    where: { sessionId: input.sessionId, status: "completed" },
+    orderBy: { roundNumber: "desc" },
+    select: { roundNumber: true },
+  });
+  const snapshotRound = (currentRound?.roundNumber ?? 0) + 1;
+  for (const p of participants) {
+    if (p.positionText) {
+      await prisma.positionSnapshot.upsert({
+        where: {
+          sessionId_userId_roundNumber: {
+            sessionId: input.sessionId,
+            userId: p.userId,
+            roundNumber: snapshotRound,
+          },
+        },
+        update: { positionText: p.positionText },
+        create: {
+          sessionId: input.sessionId,
+          userId: p.userId,
+          roundNumber: snapshotRound,
+          positionText: p.positionText,
+        },
+      });
+    }
+  }
+
   // Run the real LLM pipeline
   const inputHash = createHash("sha256").update(redaction.redactedText).digest("hex");
 
@@ -500,6 +528,34 @@ export async function completeQueuedAnalysis(
 
   const combined = positions.map((p) => p.positionText).join("\n\n");
   const inputHash = createHash("sha256").update(combined).digest("hex");
+
+  // CG-FR68: Snapshot per-round positions for queued analysis
+  const prevRoundForSnapshot = await prisma.analysisResult.findFirst({
+    where: { sessionId, status: "completed" },
+    orderBy: { roundNumber: "desc" },
+    select: { roundNumber: true },
+  });
+  const queuedSnapshotRound = (prevRoundForSnapshot?.roundNumber ?? 0) + 1;
+  for (const p of participants) {
+    if (p.positionText) {
+      await prisma.positionSnapshot.upsert({
+        where: {
+          sessionId_userId_roundNumber: {
+            sessionId,
+            userId: p.userId,
+            roundNumber: queuedSnapshotRound,
+          },
+        },
+        update: { positionText: p.positionText },
+        create: {
+          sessionId,
+          userId: p.userId,
+          roundNumber: queuedSnapshotRound,
+          positionText: p.positionText,
+        },
+      });
+    }
+  }
 
   await prisma.session.update({ where: { id: sessionId }, data: { status: "running" } });
 

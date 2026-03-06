@@ -8,6 +8,7 @@ import {
 
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
+import { logDeniedAction } from "../middleware/authorization.js";
 
 export const adminRouter = Router();
 
@@ -17,6 +18,8 @@ export const adminRouter = Router();
 
 function requireAdmin(req: import("express").Request, res: import("express").Response, next: import("express").NextFunction): void {
   if (req.user.role !== "institutional_admin") {
+    // CG-FR62: Fire-and-forget denied action log (don't block response on logging)
+    logDeniedAction(req, "access_org_analytics").catch(() => {});
     res.status(403).json(createErrorResponse("authz_error", "Institutional admin access required"));
     return;
   }

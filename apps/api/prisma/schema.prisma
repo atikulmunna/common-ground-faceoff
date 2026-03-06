@@ -101,6 +101,7 @@ model Session {
   analysisEvents    AnalysisEvent[]
   shareLinks        ShareLink[]
   emailInvitations  EmailInvitation[]
+  positionSnapshots PositionSnapshot[]
 }
 
 model SessionParticipant {
@@ -115,6 +116,20 @@ model SessionParticipant {
   user                  User              @relation(fields: [userId], references: [id])
 
   @@unique([sessionId, userId])
+}
+
+// CG-FR68: Per-round position snapshots for re-entry lineage
+model PositionSnapshot {
+  id            String   @id @default(cuid())
+  sessionId     String
+  userId        String
+  roundNumber   Int
+  positionText  String
+  snapshotAt    DateTime @default(now())
+  session       Session  @relation(fields: [sessionId], references: [id])
+
+  @@unique([sessionId, userId, roundNumber])
+  @@index([sessionId, roundNumber])
 }
 
 model AnalysisResult {
