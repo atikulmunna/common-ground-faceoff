@@ -228,6 +228,19 @@ ${confBlock}`;
 /*  Pipeline runner                                                    */
 /* ------------------------------------------------------------------ */
 
+/** CG-NFR40: Hash all prompt templates for reproducibility tracking */
+function computePromptTemplateHash(): string {
+  const templates = [
+    SYSTEM_PROMPT,
+    normalizationPrompt.toString(),
+    steelmanPrompt.toString(),
+    valueExtractionPrompt.toString(),
+    conflictClassificationPrompt.toString(),
+    synthesisPrompt.toString(),
+  ].join("||");
+  return createHash("sha256").update(templates).digest("hex").slice(0, 16);
+}
+
 async function runPipeline(
   topic: string,
   positions: ParticipantPosition[]
@@ -239,6 +252,7 @@ async function runPipeline(
   confidenceScores: { sharedFoundations: number; disagreements: number };
   llmProvider: string;
   modelVersion: string;
+  promptTemplateHash: string;
 }> {
   // Stage 1 – Normalization
   const normRes = await callLlm(SYSTEM_PROMPT, normalizationPrompt(topic, positions));
@@ -286,6 +300,7 @@ async function runPipeline(
     confidenceScores: synthData.confidenceScores,
     llmProvider: synthRes.provider,
     modelVersion: synthRes.model,
+    promptTemplateHash: computePromptTemplateHash(),
   };
 }
 
@@ -471,6 +486,7 @@ export async function runAnalysis(input: BuildAnalysisInput) {
       pipelineRunId,
       analysisVersion: input.analysisVersion,
       promptTemplateVersion: input.promptTemplateVersion,
+      promptTemplateHash: pipelineOutput.promptTemplateHash,
       inputHash,
       steelmans: pipelineOutput.steelmans,
       conflictMap: pipelineOutput.conflictMap,
@@ -594,6 +610,7 @@ export async function completeQueuedAnalysis(
       pipelineRunId,
       analysisVersion: "v1",
       promptTemplateVersion: "tpl-v1",
+      promptTemplateHash: pipelineOutput.promptTemplateHash,
       inputHash,
       steelmans: pipelineOutput.steelmans,
       conflictMap: pipelineOutput.conflictMap,

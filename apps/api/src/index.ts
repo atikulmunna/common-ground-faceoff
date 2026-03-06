@@ -1,6 +1,8 @@
 import "dotenv/config";
+import * as Sentry from "@sentry/node";
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { parseEnv } from "@common-ground/config";
 
@@ -14,10 +16,38 @@ import { moderationRouter } from "./routes/moderation.js";
 import { samlRouter } from "./routes/saml.js";
 import { adminRouter } from "./routes/admin.js";
 import { billingRouter } from "./routes/billing.js";
+import { privacyRouter } from "./routes/privacy.js";
 import { createErrorResponse } from "./lib/response.js";
+
+// --- Sentry initialization (CG-NFR12: error tracking) ---
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV ?? "development",
+    tracesSampleRate: process.env.NODE_ENV === "production" ? 0.2 : 1.0,
+  });
+}
 
 const app = express();
 parseEnv(process.env);
+
+// --- Security headers (CG-NFR09, CG-NFR12) ---
+app.use(helmet({
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+}));
 
 const allowedOrigins = process.env.CORS_ORIGIN?.split(",") ?? ["http://localhost:3000"];
 app.use(cors({ origin: allowedOrigins, credentials: true }));
@@ -47,6 +77,8 @@ app.use("/saml", samlRouter);
 app.get("/share-links/view/:token", shareLinksRouter);
 // Stripe webhook (public, uses signature verification — CG-FR67)
 app.post("/billing/webhook", billingRouter);
+// CG-NFR33: Public subprocessor inventory
+app.get("/privacy/subprocessors", privacyRouter);
 
 // All routes below require a valid JWT
 app.use(requireAuth);
@@ -57,6 +89,10 @@ app.use("/mfa", mfaRouter);
 app.use("/moderation", moderationRouter);
 app.use("/admin", adminRouter);
 app.use("/billing", billingRouter);
+app.use("/privacy", privacyRouter);
+
+// Sentry error handler (must be after routes, before custom error handler)
+Sentry.setupExpressErrorHandler(app);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

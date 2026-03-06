@@ -140,6 +140,7 @@ model AnalysisResult {
   pipelineRunId              String
   analysisVersion            String
   promptTemplateVersion      String
+  promptTemplateHash         String?
   inputHash                  String
   steelmans                  Json
   conflictMap                Json
@@ -346,4 +347,55 @@ model WebhookEvent {
   createdAt  DateTime @default(now())
 
   @@unique([provider, eventId])
+}
+
+// CG-NFR32: Consent provenance records
+model ConsentRecord {
+  id            String   @id @default(cuid())
+  userId        String
+  purpose       String   // e.g. "analysis_processing", "email_notifications", "data_sharing"
+  lawfulBasis   String   // e.g. "consent", "legitimate_interest", "contract"
+  granted       Boolean  @default(true)
+  ipAddress     String?
+  userAgent     String?
+  version       Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([purpose])
+}
+
+// CG-NFR31: Data subject request lifecycle
+model DataSubjectRequest {
+  id            String   @id @default(cuid())
+  userId        String
+  requestType   String   // "export", "deletion", "rectification", "restriction"
+  status        String   @default("received") // received, verified, in_progress, fulfilled, rejected
+  reason        String?
+  fulfilledAt   DateTime?
+  rejectedAt    DateTime?
+  rejectionNote String?
+  deadlineAt    DateTime // auto-set based on request type
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+// CG-NFR33: Versioned subprocessor inventory
+model SubprocessorEntry {
+  id          String   @id @default(cuid())
+  name        String
+  purpose     String
+  dataTypes   String   // comma-separated: "position_text,email,display_name"
+  location    String   // e.g. "US", "EU"
+  dpaUrl      String?  // link to Data Processing Agreement
+  version     Int      @default(1)
+  active      Boolean  @default(true)
+  addedAt     DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active])
 }

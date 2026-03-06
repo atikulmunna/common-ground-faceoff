@@ -132,6 +132,7 @@ export const apiErrorCodeSchema = z.enum([
   "rate_limited",
   "limit_reached",
   "mfa_required",
+  "duplicate_request",
   "internal_error"
 ]);
 

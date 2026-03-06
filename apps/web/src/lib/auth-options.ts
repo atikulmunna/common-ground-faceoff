@@ -2,6 +2,7 @@ import { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
+import GitHubProvider from "next-auth/providers/github";
 
 const API_BASE = process.env.API_BASE_URL ?? "http://localhost:4000";
 
@@ -61,6 +62,14 @@ export const authOptions: NextAuthOptions = {
             tenantId: process.env.AZURE_AD_TENANT_ID
           })
         ]
+      : []),
+    ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
+      ? [
+          GitHubProvider({
+            clientId: process.env.GITHUB_CLIENT_ID,
+            clientSecret: process.env.GITHUB_CLIENT_SECRET
+          })
+        ]
       : [])
   ],
   session: {
@@ -73,9 +82,9 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user, account }) {
       if (user) {
-        if (account?.provider === "google" || account?.provider === "azure-ad") {
+        if (account?.provider === "google" || account?.provider === "azure-ad" || account?.provider === "github") {
           // Exchange OAuth profile for API tokens
-          const providerName = account.provider === "azure-ad" ? "microsoft" : "google";
+          const providerName = account.provider === "azure-ad" ? "microsoft" : account.provider;
           const res = await fetch(`${API_BASE}/auth/oauth-exchange`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
