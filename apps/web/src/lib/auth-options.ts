@@ -4,7 +4,7 @@ import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import GitHubProvider from "next-auth/providers/github";
 
-const API_BASE = process.env.API_BASE_URL ?? "http://localhost:4000";
+const API_BASE = process.env.API_BASE_URL ?? "http://localhost:4100";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -100,6 +100,7 @@ export const authOptions: NextAuthOptions = {
             token.role = json.data.user.role;
             token.accessToken = json.data.accessToken;
             token.refreshToken = json.data.refreshToken;
+            token.accessTokenExpires = Date.now() + 25 * 60 * 1000; // refresh 5 min before expiry
           }
         } else {
           // Credentials provider — user already has API tokens
@@ -107,8 +108,29 @@ export const authOptions: NextAuthOptions = {
           token.role = (user as unknown as { role: string }).role;
           token.accessToken = (user as unknown as { accessToken: string }).accessToken;
           token.refreshToken = (user as unknown as { refreshToken: string }).refreshToken;
+          token.accessTokenExpires = Date.now() + 25 * 60 * 1000;
         }
       }
+
+      // Refresh the API access token if it's about to expire
+      if (token.accessTokenExpires && Date.now() > (token.accessTokenExpires as number) && token.refreshToken) {
+        try {
+          const res = await fetch(`${API_BASE}/auth/refresh`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refreshToken: token.refreshToken })
+          });
+          const json = await res.json();
+          if (res.ok && json.success) {
+            token.accessToken = json.data.accessToken;
+            token.refreshToken = json.data.refreshToken ?? token.refreshToken;
+            token.accessTokenExpires = Date.now() + 25 * 60 * 1000;
+          }
+        } catch {
+          // refresh failed — token will expire and user must re-login
+        }
+      }
+
       return token;
     },
     async session({ session, token }) {

@@ -27,5 +27,10 @@ export const envSchema = z.object({
 export type AppEnv = z.infer<typeof envSchema>;
 
 export function parseEnv(input: Record<string, string | undefined>): AppEnv {
-  return envSchema.parse(input);
+  // Treat empty strings as undefined so optional .min(1) fields don't fail
+  const cleaned: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(input)) {
+    cleaned[key] = value === "" ? undefined : value;
+  }
+  return envSchema.parse(cleaned);
 }

@@ -19,6 +19,7 @@ type SessionData = {
   id: string;
   topic: string;
   status: string;
+  creatorUserId: string;
   anonymousMode: boolean;
   deadline: string | null;
   participants: Array<{
@@ -76,6 +77,24 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const [showComparison, setShowComparison] = useState(false);
   const [comments, setComments] = useState<Array<{ id: string; userId: string; section: string; text: string; createdAt: string }>>([]);
   const [reportSent, setReportSent] = useState(false);
+
+  // CG-NFR08: Persist draft position text in localStorage across refreshes
+  const draftKey = `cg-draft-${sessionId}`;
+  useEffect(() => {
+    const saved = localStorage.getItem(draftKey);
+    if (saved && !hasSubmitted) setPositionText(saved);
+  }, [draftKey, hasSubmitted]);
+
+  function updatePositionText(text: string) {
+    setPositionText(text);
+    if (!hasSubmitted) {
+      localStorage.setItem(draftKey, text);
+    }
+  }
+
+  function clearDraft() {
+    localStorage.removeItem(draftKey);
+  }
 
   const refreshSession = useCallback(async () => {
     try {
@@ -191,6 +210,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       });
       setHasSubmitted(true);
       setEditing(false);
+      clearDraft();
       await refreshSession();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Failed to submit position");
@@ -203,13 +223,20 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     setBusy(true);
     setError(null);
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300_000); // 5 min timeout
       await apiPost(`/sessions/${sessionId}/analyze`, {
         analysisVersion: "v1",
         promptTemplateVersion: "tpl-v1"
-      });
+      }, undefined, controller.signal);
+      clearTimeout(timeoutId);
       await refreshAnalysis();
     } catch (analyzeError) {
-      setError(analyzeError instanceof Error ? analyzeError.message : "Failed to analyze");
+      if (analyzeError instanceof DOMException && analyzeError.name === "AbortError") {
+        setError("Analysis is taking too long. Please refresh and try again.");
+      } else {
+        setError(analyzeError instanceof Error ? analyzeError.message : "Failed to analyze");
+      }
     } finally {
       setBusy(false);
     }
@@ -298,7 +325,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         {showEditor ? (
           <>
             {!hasSubmitted && (
-              <GuidedPrompt onApply={(text) => setPositionText((prev) => prev ? prev + "\n\n" + text : text)} />
+              <GuidedPrompt onApply={(text) => updatePositionText(positionText ? positionText + "\n\n" + text : text)} />
             )}
             <textarea
               rows={8}
@@ -306,7 +333,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               maxLength={5000}
               placeholder="Submit your position in 100-5000 characters"
               value={positionText}
-              onChange={(event) => setPositionText(event.target.value)}
+              onChange={(event) => updatePositionText(event.target.value)}
             />
             <ReadabilityMeter text={positionText} />
             {policyWarnings.length > 0 && (
@@ -347,13 +374,19 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             <div className="cgm-position-preview">
               <p>{positionText}</p>
             </div>
-            <div style={{ display: "flex", gap: "0.8rem" }}>
+            <div style={{ display: "flex", gap: "0.8rem", alignItems: "center" }}>
               {!isLocked && (
                 <button onClick={() => setEditing(true)}>Edit Position</button>
               )}
-              <button className="secondary" onClick={triggerAnalysis} disabled={busy || isLocked}>
-                {isLocked ? "Analysis Started" : "Trigger Analysis"}
-              </button>
+              {currentUserId === session?.creatorUserId ? (
+                <button className="secondary" onClick={triggerAnalysis} disabled={busy || isLocked}>
+                  {isLocked ? "Analysis Started" : "Trigger Analysis"}
+                </button>
+              ) : (
+                <span style={{ fontSize: "0.9rem", color: "#6b7280", fontStyle: "italic" }}>
+                  {isLocked ? "Analysis in progress…" : "Waiting for the session creator to trigger the analysis."}
+                </span>
+              )}
             </div>
           </>
         )}
@@ -543,7 +576,7 @@ function ExportPanel({ sessionId }: { sessionId: string }) {
       const { getSession } = await import("next-auth/react");
       const session = await getSession();
       const token = session?.user?.accessToken;
-      const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4100";
       const res = await fetch(`${base}/sessions/${sessionId}/export/${format}`, {
         headers: token ? { authorization: `Bearer ${token}` } : {},
       });

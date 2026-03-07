@@ -18,7 +18,13 @@ export function GuidedPrompt({ onApply }: { onApply: (text: string) => void }) {
 
   function apply() {
     const parts = PROMPTS
-      .map((p, i) => (answers[i].trim() ? `**${p.label}:** ${answers[i].trim()}` : ""))
+      .map((p, i) => {
+        const text = answers[i].trim();
+        if (!text) return "";
+        // Ensure the section ends with sentence-ending punctuation for readability scoring
+        const endsWithPunctuation = /[.!?]$/.test(text);
+        return `${p.label}: ${text}${endsWithPunctuation ? "" : "."}`;
+      })
       .filter(Boolean);
     onApply(parts.join("\n\n"));
   }
