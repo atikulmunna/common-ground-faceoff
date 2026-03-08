@@ -20,7 +20,7 @@ import { requirePermission, logDeniedAction } from "../middleware/authorization.
 import { enqueueAnalysis } from "../services/queueService.js";
 import { runAnalysis } from "../services/analysisService.js";
 import { detectSeverity } from "./moderation.js";
-import { sendSessionInvitation, sendAnalysisCompleteNotification } from "../services/emailService.js";
+import { sendSessionInvitation } from "../services/emailService.js";
 import { uploadExport } from "../services/storageService.js";
 
 export const sessionsRouter = Router();
@@ -390,28 +390,6 @@ sessionsRouter.post("/:id/analyze", requireSessionAccess, requirePermission("tri
       return;
     }
 
-    // Send analysis-complete notification emails to all participants
-    if (result.status === "completed") {
-      const sessionData = await prisma.session.findUnique({
-        where: { id: req.params.id },
-        select: {
-          topic: true,
-          participants: {
-            select: { user: { select: { email: true } } },
-          },
-        },
-      });
-      if (sessionData) {
-        for (const p of sessionData.participants) {
-          sendAnalysisCompleteNotification({
-            recipientEmail: p.user.email,
-            sessionTopic: sessionData.topic,
-            sessionId: req.params.id,
-          }).catch(() => {/* fire-and-forget */});
-        }
-      }
-    }
-
     res.json(
       createSuccessResponse({
         status: result.status,
@@ -423,6 +401,8 @@ sessionsRouter.post("/:id/analyze", requireSessionAccess, requirePermission("tri
       })
     );
   } catch (error) {
+    console.error("[Analyze] Error:", error instanceof Error ? error.message : error);
+    if (error instanceof Error && error.stack) console.error(error.stack);
     res.status(422).json(
       createErrorResponse(
         "async_state_error",

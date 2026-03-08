@@ -55,6 +55,11 @@ model User {
   role             String               @default("individual_user")
   mfaEnabled       Boolean              @default(false)
   mfaSecret        String?
+  smsMfaEnabled    Boolean              @default(false)
+  smsPhone         String?
+  smsCodeHash      String?
+  smsCodeExpiresAt DateTime?
+  smsCodePurpose   String?
   organizationId   String?
   samlNameId       String?
   stripeCustomerId String?              @unique
@@ -70,6 +75,7 @@ model User {
   cohortMemberships CohortMembership[]
   subscription     Subscription?
   emailInvitations EmailInvitation[]
+  emailVerificationTokens EmailVerificationToken[]
 }
 
 model RefreshToken {
@@ -348,6 +354,17 @@ model WebhookEvent {
   createdAt  DateTime @default(now())
 
   @@unique([provider, eventId])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // CG-NFR32: Consent provenance records

@@ -2,14 +2,21 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function SignInPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [info, setInfo] = useState<string | null>(() => {
+    const verified = searchParams.get("verified");
+    if (verified === "1") return "Email verified. You can now sign in.";
+    if (verified === "0") return searchParams.get("reason") ?? "Email verification failed.";
+    return null;
+  });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -17,13 +24,34 @@ export default function SignInPage() {
     event.preventDefault();
     setBusy(true);
     setError(null);
+    setInfo(null);
+
+    if (mode === "register") {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4100";
+      const res = await fetch(`${apiBase}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, displayName })
+      });
+      const json = await res.json();
+      setBusy(false);
+
+      if (!res.ok || !json.success) {
+        setError(json.error?.message ?? "Registration failed");
+        return;
+      }
+
+      setInfo(json.data?.message ?? "Registration successful. Please verify your email before signing in.");
+      setMode("login");
+      setPassword("");
+      return;
+    }
 
     const result = await signIn("credentials", {
       redirect: false,
       email,
       password,
-      action: mode,
-      displayName: mode === "register" ? displayName : undefined
+      action: "login"
     });
 
     setBusy(false);
@@ -81,6 +109,7 @@ export default function SignInPage() {
         />
 
         {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
+        {info && <p style={{ color: "#166534" }}>{info}</p>}
 
         <button type="submit" disabled={busy}>
           {busy ? "Working..." : mode === "login" ? "Sign In" : "Create Account"}

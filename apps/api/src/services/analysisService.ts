@@ -3,6 +3,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { redactPII } from "./redactionService.js";
 import { callLlm, parseJsonResponse, type LlmResponse } from "./llmProvider.js";
+import { sendAnalysisCompleteNotification } from "./emailService.js";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -36,7 +37,7 @@ interface ValueExtractionResult {
 
 interface ConflictClassificationResult {
   conflicts: {
-    category: "empirical" | "value" | "semantic" | "procedural";
+    category: "empirical" | "value" | "semantic" | "policy";
     description: string;
     participants: string[];
   }[];
@@ -150,14 +151,14 @@ Classify each disagreement into one of these categories:
 - **empirical**: disagreement about facts or predictions
 - **value**: disagreement about priorities or moral weight
 - **semantic**: disagreement arising from different definitions
-- **procedural**: disagreement about process, not outcome
+- **policy**: disagreement about policy choices or process, not shared end goals
 
 Return JSON:
 \`\`\`json
 {
   "conflicts": [
     {
-      "category": "empirical|value|semantic|procedural",
+      "category": "empirical|value|semantic|policy",
       "description": "<what the disagreement is>",
       "participants": ["<labels involved>"]
     }
@@ -351,6 +352,44 @@ async function runPipeline(
 
 function estimateStatus(totalChars: number): "queued" | "running" {
   return totalChars > 4000 ? "queued" : "running";
+}
+
+async function notifyAnalysisCompletion(sessionId: string, topic: string): Promise<void> {
+  try {
+    const participants = await prisma.sessionParticipant.findMany({
+      where: { sessionId },
+      select: {
+        user: {
+          select: {
+            email: true,
+            notificationPrefs: true,
+          },
+        },
+      },
+    });
+
+    const recipients = participants
+      .filter((p) => {
+        const prefs = p.user.notificationPrefs as { emailAnalysisComplete?: boolean } | null;
+        return prefs?.emailAnalysisComplete ?? true;
+      })
+      .map((p) => p.user.email);
+
+    await Promise.allSettled(
+      recipients.map((recipientEmail) =>
+        sendAnalysisCompleteNotification({
+          recipientEmail,
+          sessionTopic: topic,
+          sessionId,
+        })
+      )
+    );
+  } catch (err) {
+    console.error(
+      "[Email] Failed to dispatch analysis completion notifications:",
+      err instanceof Error ? err.message : err
+    );
+  }
 }
 
 /** CG-FR57: estimate completion time based on character count & mode */
@@ -555,6 +594,7 @@ export async function runAnalysis(input: BuildAnalysisInput) {
       actorType: "system",
     },
   });
+  void notifyAnalysisCompletion(input.sessionId, session.topic);
 
   return {
     status: "completed" as const,
@@ -679,4 +719,5 @@ export async function completeQueuedAnalysis(
       actorType: "worker",
     },
   });
+  void notifyAnalysisCompletion(sessionId, session.topic);
 }

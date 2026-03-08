@@ -1,0 +1,6 @@
+-- CG-FR06: SMS MFA support
+ALTER TABLE "User" ADD COLUMN "smsMfaEnabled" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "User" ADD COLUMN "smsPhone" TEXT;
+ALTER TABLE "User" ADD COLUMN "smsCodeHash" TEXT;
+ALTER TABLE "User" ADD COLUMN "smsCodeExpiresAt" TIMESTAMP(3);
+ALTER TABLE "User" ADD COLUMN "smsCodePurpose" TEXT;

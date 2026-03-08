@@ -35,6 +35,9 @@ export const authOptions: NextAuthOptions = {
         if (!res.ok || !json.success) {
           throw new Error(json.error?.message ?? "Authentication failed");
         }
+        if (isRegister) {
+          throw new Error(json.data?.message ?? "Registration successful. Please verify your email.");
+        }
 
         return {
           id: json.data.user.id,

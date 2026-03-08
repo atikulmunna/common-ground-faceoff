@@ -14,7 +14,7 @@ export const privacyRouter = Router();
 
 /** Record or update consent for a given purpose */
 privacyRouter.post("/consent", async (req, res) => {
-  const userId = (req as any).userId as string;
+  const userId = req.user.id;
   const { purpose, lawfulBasis, granted } = req.body;
 
   if (!purpose || !lawfulBasis || typeof granted !== "boolean") {
@@ -48,7 +48,7 @@ privacyRouter.post("/consent", async (req, res) => {
 
 /** Get all consent records for the authenticated user */
 privacyRouter.get("/consent", async (req, res) => {
-  const userId = (req as any).userId as string;
+  const userId = req.user.id;
 
   // Get latest consent per purpose using raw grouping
   const records = await prisma.consentRecord.findMany({
@@ -80,7 +80,7 @@ const DEADLINE_DAYS: Record<string, number> = {
 
 /** Submit a data subject request */
 privacyRouter.post("/requests", async (req, res) => {
-  const userId = (req as any).userId as string;
+  const userId = req.user.id;
   const { requestType, reason } = req.body;
 
   if (!requestType || !DEADLINE_DAYS[requestType]) {
@@ -109,7 +109,7 @@ privacyRouter.post("/requests", async (req, res) => {
 
 /** List data subject requests for the authenticated user */
 privacyRouter.get("/requests", async (req, res) => {
-  const userId = (req as any).userId as string;
+  const userId = req.user.id;
 
   const requests = await prisma.dataSubjectRequest.findMany({
     where: { userId },
@@ -124,7 +124,7 @@ privacyRouter.get("/requests", async (req, res) => {
 /* ------------------------------------------------------------------ */
 
 privacyRouter.get("/export", async (req, res) => {
-  const userId = (req as any).userId as string;
+  const userId = req.user.id;
 
   const [user, participants, reactions, comments, feedback, consents, auditLogs] =
     await Promise.all([
@@ -179,7 +179,7 @@ privacyRouter.get("/export", async (req, res) => {
 /* ------------------------------------------------------------------ */
 
 privacyRouter.delete("/account", async (req, res) => {
-  const userId = (req as any).userId as string;
+  const userId = req.user.id;
 
   // CG-NFR34: Propagate deletion across all related records
   await prisma.$transaction([

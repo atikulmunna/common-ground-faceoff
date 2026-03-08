@@ -108,7 +108,16 @@ export const mfaSetupVerifySchema = z.object({
 export const mfaLoginVerifySchema = z.object({
   email: z.string().email(),
   token: z.string().length(6),
-  tempTicket: z.string().min(1)
+  tempTicket: z.string().min(1),
+  mfaType: z.enum(["totp", "sms"]).default("totp")
+});
+
+export const smsMfaSetupSchema = z.object({
+  phone: z.string().min(8).max(20),
+});
+
+export const smsMfaCodeSchema = z.object({
+  code: z.string().length(6),
 });
 
 export const reportContentSchema = z.object({
@@ -163,6 +172,8 @@ export type ApiErrorCode = z.infer<typeof apiErrorCodeSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type MfaLoginVerifyInput = z.infer<typeof mfaLoginVerifySchema>;
+export type SmsMfaSetupInput = z.infer<typeof smsMfaSetupSchema>;
+export type SmsMfaCodeInput = z.infer<typeof smsMfaCodeSchema>;
 export type ReportContentInput = z.infer<typeof reportContentSchema>;
 export type ModerationActionInput = z.infer<typeof moderationActionSchema>;
 

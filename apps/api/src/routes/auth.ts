@@ -1,8 +1,12 @@
 import { Router } from "express";
+import { randomBytes } from "node:crypto";
 import { registerSchema, loginSchema, refreshTokenSchema, oauthExchangeSchema } from "@common-ground/shared";
 
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
+import { sendEmailVerification } from "../services/emailService.js";
+import { sendSms } from "../services/smsService.js";
+import { generateSmsCode, hashSmsCode, SMS_CODE_TTL_MS } from "../lib/mfaSms.js";
 import {
   hashPassword,
   verifyPassword,
@@ -14,6 +18,7 @@ export const authRouter = Router();
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
 // POST /auth/register
 authRouter.post("/register", async (req, res) => {
@@ -39,19 +44,28 @@ authRouter.post("/register", async (req, res) => {
       email: parse.data.email,
       displayName: parse.data.displayName,
       passwordHash,
+      emailVerified: false,
       role: "individual_user"
     }
   });
 
-  const accessToken = signAccessToken({ sub: user.id, email: user.email, role: user.role });
-  const refresh = generateRefreshToken();
+  const verifyToken = randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + EMAIL_VERIFY_TTL_MS);
 
-  await prisma.refreshToken.create({
+  await prisma.emailVerificationToken.create({
     data: {
-      token: refresh.token,
+      token: verifyToken,
       userId: user.id,
-      expiresAt: refresh.expiresAt
+      expiresAt,
     }
+  });
+
+  const apiBase = process.env.API_BASE_URL ?? "http://localhost:4100";
+  const verifyUrl = `${apiBase}/auth/verify-email?token=${encodeURIComponent(verifyToken)}`;
+  void sendEmailVerification({
+    recipientEmail: user.email,
+    displayName: user.displayName,
+    verifyUrl,
   });
 
   // CG-NFR14: Log registration event
@@ -66,9 +80,8 @@ authRouter.post("/register", async (req, res) => {
 
   res.status(201).json(
     createSuccessResponse({
-      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
-      accessToken,
-      refreshToken: refresh.token
+      message: "Registration successful. Please verify your email before signing in.",
+      requiresEmailVerification: true,
     })
   );
 });
@@ -86,6 +99,10 @@ authRouter.post("/login", async (req, res) => {
   const user = await prisma.user.findUnique({ where: { email: parse.data.email } });
   if (!user || !user.passwordHash) {
     res.status(401).json(createErrorResponse("auth_error", "Invalid email or password"));
+    return;
+  }
+  if (!user.emailVerified) {
+    res.status(403).json(createErrorResponse("auth_error", "Please verify your email before signing in"));
     return;
   }
 
@@ -135,7 +152,54 @@ authRouter.post("/login", async (req, res) => {
     }
   });
 
-  // CG-FR06: If MFA is enabled, require second factor before issuing tokens
+  // CG-FR06: If SMS MFA is enabled, send OTP and require verification.
+  if (user.smsMfaEnabled) {
+    if (!user.smsPhone) {
+      res.status(500).json(createErrorResponse("auth_error", "SMS MFA is enabled but phone is not configured"));
+      return;
+    }
+
+    const code = generateSmsCode();
+    const smsSent = await sendSms({
+      to: user.smsPhone,
+      body: `Your Common Ground verification code is ${code}. It expires in 10 minutes.`,
+    });
+    if (!smsSent) {
+      res.status(503).json(createErrorResponse("provider_error", "Could not send SMS verification code"));
+      return;
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        smsCodeHash: hashSmsCode(code),
+        smsCodeExpiresAt: new Date(Date.now() + SMS_CODE_TTL_MS),
+        smsCodePurpose: "login",
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        eventType: "mfa_challenge_issued",
+        actorId: user.id,
+        actorEmail: user.email,
+        ip: req.ip,
+        detail: "type:sms",
+      },
+    });
+
+    res.json(
+      createSuccessResponse({
+        mfaRequired: true,
+        mfaType: "sms",
+        tempTicket: user.id,
+        email: user.email,
+      })
+    );
+    return;
+  }
+
+  // CG-FR06: If TOTP MFA is enabled, require second factor before issuing tokens
   if (user.mfaEnabled) {
     await prisma.auditLog.create({
       data: {
@@ -143,12 +207,14 @@ authRouter.post("/login", async (req, res) => {
         actorId: user.id,
         actorEmail: user.email,
         ip: req.ip,
+        detail: "type:totp",
       },
     });
 
     res.json(
       createSuccessResponse({
         mfaRequired: true,
+        mfaType: "totp",
         tempTicket: user.id,
         email: user.email,
       })
@@ -338,4 +404,71 @@ authRouter.post("/logout", async (req, res) => {
   }
 
   res.json(createSuccessResponse({ message: "Logged out" }));
+});
+
+async function verifyEmailToken(token: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  const record = await prisma.emailVerificationToken.findUnique({
+    where: { token },
+    include: { user: true },
+  });
+  if (!record) return { ok: false, message: "Invalid verification token" };
+  if (record.expiresAt < new Date()) {
+    await prisma.emailVerificationToken.delete({ where: { id: record.id } }).catch(() => {});
+    return { ok: false, message: "Verification token expired" };
+  }
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: record.userId },
+      data: { emailVerified: true },
+    }),
+    prisma.emailVerificationToken.deleteMany({
+      where: { userId: record.userId },
+    }),
+    prisma.auditLog.create({
+      data: {
+        eventType: "email_verified",
+        actorId: record.userId,
+        actorEmail: record.user.email,
+      },
+    }),
+  ]);
+
+  return { ok: true };
+}
+
+// POST /auth/verify-email
+authRouter.post("/verify-email", async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token : "";
+  if (!token) {
+    res.status(400).json(createErrorResponse("validation_error", "Missing verification token"));
+    return;
+  }
+
+  const result = await verifyEmailToken(token);
+  if (!result.ok) {
+    res.status(400).json(createErrorResponse("auth_error", result.message));
+    return;
+  }
+
+  res.json(createSuccessResponse({ verified: true }));
+});
+
+// GET /auth/verify-email?token=...
+authRouter.get("/verify-email", async (req, res) => {
+  const token = typeof req.query.token === "string" ? req.query.token : "";
+  if (!token) {
+    res.status(400).json(createErrorResponse("validation_error", "Missing verification token"));
+    return;
+  }
+
+  const result = await verifyEmailToken(token);
+  const webBase = process.env.WEB_BASE_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+
+  if (!result.ok) {
+    res.redirect(`${webBase}/sign-in?verified=0&reason=${encodeURIComponent(result.message)}`);
+    return;
+  }
+
+  res.redirect(`${webBase}/sign-in?verified=1`);
 });

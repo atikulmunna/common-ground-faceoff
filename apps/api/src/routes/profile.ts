@@ -19,6 +19,8 @@ profileRouter.get("/", async (req, res) => {
       tier: true,
       role: true,
       mfaEnabled: true,
+      smsMfaEnabled: true,
+      smsPhone: true,
       createdAt: true,
     },
   });
@@ -63,6 +65,9 @@ profileRouter.patch("/", async (req, res) => {
       notificationPrefs: true,
       tier: true,
       role: true,
+      mfaEnabled: true,
+      smsMfaEnabled: true,
+      smsPhone: true,
     },
   });
 

@@ -12,6 +12,8 @@ type ProfileData = {
   tier: string;
   role: string;
   mfaEnabled: boolean;
+  smsMfaEnabled: boolean;
+  smsPhone: string | null;
   createdAt: string;
 };
 
@@ -27,6 +29,11 @@ export default function ProfilePage() {
   const [mfaQr, setMfaQr] = useState<string | null>(null);
   const [mfaToken, setMfaToken] = useState("");
   const [mfaMsg, setMfaMsg] = useState<string | null>(null);
+  const [smsPhone, setSmsPhone] = useState("");
+  const [smsCode, setSmsCode] = useState("");
+  const [smsMsg, setSmsMsg] = useState<string | null>(null);
+  const [smsSetupSent, setSmsSetupSent] = useState(false);
+  const [smsDisableSent, setSmsDisableSent] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -38,6 +45,7 @@ export default function ProfilePage() {
         setAvatarUrl(u.avatarUrl ?? "");
         setEmailInvites(u.notificationPrefs?.emailInvites ?? true);
         setEmailAnalysis(u.notificationPrefs?.emailAnalysisComplete ?? true);
+        setSmsPhone(u.smsPhone ?? "");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load profile");
@@ -134,7 +142,7 @@ export default function ProfilePage() {
 
       {/* MFA Settings (CG-FR06) */}
       <div style={{ marginTop: "1.5rem", borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: "1rem" }}>
-        <h2>Two-Factor Authentication</h2>
+        <h2>Two-Factor Authentication (TOTP)</h2>
         {profile.mfaEnabled ? (
           <>
             <p style={{ color: "#16a34a" }}>MFA is <strong>enabled</strong>.</p>
@@ -208,6 +216,122 @@ export default function ProfilePage() {
           </button>
         )}
         {mfaMsg && <p style={{ marginTop: "0.5rem" }}>{mfaMsg}</p>}
+      </div>
+
+      {/* SMS MFA Settings (CG-FR06) */}
+      <div style={{ marginTop: "1.5rem", borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: "1rem" }}>
+        <h2>Two-Factor Authentication (SMS)</h2>
+        {profile.smsMfaEnabled ? (
+          <>
+            <p style={{ color: "#16a34a" }}>
+              SMS MFA is <strong>enabled</strong>{profile.smsPhone ? ` (${profile.smsPhone})` : ""}.
+            </p>
+            {!smsDisableSent ? (
+              <button
+                className="secondary"
+                onClick={async () => {
+                  setSmsMsg(null);
+                  try {
+                    await apiPost("/mfa/sms/send-disable-code", {});
+                    setSmsDisableSent(true);
+                    setSmsMsg("Disable code sent to your phone.");
+                  } catch {
+                    setSmsMsg("Failed to send disable code.");
+                  }
+                }}
+              >
+                Send Disable Code
+              </button>
+            ) : (
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <input
+                  type="text"
+                  maxLength={6}
+                  placeholder="Enter SMS code"
+                  value={smsCode}
+                  onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  style={{ width: "10rem" }}
+                />
+                <button
+                  className="secondary"
+                  disabled={smsCode.length !== 6}
+                  onClick={async () => {
+                    setSmsMsg(null);
+                    try {
+                      await apiPost("/mfa/sms/disable", { code: smsCode });
+                      setSmsMsg("SMS MFA disabled.");
+                      setSmsCode("");
+                      setSmsDisableSent(false);
+                      await load();
+                    } catch {
+                      setSmsMsg("Invalid SMS code.");
+                    }
+                  }}
+                >
+                  Disable SMS MFA
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <p>Enable SMS MFA with your mobile number.</p>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                type="tel"
+                placeholder="+15551234567"
+                value={smsPhone}
+                onChange={(e) => setSmsPhone(e.target.value)}
+                style={{ minWidth: "14rem" }}
+              />
+              <button
+                disabled={smsPhone.trim().length < 8}
+                onClick={async () => {
+                  setSmsMsg(null);
+                  try {
+                    await apiPost("/mfa/sms/setup", { phone: smsPhone });
+                    setSmsSetupSent(true);
+                    setSmsMsg("Verification code sent by SMS.");
+                  } catch {
+                    setSmsMsg("Failed to send verification SMS.");
+                  }
+                }}
+              >
+                Send Setup Code
+              </button>
+            </div>
+            {smsSetupSent && (
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.5rem" }}>
+                <input
+                  type="text"
+                  maxLength={6}
+                  placeholder="Enter SMS code"
+                  value={smsCode}
+                  onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  style={{ width: "10rem" }}
+                />
+                <button
+                  disabled={smsCode.length !== 6}
+                  onClick={async () => {
+                    setSmsMsg(null);
+                    try {
+                      await apiPost("/mfa/sms/verify-setup", { code: smsCode });
+                      setSmsMsg("SMS MFA enabled.");
+                      setSmsCode("");
+                      setSmsSetupSent(false);
+                      await load();
+                    } catch {
+                      setSmsMsg("Invalid SMS code.");
+                    }
+                  }}
+                >
+                  Verify &amp; Enable
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {smsMsg && <p style={{ marginTop: "0.5rem" }}>{smsMsg}</p>}
       </div>
     </section>
   );

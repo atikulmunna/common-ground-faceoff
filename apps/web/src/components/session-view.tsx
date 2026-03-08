@@ -9,6 +9,34 @@ import { GuidedPrompt } from "./guided-prompt";
 import { apiGet, apiPost } from "../lib-api";
 import { checkContentPolicy } from "../lib/content-policy";
 
+/** Lightweight inline-markdown renderer: **bold**, *italic*, \n → <br/> */
+function renderMarkdown(text: string): React.ReactNode[] {
+  return text.split(/\n/).flatMap((line, li, lines) => {
+    const parts: React.ReactNode[] = [];
+    const regex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
+    let lastIndex = 0;
+    let match;
+    while ((match = regex.exec(line)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(line.slice(lastIndex, match.index));
+      }
+      if (match[2]) {
+        parts.push(<strong key={`${li}-b-${match.index}`}>{match[2]}</strong>);
+      } else if (match[3]) {
+        parts.push(<em key={`${li}-i-${match.index}`}>{match[3]}</em>);
+      }
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < line.length) {
+      parts.push(line.slice(lastIndex));
+    }
+    if (li < lines.length - 1) {
+      parts.push(<br key={`br-${li}`} />);
+    }
+    return parts;
+  });
+}
+
 type SessionResponse = {
   success: boolean;
   data: {
@@ -193,11 +221,30 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       void refreshAnalysis();
       void refreshReactions();
     }, 3000);
-    // CG-FR07: Heartbeat to keep session alive server-side
-    const heartbeat = setInterval(() => {
+
+    // CG-FR07: Session inactivity should reflect real user activity.
+    // Send heartbeat only on user activity, throttled to once per minute.
+    let lastHeartbeatAt = 0;
+    const sendHeartbeat = () => {
+      const now = Date.now();
+      if (now - lastHeartbeatAt < 60_000) return;
+      lastHeartbeatAt = now;
       void apiPost(`/sessions/${sessionId}/heartbeat`, {}).catch(() => {});
-    }, 60_000);
-    return () => { clearInterval(timer); clearInterval(heartbeat); };
+    };
+
+    sendHeartbeat(); // mark active on initial page view
+
+    const activityEvents = ["mousedown", "keydown", "scroll", "touchstart"] as const;
+    for (const event of activityEvents) {
+      window.addEventListener(event, sendHeartbeat, { passive: true });
+    }
+
+    return () => {
+      clearInterval(timer);
+      for (const event of activityEvents) {
+        window.removeEventListener(event, sendHeartbeat);
+      }
+    };
   }, [refreshAnalysis, refreshSession, refreshReactions, fetchRounds, fetchComments]);
 
   async function submitPosition() {
@@ -732,19 +779,19 @@ function RoundPanel({ round }: { round: RoundSummary }) {
 
       <div className="cgm-round-panel__section">
         <h4>Shared Foundations</h4>
-        <p>{round.sharedFoundations}</p>
+        <p>{renderMarkdown(round.sharedFoundations)}</p>
       </div>
 
       <div className="cgm-round-panel__section">
         <h4>True Disagreements</h4>
-        <p>{round.trueDisagreements}</p>
+        <p>{renderMarkdown(round.trueDisagreements)}</p>
       </div>
 
       <div className="cgm-round-panel__section">
         <h4>Steelmans</h4>
         {Object.entries(round.steelmans as Record<string, string>).map(([label, text]) => (
           <div key={label} className="cgm-round-panel__steelman">
-            <strong>{label}:</strong> <span>{text}</span>
+            <strong>{label}:</strong> <span>{renderMarkdown(text)}</span>
           </div>
         ))}
       </div>

@@ -148,6 +148,41 @@ export async function sendAnalysisCompleteNotification(options: {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Email verification (CG-FR01)                                       */
+/* ------------------------------------------------------------------ */
+
+export async function sendEmailVerification(options: {
+  recipientEmail: string;
+  displayName: string;
+  verifyUrl: string;
+}): Promise<boolean> {
+  const subject = "Verify your email for Common Ground";
+  const text = [
+    `Hi ${options.displayName},`,
+    ``,
+    `Please verify your email to activate your account.`,
+    `Verification link: ${options.verifyUrl}`,
+    ``,
+    `If you did not create this account, you can ignore this email.`,
+  ].join("\n");
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a2e;">Verify Your Email</h2>
+      <p>Hi <strong>${escapeHtml(options.displayName)}</strong>, please verify your email to activate your Common Ground account.</p>
+      <p>
+        <a href="${escapeHtml(options.verifyUrl)}" style="display: inline-block; padding: 12px 24px; background: #334155; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600;">
+          Verify Email
+        </a>
+      </p>
+      <p style="color: #666; font-size: 14px;">If you did not create this account, you can ignore this email.</p>
+    </div>
+  `;
+
+  return sendEmail({ to: options.recipientEmail, subject, text, html });
+}
+
+/* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 

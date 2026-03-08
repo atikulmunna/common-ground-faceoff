@@ -48,15 +48,47 @@ const CONFLICT_LABELS: Record<string, string> = {
   empirical: "Empirical",
   value: "Value-based",
   semantic: "Semantic",
-  procedural: "Policy / Procedural",
+  policy: "Policy",
+  procedural: "Policy",
 };
 
 const CONFLICT_ICONS: Record<string, string> = {
   empirical: "🔬",
   value: "⚖️",
   semantic: "💬",
+  policy: "📋",
   procedural: "📋",
 };
+
+/** Lightweight inline-markdown renderer: **bold**, *italic*, \n → <br/> */
+function renderMarkdown(text: string): React.ReactNode[] {
+  // Split on newlines first, then handle inline formatting
+  return text.split(/\n/).flatMap((line, li, lines) => {
+    const parts: React.ReactNode[] = [];
+    // Match **bold**, *italic*, or plain text segments
+    const regex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
+    let lastIndex = 0;
+    let match;
+    while ((match = regex.exec(line)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(line.slice(lastIndex, match.index));
+      }
+      if (match[2]) {
+        parts.push(<strong key={`${li}-b-${match.index}`}>{match[2]}</strong>);
+      } else if (match[3]) {
+        parts.push(<em key={`${li}-i-${match.index}`}>{match[3]}</em>);
+      }
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < line.length) {
+      parts.push(line.slice(lastIndex));
+    }
+    if (li < lines.length - 1) {
+      parts.push(<br key={`br-${li}`} />);
+    }
+    return parts;
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /*  Expandable section                                                 */
@@ -138,7 +170,7 @@ export function CommonGroundMap({ result, reactions, onReact, comments, onCommen
             return (
               <div key={label} className="cgm-columns__panel">
                 <div className="cgm-columns__label">{label}</div>
-                <p className="cgm-columns__text">{result.steelmans[label]}</p>
+                <p className="cgm-columns__text">{renderMarkdown(result.steelmans[label])}</p>
                 {reactions?.mutual[sectionKey] && (
                   <MutualBadge />
                 )}
@@ -171,7 +203,7 @@ export function CommonGroundMap({ result, reactions, onReact, comments, onCommen
         defaultOpen={true}
       >
         <div className="cgm-overlap">
-          <p>{result.sharedFoundations}</p>
+          <p>{renderMarkdown(result.sharedFoundations)}</p>
           {reactions?.mutual["sharedFoundations"] && <MutualBadge />}
           {onReact && (
             <ReactionButtons
@@ -199,7 +231,7 @@ export function CommonGroundMap({ result, reactions, onReact, comments, onCommen
         defaultOpen={true}
       >
         <div className="cgm-disagreements">
-          <p>{result.trueDisagreements}</p>
+          <p>{renderMarkdown(result.trueDisagreements)}</p>
           {reactions?.mutual["trueDisagreements"] && <MutualBadge />}
           {onReact && (
             <ReactionButtons
@@ -228,7 +260,7 @@ export function CommonGroundMap({ result, reactions, onReact, comments, onCommen
                 </h4>
                 <ul className="cgm-conflicts__list">
                   {descriptions.map((desc, i) => (
-                    <li key={i}>{desc}</li>
+                    <li key={i}>{renderMarkdown(desc)}</li>
                   ))}
                 </ul>
               </div>
