@@ -32,8 +32,7 @@ authRouter.post("/register", async (req, res) => {
 
   const existing = await prisma.user.findUnique({ where: { email: parse.data.email } });
   if (existing) {
-    // Return generic message to prevent email enumeration
-    res.status(409).json(createErrorResponse("auth_error", "Registration failed"));
+    res.status(409).json(createErrorResponse("auth_error", "User already exists, please sign in"));
     return;
   }
 
