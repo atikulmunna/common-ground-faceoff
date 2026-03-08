@@ -2,7 +2,7 @@ import { randomUUID, createHash } from "node:crypto";
 
 import { prisma } from "../lib/prisma.js";
 import { redactPII } from "./redactionService.js";
-import { callLlm, parseJsonResponse } from "./llmProvider.js";
+import { callLlm, parseJsonResponse, type LlmResponse } from "./llmProvider.js";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -241,9 +241,41 @@ function computePromptTemplateHash(): string {
   return createHash("sha256").update(templates).digest("hex").slice(0, 16);
 }
 
+/** CG-FR30: Log each LLM call with PII-stripped prompts and responses */
+async function logPrompt(
+  sessionId: string,
+  pipelineRunId: string,
+  stage: string,
+  userPrompt: string,
+  res: LlmResponse,
+  durationMs: number
+): Promise<void> {
+  try {
+    await prisma.promptLog.create({
+      data: {
+        sessionId,
+        pipelineRunId,
+        stage,
+        provider: res.provider,
+        model: res.model,
+        systemPrompt: SYSTEM_PROMPT,
+        userPrompt,       // already PII-stripped before pipeline
+        responseText: res.content,
+        promptTokens: res.promptTokens,
+        completionTokens: res.completionTokens,
+        durationMs,
+      },
+    });
+  } catch {
+    // Fire-and-forget: logging failure must not break the pipeline
+  }
+}
+
 async function runPipeline(
   topic: string,
-  positions: ParticipantPosition[]
+  positions: ParticipantPosition[],
+  sessionId: string,
+  pipelineRunId: string
 ): Promise<{
   steelmans: Record<string, string>;
   conflictMap: Record<string, string[]>;
@@ -255,29 +287,38 @@ async function runPipeline(
   promptTemplateHash: string;
 }> {
   // Stage 1 – Normalization
-  const normRes = await callLlm(SYSTEM_PROMPT, normalizationPrompt(topic, positions));
+  const normPrompt = normalizationPrompt(topic, positions);
+  const normStart = Date.now();
+  const normRes = await callLlm(SYSTEM_PROMPT, normPrompt);
+  await logPrompt(sessionId, pipelineRunId, "normalization", normPrompt, normRes, Date.now() - normStart);
   const normData = parseJsonResponse<NormalizationResult>(normRes.content);
 
   // Stage 2 – Steelman
-  const steelRes = await callLlm(SYSTEM_PROMPT, steelmanPrompt(topic, normData));
+  const steelPrompt_ = steelmanPrompt(topic, normData);
+  const steelStart = Date.now();
+  const steelRes = await callLlm(SYSTEM_PROMPT, steelPrompt_);
+  await logPrompt(sessionId, pipelineRunId, "steelman", steelPrompt_, steelRes, Date.now() - steelStart);
   const steelData = parseJsonResponse<SteelmanResult>(steelRes.content);
 
   // Stage 3 – Value Extraction
-  const valRes = await callLlm(SYSTEM_PROMPT, valueExtractionPrompt(topic, steelData));
+  const valPrompt = valueExtractionPrompt(topic, steelData);
+  const valStart = Date.now();
+  const valRes = await callLlm(SYSTEM_PROMPT, valPrompt);
+  await logPrompt(sessionId, pipelineRunId, "value_extraction", valPrompt, valRes, Date.now() - valStart);
   const valData = parseJsonResponse<ValueExtractionResult>(valRes.content);
 
   // Stage 4 – Conflict Classification
-  const confRes = await callLlm(
-    SYSTEM_PROMPT,
-    conflictClassificationPrompt(topic, steelData, valData)
-  );
+  const confPrompt = conflictClassificationPrompt(topic, steelData, valData);
+  const confStart = Date.now();
+  const confRes = await callLlm(SYSTEM_PROMPT, confPrompt);
+  await logPrompt(sessionId, pipelineRunId, "conflict_classification", confPrompt, confRes, Date.now() - confStart);
   const confData = parseJsonResponse<ConflictClassificationResult>(confRes.content);
 
   // Stage 5 – Synthesis
-  const synthRes = await callLlm(
-    SYSTEM_PROMPT,
-    synthesisPrompt(topic, steelData, valData, confData)
-  );
+  const synthPrompt = synthesisPrompt(topic, steelData, valData, confData);
+  const synthStart = Date.now();
+  const synthRes = await callLlm(SYSTEM_PROMPT, synthPrompt);
+  await logPrompt(sessionId, pipelineRunId, "synthesis", synthPrompt, synthRes, Date.now() - synthStart);
   const synthData = parseJsonResponse<SynthesisResult>(synthRes.content);
 
   // Build steelmans map keyed by label
@@ -450,7 +491,7 @@ export async function runAnalysis(input: BuildAnalysisInput) {
 
   let pipelineOutput;
   try {
-    pipelineOutput = await runPipeline(session.topic, redactedPositions);
+    pipelineOutput = await runPipeline(session.topic, redactedPositions, input.sessionId, pipelineRunId);
   } catch (err) {
     await prisma.session.update({
       where: { id: input.sessionId },
@@ -577,7 +618,7 @@ export async function completeQueuedAnalysis(
 
   let pipelineOutput;
   try {
-    pipelineOutput = await runPipeline(session.topic, positions);
+    pipelineOutput = await runPipeline(session.topic, positions, sessionId, pipelineRunId);
   } catch (err) {
     await prisma.session.update({ where: { id: sessionId }, data: { status: "failed" } });
     await prisma.analysisEvent.create({

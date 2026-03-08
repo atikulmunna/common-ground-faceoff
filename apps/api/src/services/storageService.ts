@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { withRetryBudget } from "./llmProvider.js";
 
 /* ------------------------------------------------------------------ */
 /*  Cloudflare R2 Export Storage Service                                */
@@ -58,13 +59,17 @@ export async function uploadExport(opts: {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const key = `exports/${opts.sessionId}/${timestamp}.${opts.format}`;
 
-  await client.send(
-    new PutObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: key,
-      Body: typeof opts.content === "string" ? Buffer.from(opts.content, "utf-8") : opts.content,
-      ContentType: opts.contentType,
-    }),
+  // CG-NFR39: Bounded retry with 20s total budget
+  await withRetryBudget(
+    () => client.send(
+      new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: key,
+        Body: typeof opts.content === "string" ? Buffer.from(opts.content, "utf-8") : opts.content,
+        ContentType: opts.contentType,
+      }),
+    ),
+    { budgetMs: 20_000, label: "r2-upload" }
   );
 
   return { key, bucket: R2_BUCKET };

@@ -36,7 +36,7 @@ type SharedViewResponse = {
   error?: { code: string; message: string } | null;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4100";
 
 export default function SharedViewPage() {
   const searchParams = useSearchParams();

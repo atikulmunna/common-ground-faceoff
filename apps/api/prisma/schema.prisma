@@ -102,6 +102,7 @@ model Session {
   shareLinks        ShareLink[]
   emailInvitations  EmailInvitation[]
   positionSnapshots PositionSnapshot[]
+  promptLogs        PromptLog[]
 }
 
 model SessionParticipant {
@@ -398,4 +399,26 @@ model SubprocessorEntry {
   updatedAt   DateTime @updatedAt
 
   @@index([active])
+}
+
+// CG-FR30: LLM prompt/response audit log (PII stripped before storage)
+model PromptLog {
+  id              String   @id @default(cuid())
+  sessionId       String
+  pipelineRunId   String
+  stage           String   // normalization, steelman, value_extraction, conflict_classification, synthesis
+  provider        String
+  model           String
+  systemPrompt    String   // PII-free system prompt
+  userPrompt      String   // PII-stripped user prompt
+  responseText    String   // PII-stripped response
+  promptTokens    Int      @default(0)
+  completionTokens Int     @default(0)
+  durationMs      Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  session         Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([pipelineRunId])
 }

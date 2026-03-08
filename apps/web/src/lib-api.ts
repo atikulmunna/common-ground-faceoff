@@ -1,6 +1,6 @@
 import { getSession } from "next-auth/react";
 
-const API_BASE = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+const API_BASE = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4100";
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   if (typeof window === "undefined") {
@@ -31,7 +31,7 @@ export async function apiGet<T>(path: string, serverToken?: string): Promise<T> 
   return response.json() as Promise<T>;
 }
 
-export async function apiPost<T>(path: string, body: unknown, serverToken?: string): Promise<T> {
+export async function apiPost<T>(path: string, body: unknown, serverToken?: string, signal?: AbortSignal): Promise<T> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
     ...(serverToken
@@ -42,7 +42,8 @@ export async function apiPost<T>(path: string, body: unknown, serverToken?: stri
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers,
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {

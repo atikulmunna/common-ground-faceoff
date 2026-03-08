@@ -96,7 +96,7 @@ export default function AdminDashboardPage() {
   async function handleExportCSV() {
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000"}/admin/analytics/export`,
+        `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4100"}/admin/analytics/export`,
         { headers: { authorization: `Bearer ${session?.user?.accessToken}` } }
       );
       if (!res.ok) throw new Error("Export failed");

@@ -54,6 +54,16 @@ authRouter.post("/register", async (req, res) => {
     }
   });
 
+  // CG-NFR14: Log registration event
+  await prisma.auditLog.create({
+    data: {
+      eventType: "register",
+      actorId: user.id,
+      actorEmail: user.email,
+      ip: req.ip,
+    },
+  });
+
   res.status(201).json(
     createSuccessResponse({
       user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
@@ -157,6 +167,16 @@ authRouter.post("/login", async (req, res) => {
     }
   });
 
+  // CG-NFR14: Log successful login event
+  await prisma.auditLog.create({
+    data: {
+      eventType: "login_success",
+      actorId: user.id,
+      actorEmail: user.email,
+      ip: req.ip,
+    },
+  });
+
   res.json(
     createSuccessResponse({
       user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
@@ -198,6 +218,16 @@ authRouter.post("/refresh", async (req, res) => {
     role: stored.user.role
   });
   const newRefresh = generateRefreshToken();
+
+  // CG-NFR14: Log token refresh event
+  await prisma.auditLog.create({
+    data: {
+      eventType: "token_refresh",
+      actorId: stored.user.id,
+      actorEmail: stored.user.email,
+      ip: req.ip,
+    },
+  });
 
   await prisma.refreshToken.create({
     data: {
@@ -286,9 +316,26 @@ authRouter.post("/logout", async (req, res) => {
     return;
   }
 
+  const storedToken = await prisma.refreshToken.findUnique({
+    where: { token: parse.data.refreshToken },
+    select: { userId: true, user: { select: { email: true } } },
+  });
+
   await prisma.refreshToken.deleteMany({
     where: { token: parse.data.refreshToken }
   });
+
+  // CG-NFR14: Log logout event
+  if (storedToken) {
+    await prisma.auditLog.create({
+      data: {
+        eventType: "logout",
+        actorId: storedToken.userId,
+        actorEmail: storedToken.user.email,
+        ip: req.ip,
+      },
+    });
+  }
 
   res.json(createSuccessResponse({ message: "Logged out" }));
 });

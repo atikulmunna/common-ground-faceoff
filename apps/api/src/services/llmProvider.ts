@@ -112,6 +112,51 @@ function buildProviders(): ProviderConfig[] {
 }
 
 const MAX_RETRIES = 2;
+const LLM_CALL_TIMEOUT_MS = 60_000;
+
+/** CG-NFR39: Per-call timeout wrapper */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`LLM call timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
+/**
+ * CG-NFR39: Third-party call with bounded retry + total timeout budget.
+ * Max 2 retries, capped exponential backoff, total budget ≤ budgetMs.
+ */
+export async function withRetryBudget<T>(
+  fn: () => Promise<T>,
+  opts: { budgetMs?: number; maxRetries?: number; label?: string } = {}
+): Promise<T> {
+  const budget = opts.budgetMs ?? 20_000;
+  const retries = opts.maxRetries ?? MAX_RETRIES;
+  const label = opts.label ?? "third-party";
+  const start = Date.now();
+  const errors: string[] = [];
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const remaining = budget - (Date.now() - start);
+    if (remaining <= 0) break;
+    try {
+      return await withTimeout(fn(), remaining);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${label} attempt ${attempt + 1}: ${msg}`);
+      if (attempt < retries) {
+        const delay = Math.min(1000 * 2 ** attempt, 4000);
+        const waitRemaining = budget - (Date.now() - start);
+        if (delay >= waitRemaining) break;
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+
+  throw new Error(`${label} failed (budget ${budget}ms):\n${errors.join("\n")}`);
+}
 
 /**
  * Call an LLM with automatic failover across configured providers.
@@ -132,7 +177,7 @@ export async function callLlm(
   for (const provider of providers) {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        return await provider.call(systemPrompt, userPrompt);
+        return await withTimeout(provider.call(systemPrompt, userPrompt), LLM_CALL_TIMEOUT_MS);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`${provider.name} attempt ${attempt + 1}: ${msg}`);
@@ -155,20 +200,59 @@ export function parseJsonResponse<T>(raw: string): T {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   const text = fenced ? fenced[1].trim() : raw.trim();
 
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    // Escape unescaped control chars inside JSON string values only
-    const sanitized = text.replace(
-      /"(?:[^"\\]|\\.)*"/g,
-      (str) =>
-        str.replace(/[\x00-\x1f]/g, (ch) => {
-          if (ch === "\n") return "\\n";
-          if (ch === "\r") return "\\r";
-          if (ch === "\t") return "\\t";
-          return "";
-        })
-    );
-    return JSON.parse(sanitized) as T;
+  const attempts = [
+    () => JSON.parse(text) as T,
+    () => {
+      // Escape unescaped control chars inside JSON string values only
+      const sanitized = text.replace(
+        /"(?:[^"\\]|\\.)*"/g,
+        (str) =>
+          str.replace(/[\x00-\x1f]/g, (ch) => {
+            if (ch === "\n") return "\\n";
+            if (ch === "\r") return "\\r";
+            if (ch === "\t") return "\\t";
+            return "";
+          })
+      );
+      return JSON.parse(sanitized) as T;
+    },
+    () => {
+      // Try to repair truncated JSON by closing open brackets/braces/strings
+      let repaired = text.replace(
+        /"(?:[^"\\]|\\.)*"/g,
+        (str) =>
+          str.replace(/[\x00-\x1f]/g, (ch) => {
+            if (ch === "\n") return "\\n";
+            if (ch === "\r") return "\\r";
+            if (ch === "\t") return "\\t";
+            return "";
+          })
+      );
+      // Remove trailing comma before we close
+      repaired = repaired.replace(/,\s*$/, "");
+      // Close any unclosed strings
+      const quoteCount = (repaired.match(/(?<!\\)"/g) ?? []).length;
+      if (quoteCount % 2 !== 0) repaired += '"';
+      // Close unclosed brackets/braces
+      const opens = { "{": 0, "[": 0 };
+      const closes: Record<string, keyof typeof opens> = { "}": "{", "]": "[" };
+      for (const ch of repaired) {
+        if (ch in opens) opens[ch as keyof typeof opens]++;
+        if (ch in closes) opens[closes[ch]]--;
+      }
+      for (let i = 0; i < opens["["]; i++) repaired += "]";
+      for (let i = 0; i < opens["{"]; i++) repaired += "}";
+      return JSON.parse(repaired) as T;
+    },
+  ];
+
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      return attempts[i]();
+    } catch (err) {
+      if (i === attempts.length - 1) throw err;
+    }
   }
+
+  throw new Error("Failed to parse JSON response");
 }

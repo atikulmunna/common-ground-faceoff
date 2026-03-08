@@ -3,6 +3,8 @@
 /*  Sends session invitations and notification emails.                 */
 /* ------------------------------------------------------------------ */
 
+import { withRetryBudget } from "./llmProvider.js";
+
 interface EmailPayload {
   to: string;
   subject: string;
@@ -28,21 +30,30 @@ async function sendEmail(payload: EmailPayload): Promise<boolean> {
     html: payload.html,
   };
 
-  const response = await fetch(RESEND_API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  // CG-NFR39: Bounded retry with 20s total budget
+  return withRetryBudget(
+    async () => {
+      const response = await fetch(RESEND_API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Resend ${response.status}: ${errText}`);
+      }
+
+      return true;
     },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    console.error("[Email] Resend error:", response.status, await response.text());
+    { budgetMs: 20_000, label: "resend-email" }
+  ).catch((err) => {
+    console.error("[Email] Send failed:", err instanceof Error ? err.message : err);
     return false;
-  }
-
-  return true;
+  });
 }
 
 /* ------------------------------------------------------------------ */
