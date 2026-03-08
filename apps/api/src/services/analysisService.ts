@@ -3,7 +3,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { redactPII } from "./redactionService.js";
 import { callLlm, parseJsonResponse, type LlmResponse } from "./llmProvider.js";
-import { sendAnalysisCompleteNotification } from "./emailService.js";
+import { enqueueAnalysisCompletionEmails, processNotificationEmailOutbox } from "./emailOutbox.js";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -356,37 +356,11 @@ function estimateStatus(totalChars: number): "queued" | "running" {
 
 async function notifyAnalysisCompletion(sessionId: string, topic: string): Promise<void> {
   try {
-    const participants = await prisma.sessionParticipant.findMany({
-      where: { sessionId },
-      select: {
-        user: {
-          select: {
-            email: true,
-            notificationPrefs: true,
-          },
-        },
-      },
-    });
-
-    const recipients = participants
-      .filter((p) => {
-        const prefs = p.user.notificationPrefs as { emailAnalysisComplete?: boolean } | null;
-        return prefs?.emailAnalysisComplete ?? true;
-      })
-      .map((p) => p.user.email);
-
-    await Promise.allSettled(
-      recipients.map((recipientEmail) =>
-        sendAnalysisCompleteNotification({
-          recipientEmail,
-          sessionTopic: topic,
-          sessionId,
-        })
-      )
-    );
+    await enqueueAnalysisCompletionEmails(sessionId, topic);
+    await processNotificationEmailOutbox(25);
   } catch (err) {
     console.error(
-      "[Email] Failed to dispatch analysis completion notifications:",
+      "[EmailOutbox] Failed to queue/process analysis completion notifications:",
       err instanceof Error ? err.message : err
     );
   }

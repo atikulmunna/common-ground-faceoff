@@ -12,14 +12,22 @@ interface EmailPayload {
   html: string;
 }
 
+export interface EmailSendResult {
+  ok: boolean;
+  status?: number;
+  providerMessageId?: string;
+  error?: string;
+}
+
 const RESEND_API_URL = "https://api.resend.com/emails";
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "Common Ground <onboarding@resend.dev>";
 
-async function sendEmail(payload: EmailPayload): Promise<boolean> {
+async function sendEmail(payload: EmailPayload): Promise<EmailSendResult> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    console.warn("[Email] RESEND_API_KEY not set — email not sent to", payload.to);
-    return false;
+    const error = "RESEND_API_KEY not set";
+    console.warn("[Email] Send skipped:", { to: payload.to, error });
+    return { ok: false, error };
   }
 
   const body = {
@@ -47,12 +55,14 @@ async function sendEmail(payload: EmailPayload): Promise<boolean> {
         throw new Error(`Resend ${response.status}: ${errText}`);
       }
 
-      return true;
+      const json = (await response.json().catch(() => null)) as { id?: string } | null;
+      return { ok: true, status: response.status, providerMessageId: json?.id };
     },
     { budgetMs: 20_000, label: "resend-email" }
   ).catch((err) => {
-    console.error("[Email] Send failed:", err instanceof Error ? err.message : err);
-    return false;
+    const error = err instanceof Error ? err.message : String(err);
+    console.error("[Email] Send failed:", { to: payload.to, subject: payload.subject, error });
+    return { ok: false, error };
   });
 }
 
@@ -108,18 +118,19 @@ export async function sendSessionInvitation(options: {
     </div>
   `;
 
-  return sendEmail({ to: options.recipientEmail, subject, text, html });
+  const result = await sendEmail({ to: options.recipientEmail, subject, text, html });
+  return result.ok;
 }
 
 /* ------------------------------------------------------------------ */
 /*  Analysis complete notification                                     */
 /* ------------------------------------------------------------------ */
 
-export async function sendAnalysisCompleteNotification(options: {
+export async function sendAnalysisCompleteNotificationDetailed(options: {
   recipientEmail: string;
   sessionTopic: string;
   sessionId: string;
-}): Promise<boolean> {
+}): Promise<EmailSendResult> {
   const appUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
   const viewLink = `${appUrl}/session/${encodeURIComponent(options.sessionId)}`;
 
@@ -145,6 +156,15 @@ export async function sendAnalysisCompleteNotification(options: {
   `;
 
   return sendEmail({ to: options.recipientEmail, subject, text, html });
+}
+
+export async function sendAnalysisCompleteNotification(options: {
+  recipientEmail: string;
+  sessionTopic: string;
+  sessionId: string;
+}): Promise<boolean> {
+  const result = await sendAnalysisCompleteNotificationDetailed(options);
+  return result.ok;
 }
 
 /* ------------------------------------------------------------------ */
@@ -179,7 +199,8 @@ export async function sendEmailVerification(options: {
     </div>
   `;
 
-  return sendEmail({ to: options.recipientEmail, subject, text, html });
+  const result = await sendEmail({ to: options.recipientEmail, subject, text, html });
+  return result.ok;
 }
 
 /* ------------------------------------------------------------------ */

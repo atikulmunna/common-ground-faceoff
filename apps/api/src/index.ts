@@ -31,6 +31,7 @@ import { adminRouter } from "./routes/admin.js";
 import { billingRouter } from "./routes/billing.js";
 import { privacyRouter } from "./routes/privacy.js";
 import { createErrorResponse } from "./lib/response.js";
+import { processNotificationEmailOutbox } from "./services/emailOutbox.js";
 
 // --- Sentry initialization (CG-NFR12: error tracking) ---
 if (process.env.SENTRY_DSN) {
@@ -119,12 +120,23 @@ const server = app.listen(port, "127.0.0.1", () => {
   console.log(`API listening on http://localhost:${port}`);
 });
 
+const emailOutboxTimer = setInterval(() => {
+  void processNotificationEmailOutbox(20).catch((err) => {
+    console.error("[EmailOutbox] Polling failed:", err instanceof Error ? err.message : err);
+  });
+}, 15_000);
+void processNotificationEmailOutbox(20).catch((err) => {
+  console.error("[EmailOutbox] Initial flush failed:", err instanceof Error ? err.message : err);
+});
+
 // Graceful shutdown
 process.on("SIGTERM", async () => {
+  clearInterval(emailOutboxTimer);
   await shutdownQueue();
   server.close();
 });
 process.on("SIGINT", async () => {
+  clearInterval(emailOutboxTimer);
   await shutdownQueue();
   server.close();
 });

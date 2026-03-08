@@ -346,6 +346,26 @@ model EmailInvitation {
   @@index([email])
 }
 
+model NotificationEmail {
+  id                String   @id @default(cuid())
+  kind              String
+  recipientEmail    String
+  sessionId         String?
+  payload           Json?
+  status            String   @default("pending") // pending, retrying, sent, failed
+  attempts          Int      @default(0)
+  nextAttemptAt     DateTime @default(now())
+  lastAttemptAt     DateTime?
+  lastError         String?
+  providerMessageId String?
+  sentAt            DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([sessionId])
+}
+
 model WebhookEvent {
   id         String   @id @default(cuid())
   provider   String
