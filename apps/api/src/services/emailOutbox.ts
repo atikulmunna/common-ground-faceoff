@@ -1,6 +1,5 @@
 import { prisma } from "../lib/prisma.js";
 import { sendAnalysisCompleteNotificationDetailed } from "./emailService.js";
-import type { Prisma } from "@prisma/client";
 
 const ANALYSIS_COMPLETE_KIND = "analysis_complete";
 const MAX_ATTEMPTS = 5;
@@ -50,7 +49,7 @@ export async function enqueueAnalysisCompletionEmails(sessionId: string, topic: 
       kind: ANALYSIS_COMPLETE_KIND,
       recipientEmail,
       sessionId,
-      payload: payload as unknown as Prisma.InputJsonObject,
+      payload: payload as any,
       status: "pending",
     })),
   });

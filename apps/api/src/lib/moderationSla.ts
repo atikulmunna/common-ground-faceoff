@@ -1,4 +1,4 @@
-import type { ModerationSeverity } from "@prisma/client";
+type ModerationSeverity = "low" | "medium" | "high" | "critical";
 
 const SLA_MINUTES_BY_SEVERITY: Record<ModerationSeverity, number> = {
   low: 72 * 60,

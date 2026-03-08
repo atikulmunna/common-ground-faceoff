@@ -21,6 +21,9 @@ jobs:
       - name: Install
         run: npm install
 
+      - name: Prisma Generate (API)
+        run: npm -w @common-ground/api run prisma:generate
+
       - name: Typecheck
         run: npm run typecheck
 

@@ -2,7 +2,6 @@ import { Router, raw } from "express";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { billingCheckoutSchema, billingPortalSchema } from "@common-ground/shared";
-import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -186,7 +185,7 @@ billingRouter.post("/webhook", raw({ type: "application/json" }), async (req, re
       provider: "stripe",
       eventId: event.id,
       eventType: event.type,
-      payload: event.data.object as Prisma.InputJsonValue,
+      payload: event.data.object as any,
     },
   });
 
