@@ -88,6 +88,27 @@ type RoundSummary = {
   createdAt: string;
 };
 
+type ModerationSlaData = {
+  summary: {
+    pendingCount: number;
+    breachedCount: number;
+    nextDueAt: string | null;
+  };
+  flags: Array<{
+    id: string;
+    severity: "low" | "medium" | "high" | "critical";
+    status: string;
+    createdAt: string;
+    reviewedAt: string | null;
+    slaDueAt: string | null;
+    sla: {
+      targetMinutes: number;
+      isBreached: boolean;
+      remainingSeconds: number | null;
+    };
+  }>;
+};
+
 export function SessionView({ sessionId }: { sessionId: string }) {
   const { data: authSession } = useSession();
   const currentUserId = authSession?.user?.id;
@@ -105,6 +126,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const [showComparison, setShowComparison] = useState(false);
   const [comments, setComments] = useState<Array<{ id: string; userId: string; section: string; text: string; createdAt: string }>>([]);
   const [reportSent, setReportSent] = useState(false);
+  const [moderationSla, setModerationSla] = useState<ModerationSlaData | null>(null);
 
   // CG-NFR08: Persist draft position text in localStorage across refreshes
   const draftKey = `cg-draft-${sessionId}`;
@@ -204,6 +226,15 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     }
   }, [sessionId]);
 
+  const fetchModerationSla = useCallback(async () => {
+    try {
+      const res = await apiGet<{ success: boolean; data: ModerationSlaData | null }>(`/moderation/session/${sessionId}/sla`);
+      setModerationSla(res.data ?? null);
+    } catch {
+      // silent for non-critical polling
+    }
+  }, [sessionId]);
+
   async function handleComment(section: string, text: string) {
     try {
       await apiPost(`/sessions/${sessionId}/comments`, { section, text });
@@ -217,9 +248,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     void refreshSession();
     void fetchRounds();
     void fetchComments();
+    void fetchModerationSla();
     const timer = setInterval(() => {
       void refreshAnalysis();
       void refreshReactions();
+      void fetchModerationSla();
     }, 3000);
 
     // CG-FR07: Session inactivity should reflect real user activity.
@@ -245,7 +278,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         window.removeEventListener(event, sendHeartbeat);
       }
     };
-  }, [refreshAnalysis, refreshSession, refreshReactions, fetchRounds, fetchComments]);
+  }, [refreshAnalysis, refreshSession, refreshReactions, fetchRounds, fetchComments, fetchModerationSla]);
 
   async function submitPosition() {
     setBusy(true);
@@ -347,6 +380,12 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               </p>
             )}
             {session?.anonymousMode && <p><em>Anonymous mode enabled</em></p>}
+            {moderationSla?.summary.pendingCount ? (
+              <p style={{ color: moderationSla.summary.breachedCount > 0 ? "#b91c1c" : "#92400e" }}>
+                Moderation SLA: {moderationSla.summary.pendingCount} pending
+                {moderationSla.summary.breachedCount > 0 ? `, ${moderationSla.summary.breachedCount} overdue` : ""}
+              </p>
+            ) : null}
           </div>
           <button
             className="secondary"

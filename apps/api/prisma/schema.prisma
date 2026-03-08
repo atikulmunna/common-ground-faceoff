@@ -303,6 +303,8 @@ model ModerationFlag {
   editedContent String?
   appealText    String?
   appealStatus  String?            // pending_appeal, upheld, overturned
+  slaDueAt      DateTime?
+  slaBreachedAt DateTime?
   createdAt     DateTime           @default(now())
   reviewedAt    DateTime?
 

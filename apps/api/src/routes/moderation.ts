@@ -4,6 +4,7 @@ import { reportContentSchema, moderationActionSchema } from "@common-ground/shar
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { logDeniedAction } from "../middleware/authorization.js";
+import { computeModerationSlaDueAt, getModerationSlaTargetMinutes } from "../lib/moderationSla.js";
 
 export const moderationRouter = Router();
 
@@ -60,6 +61,7 @@ moderationRouter.post("/report/:sessionId", async (req, res) => {
       severity: "medium",
       autoDetected: false,
       status: "pending",
+      slaDueAt: computeModerationSlaDueAt("medium"),
     },
   });
 
@@ -105,7 +107,38 @@ moderationRouter.get("/queue", async (req, res) => {
     take: 50,
   });
 
-  res.json(createSuccessResponse({ flags }));
+  const now = new Date();
+  const updates = flags
+    .filter((f) => f.status === "pending" && f.slaDueAt && f.slaDueAt < now && !f.slaBreachedAt)
+    .map((f) =>
+      prisma.moderationFlag.update({
+        where: { id: f.id },
+        data: { slaBreachedAt: now },
+      })
+    );
+  if (updates.length > 0) await prisma.$transaction(updates);
+
+  const enrichedFlags = flags.map((f) => {
+    const targetMinutes = getModerationSlaTargetMinutes(f.severity);
+    const isBreached = f.status === "pending" && !!f.slaDueAt && f.slaDueAt < now;
+    const remainingSeconds =
+      f.status === "pending" && f.slaDueAt
+        ? Math.max(0, Math.ceil((new Date(f.slaDueAt).getTime() - now.getTime()) / 1000))
+        : null;
+
+    return {
+      ...f,
+      sla: {
+        targetMinutes,
+        dueAt: f.slaDueAt,
+        breachedAt: f.slaBreachedAt ?? (isBreached ? now : null),
+        isBreached,
+        remainingSeconds,
+      },
+    };
+  });
+
+  res.json(createSuccessResponse({ flags: enrichedFlags }));
 });
 
 /* ------------------------------------------------------------------ */
@@ -207,4 +240,65 @@ moderationRouter.post("/:flagId/appeal", async (req, res) => {
   });
 
   res.json(createSuccessResponse({ flag: updated }));
+});
+
+/* ------------------------------------------------------------------ */
+/*  GET /moderation/session/:sessionId/sla — participant-visible SLA   */
+/*  (CG-FR65)                                                          */
+/* ------------------------------------------------------------------ */
+
+moderationRouter.get("/session/:sessionId/sla", async (req, res) => {
+  const participant = await prisma.sessionParticipant.findUnique({
+    where: {
+      sessionId_userId: {
+        sessionId: req.params.sessionId,
+        userId: req.user.id,
+      },
+    },
+  });
+  if (!participant) {
+    res.status(403).json(createErrorResponse("authz_error", "Not a participant in this session"));
+    return;
+  }
+
+  const flags = await prisma.moderationFlag.findMany({
+    where: { sessionId: req.params.sessionId },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      severity: true,
+      status: true,
+      createdAt: true,
+      reviewedAt: true,
+      slaDueAt: true,
+      slaBreachedAt: true,
+    },
+  });
+
+  const now = new Date();
+  const pending = flags.filter((f) => f.status === "pending" || f.status === "appealed");
+  const breaches = pending.filter((f) => f.slaDueAt && new Date(f.slaDueAt) < now);
+  const nextDueAt = pending
+    .map((f) => f.slaDueAt)
+    .filter((d): d is Date => !!d)
+    .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
+
+  res.json(
+    createSuccessResponse({
+      summary: {
+        pendingCount: pending.length,
+        breachedCount: breaches.length,
+        nextDueAt,
+      },
+      flags: pending.map((f) => ({
+        ...f,
+        sla: {
+          targetMinutes: getModerationSlaTargetMinutes(f.severity),
+          isBreached: !!f.slaDueAt && new Date(f.slaDueAt) < now,
+          remainingSeconds: f.slaDueAt ? Math.max(0, Math.ceil((new Date(f.slaDueAt).getTime() - now.getTime()) / 1000)) : null,
+        },
+      })),
+    })
+  );
 });

@@ -20,6 +20,7 @@ import { requirePermission, logDeniedAction } from "../middleware/authorization.
 import { enqueueAnalysis } from "../services/queueService.js";
 import { runAnalysis } from "../services/analysisService.js";
 import { detectSeverity } from "./moderation.js";
+import { computeModerationSlaDueAt } from "../lib/moderationSla.js";
 import { sendSessionInvitation } from "../services/emailService.js";
 import { uploadExport } from "../services/storageService.js";
 
@@ -342,6 +343,7 @@ sessionsRouter.post("/:id/positions", requireSessionAccess, async (req, res) => 
         severity: check.severity,
         autoDetected: true,
         status: "pending",
+        slaDueAt: computeModerationSlaDueAt(check.severity),
       },
     });
 
