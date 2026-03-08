@@ -278,7 +278,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         window.removeEventListener(event, sendHeartbeat);
       }
     };
-  }, [refreshAnalysis, refreshSession, refreshReactions, fetchRounds, fetchComments, fetchModerationSla]);
+  }, [sessionId, refreshAnalysis, refreshSession, refreshReactions, fetchRounds, fetchComments, fetchModerationSla]);
 
   async function submitPosition() {
     setBusy(true);

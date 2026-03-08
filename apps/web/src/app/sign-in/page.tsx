@@ -1,10 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 export default function SignInPage() {
+  return (
+    <Suspense fallback={<section className="card grid" style={{ maxWidth: "28rem", margin: "0 auto" }}><p>Loading...</p></section>}>
+      <SignInPageContent />
+    </Suspense>
+  );
+}
+
+function SignInPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<"login" | "register">("login");

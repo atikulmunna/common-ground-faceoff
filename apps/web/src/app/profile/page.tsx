@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { apiGet, apiPatch, apiPost } from "../../lib-api";
 
 type ProfileData = {
@@ -175,7 +176,13 @@ export default function ProfilePage() {
         ) : mfaQr ? (
           <>
             <p>Scan this QR code with your authenticator app:</p>
-            <img src={mfaQr} alt="MFA QR Code" style={{ width: 200, height: 200 }} />
+            <Image
+              src={mfaQr}
+              alt="MFA QR Code"
+              width={200}
+              height={200}
+              unoptimized
+            />
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.5rem" }}>
               <input
                 type="text"

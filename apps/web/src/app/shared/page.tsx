@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CommonGroundMap } from "../../components/common-ground-map";
 
@@ -39,6 +39,18 @@ type SharedViewResponse = {
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4100";
 
 export default function SharedViewPage() {
+  return (
+    <Suspense fallback={
+      <section className="grid">
+        <article className="card"><p>Loading shared session...</p></article>
+      </section>
+    }>
+      <SharedViewPageContent />
+    </Suspense>
+  );
+}
+
+function SharedViewPageContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
   const [session, setSession] = useState<SharedSession | null>(null);
