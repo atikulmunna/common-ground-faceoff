@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
 
 import { apiPost } from "../lib-api";
 
@@ -12,6 +14,7 @@ type CreateResponse = {
 
 export function CreateSessionForm() {
   const router = useRouter();
+  const { status } = useSession();
   const [topic, setTopic] = useState("");
   const [anonymousMode, setAnonymousMode] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -33,6 +36,25 @@ export function CreateSessionForm() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (status === "loading") {
+    return (
+      <section className="card grid">
+        <h1>Create Session</h1>
+        <p>Checking your session...</p>
+      </section>
+    );
+  }
+
+  if (status === "unauthenticated") {
+    return (
+      <section className="card grid">
+        <h1>Create Session</h1>
+        <p>You need to sign in before creating a session.</p>
+        <Link href="/sign-in">Go to Sign In</Link>
+      </section>
+    );
   }
 
   return (

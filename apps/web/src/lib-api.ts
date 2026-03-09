@@ -14,6 +14,19 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   return {};
 }
 
+async function buildApiError(response: Response, method: string, path: string): Promise<Error> {
+  let message = `${method} ${path} failed with ${response.status}`;
+  try {
+    const payload = (await response.json()) as { error?: { message?: string } };
+    if (payload?.error?.message) {
+      message = payload.error.message;
+    }
+  } catch {
+    // Ignore parse failures and keep generic status message.
+  }
+  return new Error(message);
+}
+
 export async function apiGet<T>(path: string, serverToken?: string): Promise<T> {
   const headers: Record<string, string> = serverToken
     ? { authorization: `Bearer ${serverToken}` }
@@ -25,7 +38,7 @@ export async function apiGet<T>(path: string, serverToken?: string): Promise<T> 
   });
 
   if (!response.ok) {
-    throw new Error(`GET ${path} failed with ${response.status}`);
+    throw await buildApiError(response, "GET", path);
   }
 
   return response.json() as Promise<T>;
@@ -47,7 +60,7 @@ export async function apiPost<T>(path: string, body: unknown, serverToken?: stri
   });
 
   if (!response.ok) {
-    throw new Error(`POST ${path} failed with ${response.status}`);
+    throw await buildApiError(response, "POST", path);
   }
 
   return response.json() as Promise<T>;
@@ -66,7 +79,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`PATCH ${path} failed with ${response.status}`);
+    throw await buildApiError(response, "PATCH", path);
   }
 
   return response.json() as Promise<T>;
