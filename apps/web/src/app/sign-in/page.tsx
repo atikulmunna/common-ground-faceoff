@@ -12,6 +12,32 @@ export default function SignInPage() {
   );
 }
 
+function extractRegistrationError(json: unknown): string {
+  const fallback = "Registration failed";
+  if (!json || typeof json !== "object") return fallback;
+
+  const payload = json as {
+    error?: {
+      message?: string;
+      details?: {
+        fieldErrors?: Record<string, string[] | undefined>;
+      };
+    };
+  };
+
+  const fieldErrors = payload.error?.details?.fieldErrors;
+  if (fieldErrors) {
+    const passwordError = fieldErrors.password?.[0];
+    if (passwordError) return passwordError;
+    const emailError = fieldErrors.email?.[0];
+    if (emailError) return emailError;
+    const displayNameError = fieldErrors.displayName?.[0];
+    if (displayNameError) return displayNameError;
+  }
+
+  return payload.error?.message ?? fallback;
+}
+
 function SignInPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -45,7 +71,7 @@ function SignInPageContent() {
       setBusy(false);
 
       if (!res.ok || !json.success) {
-        setError(json.error?.message ?? "Registration failed");
+        setError(extractRegistrationError(json));
         return;
       }
 
