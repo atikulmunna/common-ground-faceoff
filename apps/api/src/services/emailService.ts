@@ -22,6 +22,11 @@ export interface EmailSendResult {
 const RESEND_API_URL = "https://api.resend.com/emails";
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "Common Ground <onboarding@resend.dev>";
 
+function sanitizeSubjectText(input: string): string {
+  // Resend rejects CR/LF in subject fields.
+  return input.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 async function sendEmail(payload: EmailPayload): Promise<EmailSendResult> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -79,15 +84,16 @@ export async function sendSessionInvitation(options: {
 }): Promise<boolean> {
   const appUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
   const joinLink = `${appUrl}/session/${encodeURIComponent(options.sessionId)}`;
+  const normalizedTopic = sanitizeSubjectText(options.sessionTopic);
 
-  const subject = `You're invited to a Common Ground session: ${options.sessionTopic}`;
+  const subject = `You're invited to a Common Ground session: ${normalizedTopic}`;
 
   const text = [
     `Hi,`,
     ``,
     `${options.inviterName} has invited you to a Common Ground session.`,
     ``,
-    `Topic: ${options.sessionTopic}`,
+    `Topic: ${normalizedTopic}`,
     options.message ? `Message: ${options.message}` : "",
     ``,
     `Join the session: ${joinLink}`,
@@ -103,7 +109,7 @@ export async function sendSessionInvitation(options: {
       <h2 style="color: #1a1a2e;">You're Invited to Common Ground</h2>
       <p><strong>${escapeHtml(options.inviterName)}</strong> has invited you to share your perspective on:</p>
       <blockquote style="border-left: 4px solid #6366f1; padding: 12px 16px; margin: 16px 0; background: #f8f9fa; border-radius: 4px;">
-        ${escapeHtml(options.sessionTopic)}
+        ${escapeHtml(normalizedTopic)}
       </blockquote>
       ${options.message ? `<p style="color: #555;"><em>"${escapeHtml(options.message)}"</em></p>` : ""}
       <p>
@@ -133,20 +139,21 @@ export async function sendAnalysisCompleteNotificationDetailed(options: {
 }): Promise<EmailSendResult> {
   const appUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
   const viewLink = `${appUrl}/session/${encodeURIComponent(options.sessionId)}`;
+  const normalizedTopic = sanitizeSubjectText(options.sessionTopic);
 
-  const subject = `Analysis complete: ${options.sessionTopic}`;
+  const subject = `Analysis complete: ${normalizedTopic}`;
 
   const text = [
     `Hi,`,
     ``,
-    `The AI analysis for "${options.sessionTopic}" is now complete.`,
+    `The AI analysis for "${normalizedTopic}" is now complete.`,
     `View the Common Ground Map: ${viewLink}`,
   ].join("\n");
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #1a1a2e;">Analysis Complete</h2>
-      <p>The AI analysis for <strong>${escapeHtml(options.sessionTopic)}</strong> is ready.</p>
+      <p>The AI analysis for <strong>${escapeHtml(normalizedTopic)}</strong> is ready.</p>
       <p>
         <a href="${escapeHtml(viewLink)}" style="display: inline-block; padding: 12px 24px; background: #6366f1; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600;">
           View Common Ground Map
