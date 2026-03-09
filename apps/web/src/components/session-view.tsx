@@ -110,7 +110,7 @@ type ModerationSlaData = {
 };
 
 export function SessionView({ sessionId }: { sessionId: string }) {
-  const { data: authSession } = useSession();
+  const { data: authSession, status: authStatus } = useSession();
   const currentUserId = authSession?.user?.id;
   const [positionText, setPositionText] = useState("");
   const [session, setSession] = useState<SessionData | null>(null);
@@ -150,6 +150,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     try {
       const response = await apiGet<SessionResponse>(`/sessions/${sessionId}`);
       setSession(response.data?.session ?? null);
+      setError(null);
       if (currentUserId) {
         const self = response.data?.session.participants.find((p) => p.userId === currentUserId);
         if (self?.positionText) {
@@ -245,6 +246,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   }
 
   useEffect(() => {
+    if (authStatus === "loading") return;
+
     void refreshSession();
     void fetchRounds();
     void fetchComments();
@@ -278,7 +281,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         window.removeEventListener(event, sendHeartbeat);
       }
     };
-  }, [sessionId, refreshAnalysis, refreshSession, refreshReactions, fetchRounds, fetchComments, fetchModerationSla]);
+  }, [authStatus, sessionId, refreshAnalysis, refreshSession, refreshReactions, fetchRounds, fetchComments, fetchModerationSla]);
 
   async function submitPosition() {
     setBusy(true);
@@ -585,12 +588,14 @@ function FeedbackPanel({
   onSubmit,
   saved,
 }: {
-  onSubmit: (faithfulness: number, neutrality: number, comment: string) => void;
+  onSubmit: (faithfulness: number, neutrality: number, comment: string) => Promise<void>;
   saved: boolean;
 }) {
   const [faithfulness, setFaithfulness] = useState(0);
   const [neutrality, setNeutrality] = useState(0);
   const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   if (saved) {
     return (
@@ -614,11 +619,22 @@ function FeedbackPanel({
         value={comment}
         onChange={(e) => setComment(e.target.value)}
       />
+      {submitError ? <p style={{ color: "#b91c1c", margin: 0 }}>{submitError}</p> : null}
       <button
-        onClick={() => onSubmit(faithfulness, neutrality, comment)}
-        disabled={faithfulness === 0 || neutrality === 0}
+        onClick={async () => {
+          setBusy(true);
+          setSubmitError(null);
+          try {
+            await onSubmit(faithfulness, neutrality, comment);
+          } catch (e) {
+            setSubmitError(e instanceof Error ? e.message : "Failed to submit feedback");
+          } finally {
+            setBusy(false);
+          }
+        }}
+        disabled={busy || faithfulness === 0 || neutrality === 0}
       >
-        Submit Feedback
+        {busy ? "Submitting..." : "Submit Feedback"}
       </button>
     </div>
   );
@@ -655,9 +671,11 @@ function RatingRow({
 
 function ExportPanel({ sessionId }: { sessionId: string }) {
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   async function downloadExport(format: "json" | "markdown" | "pdf") {
     setExporting(true);
+    setExportError(null);
     try {
       const { getSession } = await import("next-auth/react");
       const session = await getSession();
@@ -676,6 +694,8 @@ function ExportPanel({ sessionId }: { sessionId: string }) {
       a.download = `common-ground-${sessionId}.${ext}`;
       a.click();
       URL.revokeObjectURL(url);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "Export failed");
     } finally {
       setExporting(false);
     }
@@ -695,6 +715,7 @@ function ExportPanel({ sessionId }: { sessionId: string }) {
           {exporting ? "Exporting…" : "PDF"}
         </button>
       </div>
+      {exportError ? <p style={{ color: "#b91c1c", margin: 0 }}>{exportError}</p> : null}
     </div>
   );
 }
