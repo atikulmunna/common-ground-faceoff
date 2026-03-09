@@ -89,9 +89,9 @@ describe("Authorization matrix (CG-FR61)", () => {
       const r = checkPermission("export_session", "individual_user", "user-3", withParticipant);
       expect(r.allowed).toBe(true);
     });
-    it("denies participant with canExport=false", () => {
+    it("allows participant with canExport=false", () => {
       const r = checkPermission("export_session", "individual_user", "user-2", withParticipant);
-      expect(r.allowed).toBe(false);
+      expect(r.allowed).toBe(true);
     });
     it("allows institutional_admin (org scope)", () => {
       const r = checkPermission("export_session", "institutional_admin", "admin", withParticipant);

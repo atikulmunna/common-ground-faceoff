@@ -8,6 +8,7 @@ The product is designed for clarity, neutrality, and traceability, not winner/lo
 
 - [Product Goals](#product-goals)
 - [Core Capabilities](#core-capabilities)
+- [Demo Walkthrough](#demo-walkthrough)
 - [How the System Works](#how-the-system-works)
 - [End-to-End User Flow](#end-to-end-user-flow)
 - [Architecture](#architecture)
@@ -52,13 +53,19 @@ The product is designed for clarity, neutrality, and traceability, not winner/lo
   - Moderator queue and appeal flow
   - Severity taxonomy and participant-visible SLA summary
 - Export and sharing:
-  - PDF, Markdown, and JSON exports
+  - PDF, Markdown, and JSON exports (available to all session participants)
   - Revocable read-only share links
 - Privacy and compliance features:
   - PII redaction pipeline before LLM calls
   - Data export and account deletion endpoints
   - Consent and data subject request records
   - Subprocessor inventory endpoint
+
+## Demo Walkthrough
+
+[![Common Ground Demo](https://img.youtube.com/vi/TbjtFvMk2Hk/maxresdefault.jpg)](https://youtu.be/TbjtFvMk2Hk)
+
+[![YouTube](https://img.shields.io/badge/YouTube-Watch%20Demo-red?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/TbjtFvMk2Hk)
 
 ## How the System Works
 
@@ -269,6 +276,7 @@ Additional scripts:
 
 - Resend test-mode accounts can only send to allowed recipients until a domain is verified.
 - `NEXTAUTH_URL` should point to your actual web origin so links in emails resolve correctly.
+- Export endpoints are authorized for all session participants.
 - For production/staging deployments, use `prisma migrate deploy` (not `migrate dev`).
 
 ## Known Deployment Dependencies

@@ -78,7 +78,7 @@ const MATRIX: Record<AuthzAction, Record<UserRole, Permission>> = {
   export_session: {
     individual_user: "no",
     session_creator: "yes",
-    session_participant: "if_granted",
+    session_participant: "yes",
     institutional_admin: "org_scope",
     moderator: "no",
   },
