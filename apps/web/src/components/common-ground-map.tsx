@@ -61,9 +61,18 @@ const CONFLICT_ICONS: Record<string, string> = {
 };
 
 /** Lightweight inline-markdown renderer: **bold**, *italic*, \n → <br/> */
-function renderMarkdown(text: string): React.ReactNode[] {
+function renderMarkdown(text: unknown): React.ReactNode[] {
+  const normalized =
+    typeof text === "string"
+      ? text
+      : text == null
+        ? ""
+        : typeof text === "object"
+          ? JSON.stringify(text)
+          : String(text);
+
   // Split on newlines first, then handle inline formatting
-  return text.split(/\n/).flatMap((line, li, lines) => {
+  return normalized.split(/\n/).flatMap((line, li, lines) => {
     const parts: React.ReactNode[] = [];
     // Match **bold**, *italic*, or plain text segments
     const regex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
@@ -259,7 +268,7 @@ export function CommonGroundMap({ result, reactions, onReact, comments, onCommen
                   {CONFLICT_LABELS[category] ?? category}
                 </h4>
                 <ul className="cgm-conflicts__list">
-                  {descriptions.map((desc, i) => (
+                  {(Array.isArray(descriptions) ? descriptions : [descriptions]).map((desc, i) => (
                     <li key={i}>{renderMarkdown(desc)}</li>
                   ))}
                 </ul>
