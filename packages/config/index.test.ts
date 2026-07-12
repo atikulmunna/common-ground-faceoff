@@ -31,4 +31,20 @@ describe("parseEnv", () => {
     expect(featureEnabled(env.ENABLE_SAML)).toBe(false);
     expect(featureEnabled("true")).toBe(true);
   });
+
+  it("refuses to enable experimental SAML in production", () => {
+    expect(() => parseEnv({
+      ...requiredEnv,
+      NODE_ENV: "production",
+      ENABLE_SAML: "true",
+    })).toThrow(/SAML is experimental/);
+  });
+
+  it("allows experimental SAML only outside production", () => {
+    expect(parseEnv({
+      ...requiredEnv,
+      NODE_ENV: "development",
+      ENABLE_SAML: "true",
+    }).ENABLE_SAML).toBe("true");
+  });
 });

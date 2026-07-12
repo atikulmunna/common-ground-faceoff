@@ -35,6 +35,14 @@ export const envSchema = z.object({
   ENABLE_SMS_MFA: z.enum(["true", "false"]).default("false"),
   ENABLE_EXTERNAL_EXPORT_STORAGE: z.enum(["true", "false"]).default("false"),
   ENABLE_DATADOG: z.enum(["true", "false"]).default("false")
+}).superRefine((env, ctx) => {
+  if (env.NODE_ENV === "production" && env.ENABLE_SAML === "true") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["ENABLE_SAML"],
+      message: "SAML is experimental and must remain disabled in production",
+    });
+  }
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
