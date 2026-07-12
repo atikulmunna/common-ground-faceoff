@@ -249,16 +249,16 @@ describe("shared contracts", () => {
   describe("billingCheckoutSchema", () => {
     it("accepts valid checkout payload", () => {
       const result = billingCheckoutSchema.safeParse({
-        priceId: "price_abc123",
+        plan: "pro",
         successUrl: "https://example.com/success",
         cancelUrl: "https://example.com/cancel",
       });
       expect(result.success).toBe(true);
     });
 
-    it("rejects missing priceId", () => {
+    it("rejects an arbitrary Stripe price ID", () => {
       const result = billingCheckoutSchema.safeParse({
-        priceId: "",
+        plan: "price_abc123",
         successUrl: "https://example.com/success",
         cancelUrl: "https://example.com/cancel",
       });
@@ -267,7 +267,7 @@ describe("shared contracts", () => {
 
     it("rejects non-URL successUrl", () => {
       const result = billingCheckoutSchema.safeParse({
-        priceId: "price_abc123",
+        plan: "pro",
         successUrl: "not-a-url",
         cancelUrl: "https://example.com/cancel",
       });

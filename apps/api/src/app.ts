@@ -14,7 +14,7 @@ import { mfaRouter } from "./routes/mfa.js";
 import { moderationRouter } from "./routes/moderation.js";
 import { samlRouter } from "./routes/saml.js";
 import { adminRouter } from "./routes/admin.js";
-import { billingRouter } from "./routes/billing.js";
+import { billingRouter, billingWebhookHandler } from "./routes/billing.js";
 import { privacyRouter } from "./routes/privacy.js";
 import { createErrorResponse } from "./lib/response.js";
 import { checkReadiness } from "./services/readinessService.js";
@@ -52,6 +52,16 @@ export function createApp(): express.Express {
 
   const allowedOrigins = process.env.CORS_ORIGIN?.split(",") ?? ["http://localhost:3000"];
   app.use(cors({ origin: allowedOrigins, credentials: true }));
+
+  // Stripe signatures cover the exact request bytes, so this must run before JSON parsing.
+  if (featureEnabled(process.env.ENABLE_BILLING)) {
+    app.post(
+      "/billing/webhook",
+      express.raw({ type: "application/json", limit: "256kb" }),
+      billingWebhookHandler,
+    );
+  }
+
   app.use(express.json({ limit: "256kb" }));
 
   // CG-NFR15: rate limiting — 100 requests/minute per IP
@@ -89,10 +99,6 @@ export function createApp(): express.Express {
   }
   // Shared link public read-only view (CG-FR38)
   app.get("/share-links/view/:token", shareLinksRouter);
-  // Stripe webhook (public, uses signature verification — CG-FR67)
-  if (featureEnabled(process.env.ENABLE_BILLING)) {
-    app.post("/billing/webhook", billingRouter);
-  }
   // CG-NFR33: Public subprocessor inventory
   app.get("/privacy/subprocessors", privacyRouter);
 

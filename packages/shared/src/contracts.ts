@@ -254,7 +254,7 @@ export const emailInvitationSchema = z.object({
 });
 
 export const billingCheckoutSchema = z.object({
-  priceId: z.string().min(1),
+  plan: z.enum(["pro", "enterprise"]),
   successUrl: z.string().url(),
   cancelUrl: z.string().url(),
 });

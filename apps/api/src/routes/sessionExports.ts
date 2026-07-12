@@ -210,4 +210,3 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
   res.setHeader("Content-Disposition", `attachment; filename="common-ground-${session.id}.md"`);
   res.send(md);
 });
-

@@ -276,4 +276,3 @@ sessionCollaborationRouter.get("/:id/comments", requireSessionAccess, async (req
 
   res.json(createSuccessResponse({ comments }));
 });
-

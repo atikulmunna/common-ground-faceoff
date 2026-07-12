@@ -1,4 +1,4 @@
-import { Router, raw } from "express";
+import { Router, type Request, type Response } from "express";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { billingCheckoutSchema, billingPortalSchema } from "@common-ground/shared";
@@ -11,6 +11,12 @@ export const billingRouter = Router();
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const STRIPE_API = "https://api.stripe.com/v1";
+
+export function getStripePriceForPlan(plan: "pro" | "enterprise"): string | undefined {
+  return plan === "pro"
+    ? process.env.STRIPE_PRICE_PRO
+    : process.env.STRIPE_PRICE_ENTERPRISE;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Stripe API helpers                                                 */
@@ -76,11 +82,17 @@ billingRouter.post("/checkout", requireAuth, async (req, res) => {
     return;
   }
 
+  const priceId = getStripePriceForPlan(parse.data.plan);
+  if (!priceId) {
+    res.status(503).json(createErrorResponse("internal_error", "Selected billing plan is not configured"));
+    return;
+  }
+
   const customerId = await getOrCreateStripeCustomer(req.user.id, req.user.email);
 
   const session = await stripeRequest("POST", "/checkout/sessions", {
     customer: customerId,
-    "line_items[0][price]": parse.data.priceId,
+    "line_items[0][price]": priceId,
     "line_items[0][quantity]": "1",
     mode: "subscription",
     success_url: parse.data.successUrl,
@@ -143,7 +155,7 @@ billingRouter.get("/subscription", requireAuth, async (req, res) => {
 /*  Unauthenticated — uses Stripe signature verification               */
 /* ------------------------------------------------------------------ */
 
-billingRouter.post("/webhook", raw({ type: "application/json" }), async (req, res) => {
+export async function billingWebhookHandler(req: Request, res: Response): Promise<void> {
   if (!STRIPE_WEBHOOK_SECRET) {
     res.status(503).json(createErrorResponse("internal_error", "Webhook not configured"));
     return;
@@ -163,11 +175,17 @@ billingRouter.post("/webhook", raw({ type: "application/json" }), async (req, re
     return;
   }
 
-  const event = JSON.parse(payload) as {
+  let event: {
     id: string;
     type: string;
     data: { object: Record<string, unknown> };
   };
+  try {
+    event = JSON.parse(payload) as typeof event;
+  } catch {
+    res.status(400).json(createErrorResponse("validation_error", "Invalid webhook payload"));
+    return;
+  }
 
   // CG-FR67: Idempotency — skip processed events
   const existing = await prisma.webhookEvent.findUnique({
@@ -200,7 +218,7 @@ billingRouter.post("/webhook", raw({ type: "application/json" }), async (req, re
   }
 
   res.json({ received: true });
-});
+}
 
 /* ------------------------------------------------------------------ */
 /*  Stripe event handlers                                              */
