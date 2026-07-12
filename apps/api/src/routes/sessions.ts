@@ -16,7 +16,7 @@ import {
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { requireSessionAccess } from "../middleware/rbac.js";
-import { requirePermission, logDeniedAction } from "../middleware/authorization.js";
+import { requirePermission } from "../middleware/authorization.js";
 import { enqueueAnalysis } from "../services/queueService.js";
 import { runAnalysis } from "../services/analysisService.js";
 import { detectSeverity } from "./moderation.js";

@@ -6,6 +6,7 @@ import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { sendEmailVerification } from "../services/emailService.js";
 import { sendSms } from "../services/smsService.js";
+import { featureEnabled } from "@common-ground/config";
 import { generateSmsCode, hashSmsCode, SMS_CODE_TTL_MS } from "../lib/mfaSms.js";
 import {
   hashPassword,
@@ -152,7 +153,7 @@ authRouter.post("/login", async (req, res) => {
   });
 
   // CG-FR06: If SMS MFA is enabled, send OTP and require verification.
-  if (user.smsMfaEnabled) {
+  if (user.smsMfaEnabled && featureEnabled(process.env.ENABLE_SMS_MFA)) {
     if (!user.smsPhone) {
       res.status(500).json(createErrorResponse("auth_error", "SMS MFA is enabled but phone is not configured"));
       return;

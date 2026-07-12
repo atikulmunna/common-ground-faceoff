@@ -14,7 +14,7 @@
     "@auth/prisma-adapter": "^2.11.1",
     "@common-ground/config": "0.1.0",
     "@common-ground/shared": "0.1.0",
-    "next": "15.0.0",
+    "next": "^15.5.20",
     "next-auth": "^4.24.13",
     "react": "18.3.1",
     "react-dom": "18.3.1",

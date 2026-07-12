@@ -8,8 +8,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json",
-    "lint": "echo shared lint placeholder",
-    "test": "echo shared test placeholder"
+    "lint": "eslint src --max-warnings=0",
+    "test": "vitest run --exclude dist/**"
   },
   "dependencies": {
     "zod": "^3.23.8"

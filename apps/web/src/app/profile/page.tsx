@@ -18,6 +18,8 @@ type ProfileData = {
   createdAt: string;
 };
 
+const SMS_MFA_ENABLED = process.env.NEXT_PUBLIC_ENABLE_SMS_MFA === "true";
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [displayName, setDisplayName] = useState("");
@@ -226,7 +228,7 @@ export default function ProfilePage() {
       </div>
 
       {/* SMS MFA Settings (CG-FR06) */}
-      <div style={{ marginTop: "1.5rem", borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: "1rem" }}>
+      {SMS_MFA_ENABLED && <div style={{ marginTop: "1.5rem", borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: "1rem" }}>
         <h2>Two-Factor Authentication (SMS)</h2>
         {profile.smsMfaEnabled ? (
           <>
@@ -339,7 +341,7 @@ export default function ProfilePage() {
           </>
         )}
         {smsMsg && <p style={{ marginTop: "0.5rem" }}>{smsMsg}</p>}
-      </div>
+      </div>}
     </section>
   );
 }

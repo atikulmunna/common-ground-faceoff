@@ -16,7 +16,14 @@
     "test:accessibility": "node scripts/a11y-smoke.js"
   },
   "devDependencies": {
+    "esbuild": "^0.28.1",
+    "eslint": "^9.39.5",
     "turbo": "^2.0.14",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.63.0",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
   }
 }

@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { getPublicApiBaseUrl } from "../../lib/api-base";
 
 export default function SignInPage() {
   return (
@@ -61,8 +62,7 @@ function SignInPageContent() {
     setInfo(null);
 
     if (mode === "register") {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4100";
-      const res = await fetch(`${apiBase}/auth/register`, {
+      const res = await fetch(`${getPublicApiBaseUrl()}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, displayName })

@@ -28,7 +28,12 @@ export const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
   STRIPE_PRICE_PRO: z.string().min(1).optional(),
   STRIPE_PRICE_ENTERPRISE: z.string().min(1).optional(),
-  SENTRY_DSN: z.string().min(1).optional()
+  SENTRY_DSN: z.string().min(1).optional(),
+  ENABLE_SAML: z.enum(["true", "false"]).default("false"),
+  ENABLE_BILLING: z.enum(["true", "false"]).default("false"),
+  ENABLE_SMS_MFA: z.enum(["true", "false"]).default("false"),
+  ENABLE_EXTERNAL_EXPORT_STORAGE: z.enum(["true", "false"]).default("false"),
+  ENABLE_DATADOG: z.enum(["true", "false"]).default("false")
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
@@ -40,4 +45,8 @@ export function parseEnv(input: Record<string, string | undefined>): AppEnv {
     cleaned[key] = value === "" ? undefined : value;
   }
   return envSchema.parse(cleaned);
+}
+
+export function featureEnabled(value: string | undefined): boolean {
+  return value === "true";
 }

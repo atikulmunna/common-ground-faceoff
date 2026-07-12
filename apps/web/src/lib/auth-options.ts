@@ -3,8 +3,8 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import GitHubProvider from "next-auth/providers/github";
+import { getServerApiBaseUrl } from "./api-base";
 
-const API_BASE = process.env.API_BASE_URL ?? "http://localhost:4100";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -25,7 +25,7 @@ export const authOptions: NextAuthOptions = {
           ? { email: credentials.email, password: credentials.password, displayName: credentials.displayName || credentials.email.split("@")[0] }
           : { email: credentials.email, password: credentials.password };
 
-        const res = await fetch(`${API_BASE}${endpoint}`, {
+        const res = await fetch(`${getServerApiBaseUrl()}${endpoint}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body)
@@ -88,7 +88,7 @@ export const authOptions: NextAuthOptions = {
         if (account?.provider === "google" || account?.provider === "azure-ad" || account?.provider === "github") {
           // Exchange OAuth profile for API tokens
           const providerName = account.provider === "azure-ad" ? "microsoft" : account.provider;
-          const res = await fetch(`${API_BASE}/auth/oauth-exchange`, {
+          const res = await fetch(`${getServerApiBaseUrl()}/auth/oauth-exchange`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -118,7 +118,7 @@ export const authOptions: NextAuthOptions = {
       // Refresh the API access token if it's about to expire
       if (token.accessTokenExpires && Date.now() > (token.accessTokenExpires as number) && token.refreshToken) {
         try {
-          const res = await fetch(`${API_BASE}/auth/refresh`, {
+          const res = await fetch(`${getServerApiBaseUrl()}/auth/refresh`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ refreshToken: token.refreshToken })

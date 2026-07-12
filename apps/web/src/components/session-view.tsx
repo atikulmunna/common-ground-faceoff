@@ -8,6 +8,7 @@ import { CommonGroundMap } from "./common-ground-map";
 import { GuidedPrompt } from "./guided-prompt";
 import { apiGet, apiPost } from "../lib-api";
 import { checkContentPolicy } from "../lib/content-policy";
+import { getPublicApiBaseUrl } from "../lib/api-base";
 
 /** Lightweight inline-markdown renderer: **bold**, *italic*, \n → <br/> */
 function renderMarkdown(text: string): React.ReactNode[] {
@@ -680,8 +681,7 @@ function ExportPanel({ sessionId }: { sessionId: string }) {
       const { getSession } = await import("next-auth/react");
       const session = await getSession();
       const token = session?.user?.accessToken;
-      const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4100";
-      const res = await fetch(`${base}/sessions/${sessionId}/export/${format}`, {
+      const res = await fetch(`${getPublicApiBaseUrl()}/sessions/${sessionId}/export/${format}`, {
         headers: token ? { authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`Export failed (${res.status})`);

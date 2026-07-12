@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { apiGet, apiPost } from "../../lib-api";
+import { getPublicApiBaseUrl } from "../../lib/api-base";
 
 type Analytics = {
   totalSessions: number;
@@ -96,7 +97,7 @@ export default function AdminDashboardPage() {
   async function handleExportCSV() {
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4100"}/admin/analytics/export`,
+        `${getPublicApiBaseUrl()}/admin/analytics/export`,
         { headers: { authorization: `Bearer ${session?.user?.accessToken}` } }
       );
       if (!res.ok) throw new Error("Export failed");

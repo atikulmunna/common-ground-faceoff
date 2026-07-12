@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { samlLoginSchema } from "@common-ground/shared";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";

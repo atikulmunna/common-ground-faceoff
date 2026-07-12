@@ -104,7 +104,6 @@ function validateStage(maskedText: string): { residualFindings: number; confiden
 function uncertaintyCheckStage(
   detectConfidence: number,
   validateConfidence: number,
-  findingsCount: number
 ): { finalConfidence: number; blocked: boolean } {
   // Combined confidence is the minimum of detect and validate stages
   const finalConfidence = Math.min(detectConfidence, validateConfidence);
@@ -151,7 +150,7 @@ export function redactPII(input: string): RedactionResult {
   });
 
   // Stage 4: Uncertainty check
-  const uncertainty = uncertaintyCheckStage(detect.confidence, validate.confidence, detect.findings.length);
+  const uncertainty = uncertaintyCheckStage(detect.confidence, validate.confidence);
   stages.push({
     stage: "uncertainty_check",
     findingsCount: 0,

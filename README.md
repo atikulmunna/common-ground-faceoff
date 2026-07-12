@@ -37,7 +37,7 @@ The product is designed for clarity, neutrality, and traceability, not winner/lo
 - Account and auth:
   - Email/password registration with email verification
   - OAuth (Google and Microsoft)
-  - SAML SSO path for institutional orgs
+  - Experimental SAML SSO path for institutional orgs (not production-ready)
   - MFA support (TOTP and SMS)
 - Session lifecycle:
   - Topic creation, participant invitation, shareable links
@@ -166,11 +166,13 @@ Key entities:
 - Redaction-before-LLM enforcement.
 - Moderation lifecycle with report queue, action states, appeals, and SLA visibility.
 
+SAML support currently uses simplified assertion parsing and must remain disabled in production until signed assertion validation, audience/destination validation, request correlation, and replay protection are implemented.
+
 ## Performance and Reliability Design
 
 - Input-threshold routing for sync/async analysis.
-- Async queue with Redis-backed worker when `REDIS_URL` is set.
-- Outbox-based email reliability with retries and status records.
+- Async queue with a Redis-backed worker when `REDIS_URL` is set; the worker currently runs in the API process.
+- Outbox-based email reliability with retries and status records; polling currently runs in the API process.
 - Session ETA estimation for async runs.
 - Backup/restore scripts included for operational workflows.
 
@@ -241,7 +243,7 @@ Default local URLs:
 
 Commonly used variables:
 
-- API/Auth: `DATABASE_URL`, `NEXTAUTH_SECRET`, `API_BASE_URL`, `NEXTAUTH_URL`, `CORS_ORIGIN`
+- API/Auth: `DATABASE_URL`, `NEXTAUTH_SECRET`, `API_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `NEXTAUTH_URL`, `CORS_ORIGIN`
 - LLM providers: `MISTRAL_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`
 - Email: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
 - SMS MFA: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_PHONE`, `SMS_MFA_SECRET`
@@ -249,9 +251,26 @@ Commonly used variables:
 - Billing: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, price IDs
 - Observability: `SENTRY_DSN`, optional Datadog env vars
 
+Optional beta features are disabled unless their flag is explicitly set to `true`:
+
+- `ENABLE_SAML`
+- `ENABLE_BILLING`
+- `ENABLE_SMS_MFA` and the matching web-build flag `NEXT_PUBLIC_ENABLE_SMS_MFA`
+- `ENABLE_EXTERNAL_EXPORT_STORAGE`
+- `ENABLE_DATADOG`
+
 See `apps/api/.env.example` and `apps/web/.env.example` for the full list.
 
 ## Testing and Quality Gates
+
+Run the complete local gate with:
+
+```bash
+npm run lint
+npm test
+npm run typecheck
+npm run build
+```
 
 API:
 
@@ -278,6 +297,8 @@ Additional scripts:
 - `NEXTAUTH_URL` should point to your actual web origin so links in emails resolve correctly.
 - Export endpoints are authorized for all session participants.
 - For production/staging deployments, use `prisma migrate deploy` (not `migrate dev`).
+- The Redis analysis worker and email-outbox poller currently share the API process. Do not scale the API horizontally until background-process ownership is separated or coordinated.
+- Without `REDIS_URL`, queued analysis falls back to process memory and can be lost on restart; this mode is for local development or a constrained beta only.
 
 ## Known Deployment Dependencies
 
@@ -288,6 +309,8 @@ Some non-functional requirements are deployment/platform dependent and require i
 - secrets manager integration
 - uptime/failover guarantees
 - formal benchmark evidence and restore-drill reporting
+- production-safe background worker scheduling
+- SAML protocol validation and interoperability testing
 
 ## Repository Structure
 

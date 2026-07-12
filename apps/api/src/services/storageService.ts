@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { withRetryBudget } from "./llmProvider.js";
+import { featureEnabled } from "@common-ground/config";
 
 /* ------------------------------------------------------------------ */
 /*  Cloudflare R2 Export Storage Service                                */
@@ -22,6 +23,7 @@ const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 let r2Client: S3Client | null = null;
 
 function getClient(): S3Client | null {
+  if (!featureEnabled(process.env.ENABLE_EXTERNAL_EXPORT_STORAGE)) return null;
   if (!R2_BUCKET || !R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) return null;
   if (!r2Client) {
     r2Client = new S3Client({
@@ -37,7 +39,8 @@ function getClient(): S3Client | null {
 }
 
 export function isR2Configured(): boolean {
-  return !!(R2_BUCKET && R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
+  return featureEnabled(process.env.ENABLE_EXTERNAL_EXPORT_STORAGE) &&
+    !!(R2_BUCKET && R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
 }
 
 /**

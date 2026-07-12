@@ -1,7 +1,8 @@
 import "dotenv/config";
+import { featureEnabled } from "@common-ground/config";
 
 // --- Datadog APM (must init before other imports) ---
-if (process.env.DD_API_KEY) {
+if (featureEnabled(process.env.ENABLE_DATADOG) && process.env.DD_API_KEY) {
   const { default: tracer } = await import("dd-trace");
   tracer.init({
     service: "common-ground-api",
@@ -86,11 +87,15 @@ app.use("/auth", authRouter);
 // MFA verify-login is public; setup/disable need auth (handled below)
 app.post("/mfa/verify-login", mfaRouter);
 // SAML SSO routes are public (CG-FR03)
-app.use("/saml", samlRouter);
+if (featureEnabled(process.env.ENABLE_SAML)) {
+  app.use("/saml", samlRouter);
+}
 // Shared link public read-only view (CG-FR38)
 app.get("/share-links/view/:token", shareLinksRouter);
 // Stripe webhook (public, uses signature verification — CG-FR67)
-app.post("/billing/webhook", billingRouter);
+if (featureEnabled(process.env.ENABLE_BILLING)) {
+  app.post("/billing/webhook", billingRouter);
+}
 // CG-NFR33: Public subprocessor inventory
 app.get("/privacy/subprocessors", privacyRouter);
 
@@ -102,7 +107,9 @@ app.use("/profile", profileRouter);
 app.use("/mfa", mfaRouter);
 app.use("/moderation", moderationRouter);
 app.use("/admin", adminRouter);
-app.use("/billing", billingRouter);
+if (featureEnabled(process.env.ENABLE_BILLING)) {
+  app.use("/billing", billingRouter);
+}
 app.use("/privacy", privacyRouter);
 
 // Sentry error handler (must be after routes, before custom error handler)

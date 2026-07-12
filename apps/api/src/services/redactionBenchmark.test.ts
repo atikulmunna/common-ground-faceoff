@@ -134,7 +134,7 @@ const MULTI_PII_CASES: { text: string; expectedCount: number }[] = [
 describe("PII Redaction Benchmark (CG-NFR29)", () => {
   it("achieves recall >= 0.95 across true-positive corpus", () => {
     let detected = 0;
-    let total = TRUE_POSITIVE_CASES.length;
+    const total = TRUE_POSITIVE_CASES.length;
 
     for (const tc of TRUE_POSITIVE_CASES) {
       const result = redactPII(tc.text);
@@ -149,7 +149,7 @@ describe("PII Redaction Benchmark (CG-NFR29)", () => {
 
   it("achieves precision >= 0.98 across true-negative corpus", () => {
     let falsePositives = 0;
-    let total = TRUE_NEGATIVE_CASES.length;
+    const total = TRUE_NEGATIVE_CASES.length;
 
     for (const text of TRUE_NEGATIVE_CASES) {
       const result = redactPII(text);

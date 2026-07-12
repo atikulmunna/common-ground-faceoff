@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CommonGroundMap } from "../../components/common-ground-map";
+import { getPublicApiBaseUrl } from "../../lib/api-base";
 
 type SharedSession = {
   id: string;
@@ -36,8 +37,6 @@ type SharedViewResponse = {
   error?: { code: string; message: string } | null;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4100";
-
 export default function SharedViewPage() {
   return (
     <Suspense fallback={
@@ -65,7 +64,7 @@ function SharedViewPageContent() {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/share-links/view/${encodeURIComponent(token)}`);
+      const res = await fetch(`${getPublicApiBaseUrl()}/share-links/view/${encodeURIComponent(token)}`);
       const json: SharedViewResponse = await res.json();
 
       if (!res.ok || !json.success) {

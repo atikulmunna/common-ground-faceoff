@@ -1,6 +1,6 @@
 import { getSession } from "next-auth/react";
+import { getApiBaseUrl } from "./lib/api-base";
 
-const API_BASE = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4100";
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   if (typeof window === "undefined") {
@@ -32,7 +32,7 @@ export async function apiGet<T>(path: string, serverToken?: string): Promise<T> 
     ? { authorization: `Bearer ${serverToken}` }
     : await getAuthHeaders();
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     headers,
     cache: "no-store"
   });
@@ -52,7 +52,7 @@ export async function apiPost<T>(path: string, body: unknown, serverToken?: stri
       : await getAuthHeaders())
   };
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -72,7 +72,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
     ...(await getAuthHeaders()),
   };
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     method: "PATCH",
     headers,
     body: JSON.stringify(body),

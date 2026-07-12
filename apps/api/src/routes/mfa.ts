@@ -8,8 +8,17 @@ import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { signAccessToken, generateRefreshToken } from "../lib/auth.js";
 import { generateSmsCode, hashSmsCode, normalizePhone, SMS_CODE_TTL_MS } from "../lib/mfaSms.js";
 import { sendSms } from "../services/smsService.js";
+import { featureEnabled } from "@common-ground/config";
 
 export const mfaRouter = Router();
+
+mfaRouter.use("/sms", (_req, res, next) => {
+  if (!featureEnabled(process.env.ENABLE_SMS_MFA)) {
+    res.status(404).json(createErrorResponse("not_found", "SMS MFA is not enabled"));
+    return;
+  }
+  next();
+});
 
 async function sendSmsChallenge(userId: string, phone: string, purpose: "setup" | "login" | "disable"): Promise<boolean> {
   const code = generateSmsCode();
@@ -190,6 +199,10 @@ mfaRouter.post("/verify-login", async (req, res) => {
   }
 
   if (parse.data.mfaType === "sms") {
+    if (!featureEnabled(process.env.ENABLE_SMS_MFA)) {
+      res.status(404).json(createErrorResponse("not_found", "SMS MFA is not enabled"));
+      return;
+    }
     if (!user.smsMfaEnabled || !user.smsCodeHash || !user.smsCodeExpiresAt || user.smsCodePurpose !== "login") {
       res.status(401).json(createErrorResponse("auth_error", "Invalid SMS MFA request"));
       return;
