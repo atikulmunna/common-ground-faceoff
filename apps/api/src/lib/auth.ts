@@ -1,9 +1,9 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "node:crypto";
+import { getJwtSecret } from "./runtimeSecrets.js";
 
 const SALT_ROUNDS = 12;
-const JWT_SECRET = process.env.NEXTAUTH_SECRET ?? "dev-secret-change-me";
 const ACCESS_TOKEN_EXPIRY = "30m"; // CG-FR07: 30-minute session
 const REFRESH_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -24,11 +24,11 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 export function signAccessToken(payload: { sub: string; email: string; role: string }): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: ACCESS_TOKEN_EXPIRY });
 }
 
 export function verifyAccessToken(token: string): JwtPayload {
-  return jwt.verify(token, JWT_SECRET) as JwtPayload;
+  return jwt.verify(token, getJwtSecret()) as JwtPayload;
 }
 
 export function generateRefreshToken(): { token: string; expiresAt: Date } {

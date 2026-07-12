@@ -1,4 +1,5 @@
 import { createHash, randomInt } from "node:crypto";
+import { getSmsMfaSecret } from "./runtimeSecrets.js";
 
 export const SMS_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -7,8 +8,7 @@ export function generateSmsCode(): string {
 }
 
 export function hashSmsCode(code: string): string {
-  const secret = process.env.SMS_MFA_SECRET ?? process.env.NEXTAUTH_SECRET ?? "dev-secret-change-me";
-  return createHash("sha256").update(`${code}:${secret}`).digest("hex");
+  return createHash("sha256").update(`${code}:${getSmsMfaSecret()}`).digest("hex");
 }
 
 export function normalizePhone(phone: string): string | null {

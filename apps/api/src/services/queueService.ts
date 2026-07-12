@@ -34,6 +34,19 @@ function ensureRedisQueue(): Queue<QueueJob> | null {
 
   analysisQueue = new Queue<QueueJob>("analysis", { connection });
 
+  return analysisQueue;
+}
+
+export function startAnalysisWorker(options: { requireRedis?: boolean } = {}): void {
+  if (analysisWorker) return;
+  const connection = getRedisConnection();
+  if (!connection) {
+    if (options.requireRedis) {
+      throw new Error("REDIS_URL is required when API_PROCESS_ROLE=worker");
+    }
+    return;
+  }
+
   analysisWorker = new Worker<QueueJob>(
     "analysis",
     async (job) => {
@@ -51,7 +64,6 @@ function ensureRedisQueue(): Queue<QueueJob> | null {
     console.error(`[Queue] Job ${job?.id} failed:`, err.message);
   });
 
-  return analysisQueue;
 }
 
 /* ------------------------------------------------------------------ */
@@ -84,6 +96,9 @@ export function enqueueAnalysis(job: QueueJob): void {
       backoff: { type: "exponential", delay: 2000 },
     });
   } else {
+    if (process.env.API_PROCESS_ROLE === "api") {
+      throw new Error("REDIS_URL is required when API_PROCESS_ROLE=api queues asynchronous analysis");
+    }
     // Fallback to in-memory queue
     memoryQueue.push(job);
     if (!processing) {

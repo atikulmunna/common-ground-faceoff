@@ -4,7 +4,7 @@ import { featureEnabled, parseEnv } from "./index";
 
 const requiredEnv = {
   DATABASE_URL: "postgresql://user:password@localhost:5432/common_ground",
-  NEXTAUTH_SECRET: "test-secret",
+  NEXTAUTH_SECRET: "test-nextauth-secret-at-least-32-characters",
 };
 
 describe("parseEnv", () => {

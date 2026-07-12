@@ -272,6 +272,14 @@ npm run typecheck
 npm run build
 ```
 
+Database integration tests require a disposable PostgreSQL database whose name contains `test`:
+
+```bash
+TEST_DATABASE_URL=postgresql://user:password@localhost:5432/common_ground_test npm run test:integration
+```
+
+The integration runner refuses any database URL whose database name does not contain `test`.
+
 API:
 
 ```bash
@@ -295,10 +303,18 @@ Additional scripts:
 
 - Resend test-mode accounts can only send to allowed recipients until a domain is verified.
 - `NEXTAUTH_URL` should point to your actual web origin so links in emails resolve correctly.
+- `NEXTAUTH_SECRET` must contain at least 32 characters. SMS MFA additionally requires a separate `SMS_MFA_SECRET` of at least 32 characters.
 - Export endpoints are authorized for all session participants.
 - For production/staging deployments, use `prisma migrate deploy` (not `migrate dev`).
 - The Redis analysis worker and email-outbox poller currently share the API process. Do not scale the API horizontally until background-process ownership is separated or coordinated.
 - Without `REDIS_URL`, queued analysis falls back to process memory and can be lost on restart; this mode is for local development or a constrained beta only.
+- Use `GET /health` for container liveness and `GET /ready` for traffic readiness. The readiness endpoint checks PostgreSQL and checks Redis whenever `REDIS_URL` is configured.
+
+The same API image supports three process roles through `API_PROCESS_ROLE`:
+
+- `all` (default): HTTP API, analysis worker, and email outbox together; suitable for the single-instance beta.
+- `api`: HTTP only; requires Redis before asynchronous analysis can be queued.
+- `worker`: analysis worker and email outbox only; requires Redis.
 
 ## Known Deployment Dependencies
 
