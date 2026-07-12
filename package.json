@@ -14,7 +14,8 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:integration": "npm -w @common-ground/api run test:integration",
-    "test:accessibility": "node scripts/a11y-smoke.js"
+    "test:accessibility": "node scripts/a11y-smoke.js",
+    "postinstall": "npm -w @common-ground/api run prisma:generate"
   },
   "devDependencies": {
     "esbuild": "^0.28.1",
