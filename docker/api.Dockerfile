@@ -28,6 +28,12 @@ RUN npx esbuild apps/api/src/index.ts \
     --alias:@common-ground/shared=./packages/shared/src/index.ts \
     --alias:@common-ground/config=./packages/config/index.ts \
     --outfile=apps/api/dist/container.mjs
+RUN npx esbuild apps/api/src/jobs/retentionJob.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --packages=external \
+    --outfile=apps/api/dist/retention-job.mjs
 RUN npm prune --omit=dev
 
 FROM node:22-bookworm-slim AS runtime
@@ -44,6 +50,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/apps/api/dist/container.mjs ./apps/api/dist/container.mjs
+COPY --chown=node:node --from=builder /app/apps/api/dist/retention-job.mjs ./apps/api/dist/retention-job.mjs
 COPY --chown=node:node --from=builder /app/apps/api/prisma ./apps/api/prisma
 
 EXPOSE 4100

@@ -67,6 +67,7 @@ model User {
   lockedUntil      DateTime?
   createdAt        DateTime             @default(now())
   lastLoginAt      DateTime?
+  accountDeletedAt DateTime?
   sessions         Session[]            @relation("SessionCreator")
   participants     SessionParticipant[]
   feedback         FeedbackRating[]

@@ -329,6 +329,12 @@ docker compose up -d api web
 - API readiness: `http://localhost:4100/ready`
 - Images: `common-ground-web:local` and `common-ground-api:local`
 
+Run the 90-day free-tier retention job from the API image:
+
+```powershell
+docker compose run --rm api node apps/api/dist/retention-job.mjs
+```
+
 To remove this local stack while the same environment variables are still set:
 
 ```powershell

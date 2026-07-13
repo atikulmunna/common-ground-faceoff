@@ -11,12 +11,12 @@ const prisma = new PrismaClient();
 
 const FREE_TIER_RETENTION_DAYS = 90;
 
-export async function runRetentionCleanup() {
+export async function runRetentionCleanup(db: PrismaClient = prisma) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - FREE_TIER_RETENTION_DAYS);
 
   // Find free-tier users
-  const freeUsers = await prisma.user.findMany({
+  const freeUsers = await db.user.findMany({
     where: { tier: "free" },
     select: { id: true },
   });
@@ -24,7 +24,7 @@ export async function runRetentionCleanup() {
   const freeUserIds = new Set(freeUsers.map((u) => u.id));
 
   // Find expired sessions created by free-tier users
-  const expiredSessions = await prisma.session.findMany({
+  const expiredSessions = await db.session.findMany({
     where: {
       creatorUserId: { in: [...freeUserIds] },
       createdAt: { lt: cutoff },
@@ -39,24 +39,33 @@ export async function runRetentionCleanup() {
     return { deleted: 0 };
   }
 
-  // Delete related records first (cascade may cover some, but let's be explicit)
-  await prisma.sectionComment.deleteMany({ where: { sessionId: { in: sessionIds } } });
-  await prisma.sectionReaction.deleteMany({ where: { sessionId: { in: sessionIds } } });
-  await prisma.feedbackRating.deleteMany({ where: { sessionId: { in: sessionIds } } });
-  await prisma.analysisEvent.deleteMany({ where: { sessionId: { in: sessionIds } } });
-  await prisma.analysisResult.deleteMany({ where: { sessionId: { in: sessionIds } } });
-  await prisma.shareLink.deleteMany({ where: { sessionId: { in: sessionIds } } });
-  await prisma.moderationFlag.deleteMany({ where: { sessionId: { in: sessionIds } } });
-  await prisma.redactionLog.deleteMany({ where: { sessionId: { in: sessionIds } } });
-  await prisma.sessionParticipant.deleteMany({ where: { sessionId: { in: sessionIds } } });
-  await prisma.session.deleteMany({ where: { id: { in: sessionIds } } });
+  await db.$transaction([
+    db.sectionComment.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.sectionReaction.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.feedbackRating.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.analysisEvent.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.analysisResult.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.shareLink.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.moderationFlag.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.redactionLog.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.positionSnapshot.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.promptLog.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.emailInvitation.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.notificationEmail.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.sessionParticipant.deleteMany({ where: { sessionId: { in: sessionIds } } }),
+    db.session.deleteMany({ where: { id: { in: sessionIds } } }),
+  ]);
 
   console.log(`Retention cleanup: deleted ${sessionIds.length} expired free-tier sessions.`);
   return { deleted: sessionIds.length };
 }
 
 // Run if executed directly
-if (process.argv[1]?.endsWith("retentionJob.js") || process.argv[1]?.endsWith("retentionJob.ts")) {
+if (
+  process.argv[1]?.endsWith("retentionJob.js") ||
+  process.argv[1]?.endsWith("retentionJob.ts") ||
+  process.argv[1]?.endsWith("retention-job.mjs")
+) {
   runRetentionCleanup()
     .then((result) => {
       console.log("Done:", result);

@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { verifyAccessToken } from "../lib/auth.js";
+import { prisma } from "../lib/prisma.js";
 
 export interface AuthUser {
   id: string;
@@ -15,7 +16,7 @@ declare global {
   }
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const header = req.header("authorization");
 
   if (!header?.startsWith("Bearer ")) {
@@ -31,6 +32,18 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 
   try {
     const payload = verifyAccessToken(token);
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { accountDeletedAt: true },
+    });
+    if (!user || user.accountDeletedAt) {
+      res.status(401).json({
+        success: false,
+        data: null,
+        error: { code: "auth_error", message: "Account is unavailable" },
+      });
+      return;
+    }
     req.user = {
       id: payload.sub,
       email: payload.email,

@@ -225,3 +225,133 @@ describe("authenticated HTTP journey", () => {
     })).resolves.toBeNull();
   });
 });
+
+describe("retention and account erasure", () => {
+  let app: Express;
+
+  beforeAll(async () => {
+    const { createApp } = await import("../app.js");
+    app = createApp();
+  });
+
+  it("deletes an expired free-tier session and every linked record", async () => {
+    const runId = randomUUID();
+    const user = await prisma.user.create({
+      data: {
+        email: `retention-${runId}@example.test`,
+        displayName: "Retention Fixture",
+        emailVerified: true,
+      },
+    });
+    const session = await prisma.session.create({
+      data: {
+        topic: "This expired free-tier session should be removed by retention.",
+        creatorUserId: user.id,
+        status: "collecting_positions",
+        createdAt: new Date(Date.now() - 91 * 24 * 60 * 60 * 1000),
+        participants: {
+          create: { userId: user.id, role: "session_creator", canExport: true },
+        },
+      },
+    });
+
+    await prisma.positionSnapshot.create({
+      data: { sessionId: session.id, userId: user.id, roundNumber: 1, positionText: "x".repeat(120) },
+    });
+    await prisma.promptLog.create({
+      data: {
+        sessionId: session.id,
+        pipelineRunId: `retention-${runId}`,
+        stage: "synthesis",
+        provider: "fixture",
+        model: "fixture",
+        systemPrompt: "fixture",
+        userPrompt: "fixture",
+        responseText: "fixture",
+      },
+    });
+    await prisma.emailInvitation.create({
+      data: {
+        sessionId: session.id,
+        email: `invite-${runId}@example.test`,
+        invitedById: user.id,
+      },
+    });
+    await prisma.notificationEmail.create({
+      data: {
+        kind: "fixture",
+        recipientEmail: user.email,
+        sessionId: session.id,
+      },
+    });
+
+    const { runRetentionCleanup } = await import("../jobs/retentionJob.js");
+    await expect(runRetentionCleanup(prisma)).resolves.toEqual({ deleted: 1 });
+    await expect(prisma.session.findUnique({ where: { id: session.id } })).resolves.toBeNull();
+    await expect(prisma.notificationEmail.count({ where: { sessionId: session.id } })).resolves.toBe(0);
+
+    await prisma.user.delete({ where: { id: user.id } });
+  });
+
+  it("pseudonymizes a session owner and rejects their existing access token", async () => {
+    const runId = randomUUID();
+    const email = `erasure-${runId}@example.test`;
+    const authResponse = await request(app)
+      .post("/auth/oauth-exchange")
+      .send({ email, displayName: "Erasure Fixture", provider: "google" })
+      .expect(200);
+    const authData = authResponse.body.data as {
+      user: { id: string };
+      accessToken: string;
+    };
+    const authorization = `Bearer ${authData.accessToken}`;
+
+    const createResponse = await request(app)
+      .post("/sessions")
+      .set("Authorization", authorization)
+      .send({ topic: "This session must survive owner erasure without retaining PII.", anonymousMode: false })
+      .expect(201);
+    const sessionId = (createResponse.body.data as { session: { id: string } }).session.id;
+
+    await request(app)
+      .post(`/sessions/${sessionId}/positions`)
+      .set("Authorization", authorization)
+      .send({ positionText: "This personally authored position must be scrubbed when the account is erased.".repeat(2), roundNumber: 1 })
+      .expect(200);
+    await prisma.positionSnapshot.create({
+      data: { sessionId, userId: authData.user.id, roundNumber: 1, positionText: "sensitive snapshot" },
+    });
+    const auditIds = (await prisma.auditLog.findMany({
+      where: { actorId: authData.user.id },
+      select: { id: true },
+    })).map((entry) => entry.id);
+
+    await request(app)
+      .delete("/privacy/account")
+      .set("Authorization", authorization)
+      .expect(200, { success: true, data: { deleted: true }, error: null });
+
+    await request(app)
+      .get("/sessions")
+      .set("Authorization", authorization)
+      .expect(401);
+
+    const tombstone = await prisma.user.findUniqueOrThrow({ where: { id: authData.user.id } });
+    expect(tombstone).toMatchObject({
+      displayName: "[DELETED]",
+      passwordHash: null,
+      emailVerified: false,
+    });
+    expect(tombstone.email).toMatch(/^deleted-.*@deleted\.invalid$/);
+    expect(tombstone.accountDeletedAt).toBeInstanceOf(Date);
+    await expect(prisma.positionSnapshot.count({ where: { userId: authData.user.id } })).resolves.toBe(0);
+    await expect(prisma.sessionParticipant.findUniqueOrThrow({
+      where: { sessionId_userId: { sessionId, userId: authData.user.id } },
+    })).resolves.toMatchObject({ positionText: "[DELETED]", positionSubmittedAt: null });
+
+    await prisma.sessionParticipant.deleteMany({ where: { sessionId } });
+    await prisma.session.delete({ where: { id: sessionId } });
+    await prisma.auditLog.deleteMany({ where: { id: { in: auditIds } } });
+    await prisma.user.delete({ where: { id: authData.user.id } });
+  });
+});

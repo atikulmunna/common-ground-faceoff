@@ -2,6 +2,8 @@
 /*  Privacy & GDPR compliance routes (CG-NFR16-18, NFR29-34)           */
 /* ------------------------------------------------------------------ */
 
+import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { createSuccessResponse, createErrorResponse } from "../lib/response.js";
@@ -180,31 +182,73 @@ privacyRouter.get("/export", async (req, res) => {
 
 privacyRouter.delete("/account", async (req, res) => {
   const userId = req.user.id;
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true, accountDeletedAt: true },
+  });
+  if (!user || user.accountDeletedAt) {
+    res.status(404).json(createErrorResponse("not_found", "Account not found"));
+    return;
+  }
 
-  // CG-NFR34: Propagate deletion across all related records
+  const deletedAt = new Date();
+  const tombstoneEmail = `deleted-${userId}-${randomUUID()}@deleted.invalid`;
+
+  // Keep a non-identifying tombstone row because sessions and participations
+  // preserve multi-user history through required foreign keys.
   await prisma.$transaction([
     prisma.sectionReaction.deleteMany({ where: { userId } }),
     prisma.sectionComment.deleteMany({ where: { userId } }),
     prisma.feedbackRating.deleteMany({ where: { userId } }),
+    prisma.positionSnapshot.deleteMany({ where: { userId } }),
     prisma.consentRecord.deleteMany({ where: { userId } }),
     prisma.dataSubjectRequest.deleteMany({ where: { userId } }),
     prisma.refreshToken.deleteMany({ where: { userId } }),
     prisma.cohortMembership.deleteMany({ where: { userId } }),
+    prisma.emailVerificationToken.deleteMany({ where: { userId } }),
+    prisma.subscription.deleteMany({ where: { userId } }),
+    prisma.emailInvitation.deleteMany({
+      where: { OR: [{ invitedById: userId }, { email: user.email }] },
+    }),
+    prisma.notificationEmail.deleteMany({ where: { recipientEmail: user.email } }),
 
-    // Anonymize session participations (don't delete sessions — other users' data)
     prisma.sessionParticipant.updateMany({
       where: { userId },
-      data: { positionText: "[DELETED]" },
+      data: { positionText: "[DELETED]", positionSubmittedAt: null },
     }),
 
-    // Anonymize audit logs (keep for compliance, remove PII)
     prisma.auditLog.updateMany({
       where: { actorId: userId },
-      data: { actorEmail: "[DELETED]" },
+      data: { actorId: null, actorEmail: "[DELETED]" },
     }),
 
-    // Finally delete the user
-    prisma.user.delete({ where: { id: userId } }),
+    prisma.user.update({
+      where: { id: userId },
+      data: {
+        email: tombstoneEmail,
+        displayName: "[DELETED]",
+        passwordHash: null,
+        emailVerified: false,
+        avatarUrl: null,
+        notificationPrefs: Prisma.DbNull,
+        tier: "free",
+        role: "individual_user",
+        mfaEnabled: false,
+        mfaSecret: null,
+        smsMfaEnabled: false,
+        smsPhone: null,
+        smsCodeHash: null,
+        smsCodeExpiresAt: null,
+        smsCodePurpose: null,
+        organizationId: null,
+        samlNameId: null,
+        stripeCustomerId: null,
+        failedLoginCount: 0,
+        lockedUntil: null,
+        lastLoginAt: null,
+        accountDeletedAt: deletedAt,
+      },
+    }),
   ]);
 
   res.json(createSuccessResponse({ deleted: true }));
