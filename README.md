@@ -308,6 +308,34 @@ Additional scripts:
 - Accessibility smoke checks: `scripts/a11y-smoke.js`
 - Backup/restore helpers: `scripts/backup-db.sh`, `scripts/restore-db.sh`
 
+## Production Containers
+
+The repository includes separate production images for the API and Next.js web process. Both run as the unprivileged `node` user. The local Compose stack also provides PostgreSQL; Redis remains disabled for the single-instance beta profile.
+
+PowerShell example:
+
+```powershell
+$env:POSTGRES_PASSWORD = "replace-with-a-long-random-password"
+$env:NEXTAUTH_SECRET = "replace-with-at-least-32-random-characters"
+
+docker compose build
+docker compose up -d db
+docker compose run --rm api ./node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma
+docker compose up -d api web
+```
+
+- Web: `http://localhost:3001`
+- API liveness: `http://localhost:4100/health`
+- API readiness: `http://localhost:4100/ready`
+- Images: `common-ground-web:local` and `common-ground-api:local`
+
+To remove this local stack while the same environment variables are still set:
+
+```powershell
+docker compose down --volumes
+docker image rm common-ground-web:local common-ground-api:local
+```
+
 ## Operational Notes
 
 - Resend test-mode accounts can only send to allowed recipients until a domain is verified.

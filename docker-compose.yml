@@ -1,0 +1,72 @@
+name: common-ground
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: common_ground
+      POSTGRES_USER: common_ground
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - common-ground-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U common_ground -d common_ground"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    image: common-ground-api:local
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    env_file:
+      - apps/api/.env
+    environment:
+      NODE_ENV: production
+      API_PROCESS_ROLE: all
+      DATABASE_URL: postgresql://common_ground:${POSTGRES_PASSWORD}@db:5432/common_ground?schema=public
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET}
+      API_BASE_URL: http://localhost:4100
+      WEB_BASE_URL: http://localhost:3001
+      CORS_ORIGIN: http://localhost:3001
+      REDIS_URL: ""
+      UPSTASH_REDIS_REST_URL: ""
+      UPSTASH_REDIS_REST_TOKEN: ""
+      ENABLE_SAML: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "4100:4100"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    init: true
+
+  web:
+    image: common-ground-web:local
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:4100
+    environment:
+      NODE_ENV: production
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET}
+      NEXTAUTH_URL: http://localhost:3001
+      API_BASE_URL: http://api:4100
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+    init: true
+
+volumes:
+  common-ground-postgres:
