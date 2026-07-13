@@ -13,11 +13,13 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "test:e2e": "node scripts/run-e2e.mjs",
     "test:integration": "npm -w @common-ground/api run test:integration",
     "test:accessibility": "node scripts/a11y-smoke.js",
     "postinstall": "npm -w @common-ground/api run prisma:generate"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "esbuild": "^0.28.1",
     "eslint": "^9.39.5",
     "turbo": "^2.0.14",

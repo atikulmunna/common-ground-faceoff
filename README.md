@@ -280,6 +280,15 @@ TEST_DATABASE_URL=postgresql://user:password@localhost:5432/common_ground_test n
 
 The integration runner refuses any database URL whose database name does not contain `test`.
 
+Browser E2E tests require Docker and a one-time local Chromium installation:
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+The E2E runner creates and removes an isolated PostgreSQL container, applies migrations, starts the API and web app on dedicated test ports, and never uses configured external Redis or LLM providers.
+
 API:
 
 ```bash
