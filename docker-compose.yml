@@ -28,6 +28,7 @@ services:
       API_PROCESS_ROLE: all
       DATABASE_URL: postgresql://common_ground:${POSTGRES_PASSWORD}@db:5432/common_ground?schema=public
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET}
+      OAUTH_EXCHANGE_SECRET: ${OAUTH_EXCHANGE_SECRET:?Set OAUTH_EXCHANGE_SECRET}
       API_BASE_URL: http://localhost:4100
       WEB_BASE_URL: http://localhost:3001
       CORS_ORIGIN: http://localhost:3001
@@ -58,6 +59,7 @@ services:
     environment:
       NODE_ENV: production
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET}
+      OAUTH_EXCHANGE_SECRET: ${OAUTH_EXCHANGE_SECRET:?Set OAUTH_EXCHANGE_SECRET}
       NEXTAUTH_URL: http://localhost:3001
       API_BASE_URL: http://api:4100
     depends_on:

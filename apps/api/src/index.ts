@@ -25,6 +25,11 @@ const processRole = process.env.API_PROCESS_ROLE ?? "all";
 const runsApi = processRole === "all" || processRole === "api";
 const runsWorker = processRole === "all" || processRole === "worker";
 
+if (runsApi) {
+  const { getOAuthExchangeSecret } = await import("./lib/runtimeSecrets.js");
+  getOAuthExchangeSecret();
+}
+
 const server = runsApi
   ? app.listen(port, host, () => {
       console.log(`API listening on http://${host}:${port} (role: ${processRole})`);

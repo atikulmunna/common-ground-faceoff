@@ -24,4 +24,13 @@ describe("API application", () => {
     expect(response.status).toBe(401);
     expect(response.body.error.code).toBe("auth_error");
   });
+
+  it("rejects public OAuth exchange requests", async () => {
+    const response = await request(app)
+      .post("/auth/oauth-exchange")
+      .send({ email: "attacker@example.test", displayName: "Attacker", provider: "google" });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe("auth_error");
+  });
 });

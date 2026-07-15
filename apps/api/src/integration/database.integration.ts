@@ -21,6 +21,8 @@ function requireSafeTestDatabaseUrl(): string {
 const testDatabaseUrl = requireSafeTestDatabaseUrl();
 process.env.DATABASE_URL = testDatabaseUrl;
 process.env.NEXTAUTH_SECRET = "integration-nextauth-secret-at-least-32-characters";
+const oauthExchangeSecret = "integration-oauth-exchange-secret-at-least-32-characters";
+process.env.OAUTH_EXCHANGE_SECRET = oauthExchangeSecret;
 process.env.NODE_ENV = "test";
 process.env.ENABLE_SAML = "false";
 process.env.ENABLE_BILLING = "false";
@@ -135,6 +137,7 @@ describe("authenticated HTTP journey", () => {
   it("authenticates, creates a session, submits a position, reads analysis, exports, and logs out", async () => {
     const authResponse = await request(app)
       .post("/auth/oauth-exchange")
+      .set("x-common-ground-internal-secret", oauthExchangeSecret)
       .send({ email, displayName: "HTTP Integration User", provider: "google" })
       .expect(200);
 
@@ -298,6 +301,7 @@ describe("retention and account erasure", () => {
     const email = `erasure-${runId}@example.test`;
     const authResponse = await request(app)
       .post("/auth/oauth-exchange")
+      .set("x-common-ground-internal-secret", oauthExchangeSecret)
       .send({ email, displayName: "Erasure Fixture", provider: "google" })
       .expect(200);
     const authData = authResponse.body.data as {

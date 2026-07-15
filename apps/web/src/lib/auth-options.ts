@@ -88,9 +88,16 @@ export const authOptions: NextAuthOptions = {
         if (account?.provider === "google" || account?.provider === "azure-ad" || account?.provider === "github") {
           // Exchange OAuth profile for API tokens
           const providerName = account.provider === "azure-ad" ? "microsoft" : account.provider;
+          const oauthExchangeSecret = process.env.OAUTH_EXCHANGE_SECRET;
+          if (!oauthExchangeSecret) {
+            throw new Error("OAUTH_EXCHANGE_SECRET is not configured");
+          }
           const res = await fetch(`${getServerApiBaseUrl()}/auth/oauth-exchange`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "X-Common-Ground-Internal-Secret": oauthExchangeSecret
+            },
             body: JSON.stringify({
               email: user.email,
               displayName: user.name ?? user.email?.split("@")[0] ?? "User",

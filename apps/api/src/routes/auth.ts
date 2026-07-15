@@ -14,6 +14,7 @@ import {
   signAccessToken,
   generateRefreshToken
 } from "../lib/auth.js";
+import { OAUTH_EXCHANGE_SECRET_HEADER, verifyOAuthExchangeSecret } from "../lib/internalAuth.js";
 
 export const authRouter = Router();
 
@@ -313,6 +314,12 @@ authRouter.post("/refresh", async (req, res) => {
 
 // POST /auth/oauth-exchange — exchange OAuth profile for API tokens
 authRouter.post("/oauth-exchange", async (req, res) => {
+  const providedSecret = req.header(OAUTH_EXCHANGE_SECRET_HEADER);
+  if (!verifyOAuthExchangeSecret(providedSecret)) {
+    res.status(401).json(createErrorResponse("auth_error", "OAuth exchange is restricted to trusted services"));
+    return;
+  }
+
   const parse = oauthExchangeSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json(
