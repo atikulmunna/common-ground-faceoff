@@ -20,7 +20,12 @@ jobs:
           printf '%s\n' '100.60.92.23 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN1XaA4Ve/lETLJVeuZ5u7ZpShFhgLrw9JkJzdLsB/1f' > ~/.ssh/known_hosts
 
       - name: Back up and deploy immutable release
+        env:
+          ECR_PASSWORD: ${{ secrets.ECR_PASSWORD }}
         run: |
+          printf '%s' "$ECR_PASSWORD" | ssh -o BatchMode=yes ubuntu@100.60.92.23 \
+            'sudo docker login --username AWS --password-stdin 892217934322.dkr.ecr.us-east-1.amazonaws.com'
+
           ssh -o BatchMode=yes ubuntu@100.60.92.23 'bash -s' <<'REMOTE'
           set -Eeuo pipefail
 
@@ -44,12 +49,6 @@ jobs:
 
           sudo sed -i -E "s|(common-ground-api:)[^[:space:]]+|\1staging-$release|" "$runtime/docker-compose.yml"
           sudo sed -i -E "s|(common-ground-web:)[^[:space:]]+|\1staging-$release|" "$runtime/docker-compose.yml"
-
-          if aws sts get-caller-identity >/dev/null 2>&1; then
-            aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin "$registry"
-          else
-            sudo aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin "$registry"
-          fi
 
           sudo docker compose -f "$runtime/docker-compose.yml" pull api web
           sudo docker compose -f "$runtime/docker-compose.yml" run --rm api ./node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma
