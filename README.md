@@ -9,8 +9,12 @@
 </p>
 
 <p align="center">
-  <a href="https://common-ground.100-60-92-23.sslip.io"><img src="https://img.shields.io/badge/Live_Demo-Open_Common_Ground-137D6B?style=for-the-badge" alt="Open live demo" /></a>
-  <a href="https://youtu.be/TbjtFvMk2Hk"><img src="https://img.shields.io/badge/Demo_Walkthrough-Watch_on_YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Watch the demo walkthrough" /></a>
+  <a href="https://common-ground.100-60-92-23.sslip.io"><img src="https://img.shields.io/badge/Live%20Demo-137D6B?style=flat-square" alt="Live Demo" /></a>
+  <a href="https://youtu.be/TbjtFvMk2Hk"><img src="https://img.shields.io/badge/Walkthrough-FF0000?style=flat-square&logo=youtube&logoColor=white" alt="Walkthrough" /></a>
+</p>
+
+<p align="center">
+  <a href="https://common-ground.100-60-92-23.sslip.io"><img src="assets/common-ground.png" alt="Common Ground landing page" width="100%" /></a>
 </p>
 
 Common Ground is a structured discourse platform for conversations where people disagree but still want to understand one another. Participants contribute their perspectives, an AI pipeline analyzes the strongest version of each position, and the product produces a Common Ground Map separating shared foundations, important differences, and unresolved disagreements.
