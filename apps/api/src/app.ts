@@ -8,14 +8,14 @@ import { featureEnabled, parseEnv } from "@common-ground/config";
 import { requireAuth } from "./middleware/auth.js";
 import { authRouter } from "./routes/auth.js";
 import { sessionsRouter } from "./routes/sessions.js";
-import { shareLinksRouter } from "./routes/shareLinks.js";
+import { publicShareLinksRouter, shareLinksRouter } from "./routes/shareLinks.js";
 import { profileRouter } from "./routes/profile.js";
-import { mfaRouter } from "./routes/mfa.js";
+import { mfaRouter, publicMfaRouter } from "./routes/mfa.js";
 import { moderationRouter } from "./routes/moderation.js";
 import { samlRouter } from "./routes/saml.js";
 import { adminRouter } from "./routes/admin.js";
 import { billingRouter, billingWebhookHandler } from "./routes/billing.js";
-import { privacyRouter } from "./routes/privacy.js";
+import { privacyRouter, publicPrivacyRouter } from "./routes/privacy.js";
 import { createErrorResponse } from "./lib/response.js";
 import { checkReadiness } from "./services/readinessService.js";
 
@@ -92,15 +92,15 @@ export function createApp(): express.Express {
   // Auth routes are public (no JWT required)
   app.use("/auth", authRouter);
   // MFA verify-login is public; setup/disable need auth (handled below)
-  app.post("/mfa/verify-login", mfaRouter);
+  app.use("/mfa", publicMfaRouter);
   // SAML SSO routes are public (CG-FR03)
   if (featureEnabled(process.env.ENABLE_SAML)) {
     app.use("/saml", samlRouter);
   }
   // Shared link public read-only view (CG-FR38)
-  app.get("/share-links/view/:token", shareLinksRouter);
+  app.use("/share-links", publicShareLinksRouter);
   // CG-NFR33: Public subprocessor inventory
-  app.get("/privacy/subprocessors", privacyRouter);
+  app.use("/privacy", publicPrivacyRouter);
 
   // All routes below require a valid JWT
   app.use(requireAuth);

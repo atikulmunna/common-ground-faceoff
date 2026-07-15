@@ -359,3 +359,32 @@ describe("retention and account erasure", () => {
     await prisma.user.delete({ where: { id: authData.user.id } });
   });
 });
+
+describe("public route boundaries", () => {
+  let app: Express;
+
+  beforeAll(async () => {
+    const { createApp } = await import("../app.js");
+    app = createApp();
+  });
+
+  it("serves the public subprocessor inventory without authentication", async () => {
+    const response = await request(app)
+      .get("/privacy/subprocessors")
+      .expect("Content-Type", /json/)
+      .expect(200);
+
+    expect(response.body).toMatchObject({ success: true, error: null });
+    expect(Array.isArray(response.body.data)).toBe(true);
+  });
+
+  it("reaches public MFA login verification before protected middleware", async () => {
+    const response = await request(app)
+      .post("/mfa/verify-login")
+      .send({})
+      .expect("Content-Type", /json/)
+      .expect(400);
+
+    expect(response.body.error.code).toBe("validation_error");
+  });
+});

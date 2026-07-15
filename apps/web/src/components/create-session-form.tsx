@@ -41,7 +41,7 @@ export function CreateSessionForm() {
   if (status === "loading") {
     return (
       <section className="card grid">
-        <h1>Create Session</h1>
+        <h1>Start a conversation</h1>
         <p>Checking your session...</p>
       </section>
     );
@@ -50,24 +50,24 @@ export function CreateSessionForm() {
   if (status === "unauthenticated") {
     return (
       <section className="card grid">
-        <h1>Create Session</h1>
-        <p>You need to sign in before creating a session.</p>
-        <Link href="/sign-in">Go to Sign In</Link>
+        <h1>Start a conversation</h1>
+        <p>Sign in to create a conversation and invite other perspectives.</p>
+        <Link href="/sign-in">Go to sign in</Link>
       </section>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="card grid">
-      <h1>Create Session</h1>
-      <label htmlFor="topic">Topic statement</label>
+    <form onSubmit={handleSubmit} className="card grid create-conversation">
+      <div><span className="eyebrow">New conversation</span><h1>What would you like to understand better?</h1><p>Frame a question or disagreement clearly enough that every participant knows what they are responding to.</p></div>
+      <label htmlFor="topic">Conversation topic or question</label>
       <textarea
         id="topic"
         minLength={10}
         maxLength={500}
         value={topic}
         onChange={(event) => setTopic(event.target.value)}
-        placeholder="Enter a debate topic"
+        placeholder="For example: How should our team balance remote flexibility with collaboration?"
         rows={5}
         required
       />
@@ -79,11 +79,13 @@ export function CreateSessionForm() {
           onChange={(event) => setAnonymousMode(event.target.checked)}
           style={{ width: "auto" }}
         />
-        Enable anonymous mode
+        Let participants contribute anonymously
       </label>
 
+      <p className="form-helper">You can invite participants after creating the conversation.</p>
+
       {error ? <p style={{ color: "#b91c1c" }}>{error}</p> : null}
-      <button type="submit" disabled={busy}>{busy ? "Creating..." : "Create"}</button>
+      <button type="submit" disabled={busy}>{busy ? "Starting conversation…" : "Start conversation"}</button>
     </form>
   );
 }

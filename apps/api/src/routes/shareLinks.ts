@@ -5,13 +5,14 @@ import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { logDeniedAction } from "../middleware/authorization.js";
 
 export const shareLinksRouter = Router();
+export const publicShareLinksRouter = Router();
 
 /* ------------------------------------------------------------------ */
 /*  GET /share-links/view/:token — read-only shared view (CG-FR38)     */
 /*  Public route — no auth required                                    */
 /* ------------------------------------------------------------------ */
 
-shareLinksRouter.get("/view/:token", async (req, res) => {
+publicShareLinksRouter.get("/view/:token", async (req, res) => {
   const link = await prisma.shareLink.findUnique({ where: { token: req.params.token } });
   if (!link) {
     res.status(404).json(createErrorResponse("not_found", "Share link not found"));

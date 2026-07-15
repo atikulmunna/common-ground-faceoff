@@ -11,6 +11,7 @@ import { sendSms } from "../services/smsService.js";
 import { featureEnabled } from "@common-ground/config";
 
 export const mfaRouter = Router();
+export const publicMfaRouter = Router();
 
 mfaRouter.use("/sms", (_req, res, next) => {
   if (!featureEnabled(process.env.ENABLE_SMS_MFA)) {
@@ -179,7 +180,7 @@ mfaRouter.post("/disable", async (req, res) => {
 /*  POST /mfa/verify-login — verify TOTP during login (unauthenticated)*/
 /* ------------------------------------------------------------------ */
 
-mfaRouter.post("/verify-login", async (req, res) => {
+publicMfaRouter.post("/verify-login", async (req, res) => {
   const parse = mfaLoginVerifySchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json(createErrorResponse("validation_error", "Invalid payload", parse.error.flatten()));

@@ -9,6 +9,7 @@ import { prisma } from "../lib/prisma.js";
 import { createSuccessResponse, createErrorResponse } from "../lib/response.js";
 
 export const privacyRouter = Router();
+export const publicPrivacyRouter = Router();
 
 /* ------------------------------------------------------------------ */
 /*  CG-NFR32: Consent management                                      */
@@ -258,7 +259,7 @@ privacyRouter.delete("/account", async (req, res) => {
 /*  CG-NFR33: Subprocessor inventory (public, no auth needed)          */
 /* ------------------------------------------------------------------ */
 
-privacyRouter.get("/subprocessors", async (_req, res) => {
+publicPrivacyRouter.get("/subprocessors", async (_req, res) => {
   const entries = await prisma.subprocessorEntry.findMany({
     where: { active: true },
     orderBy: { name: "asc" },

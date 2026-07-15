@@ -110,6 +110,27 @@ type ModerationSlaData = {
   }>;
 };
 
+const JOURNEY_STEPS = ["Set up", "Perspectives", "Analysis", "Common ground"];
+
+function ConversationJourney({ status }: { status: string }) {
+  const activeStep = status === "completed"
+    ? 3
+    : ["queued", "running", "failed", "needs_input"].includes(status)
+      ? 2
+      : 1;
+
+  return (
+    <ol className="conversation-journey" aria-label="Conversation progress">
+      {JOURNEY_STEPS.map((label, index) => (
+        <li key={label} className={index < activeStep ? "is-complete" : index === activeStep ? "is-current" : ""} aria-current={index === activeStep ? "step" : undefined}>
+          <span className="conversation-journey__number" aria-hidden="true">{index < activeStep ? "✓" : index + 1}</span>
+          <span>{label}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export function SessionView({ sessionId }: { sessionId: string }) {
   const { data: authSession, status: authStatus } = useSession();
   const currentUserId = authSession?.user?.id;
@@ -358,6 +379,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const showEditor = !hasSubmitted || editing;
   const policyWarnings = useMemo(() => checkContentPolicy(positionText), [positionText]);
   const deadlinePassed = session?.deadline ? new Date(session.deadline) < new Date() : false;
+  const submittedCount = session?.participants.filter((participant) => Boolean(participant.positionText)).length ?? 0;
 
   async function handleReport() {
     const reason = prompt("Describe the issue (at least 10 characters):");
@@ -371,19 +393,22 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <section className="grid">
-      <article className="card">
-        <h1>{session?.topic ?? "Session"}</h1>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <section className="grid conversation-page">
+      <article className="card conversation-header">
+        <div className="conversation-header__top">
           <div>
-            <p>Status: <strong>{status}</strong></p>
+            <span className="eyebrow">Conversation</span>
+            <h1>{session?.topic ?? "Conversation"}</h1>
+            <p className="conversation-header__summary">
+              {submittedCount} of {session?.participants.length ?? 0} perspectives submitted
+              {session?.anonymousMode ? " · Anonymous participation" : ""}
+            </p>
             {session?.deadline && (
               <p className={deadlinePassed ? "text-muted" : ""}>
                 Deadline: {new Date(session.deadline).toLocaleString()}
                 {deadlinePassed && " (passed)"}
               </p>
             )}
-            {session?.anonymousMode && <p><em>Anonymous mode enabled</em></p>}
             {moderationSla?.summary.pendingCount ? (
               <p style={{ color: moderationSla.summary.breachedCount > 0 ? "#b91c1c" : "#92400e" }}>
                 Moderation SLA: {moderationSla.summary.pendingCount} pending
@@ -392,15 +417,16 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             ) : null}
           </div>
           <button
-            className="secondary"
+            className="button-quiet"
             onClick={handleReport}
             disabled={reportSent}
             style={{ alignSelf: "flex-start" }}
-            aria-label="Report this session"
+            aria-label="Report this conversation"
           >
-            {reportSent ? "Reported" : "🚩 Report"}
+            {reportSent ? "Reported" : "Report"}
           </button>
         </div>
+        <ConversationJourney status={status} />
       </article>
 
       {/* CG-FR10: Email invitation panel (visible to session creator before analysis) */}
@@ -411,7 +437,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       )}
 
       <article className="card grid">
-        <h2>Your Position</h2>
+        <div className="section-heading"><span className="eyebrow">Your contribution</span><h2>Share your perspective</h2><p>Explain what you believe, why it matters, and what might change your view.</p></div>
         {showEditor ? (
           <>
             {!hasSubmitted && (
@@ -421,7 +447,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               rows={8}
               minLength={100}
               maxLength={5000}
-              placeholder="Submit your position in 100-5000 characters"
+              placeholder="Share your perspective in 100–5000 characters"
               value={positionText}
               onChange={(event) => updatePositionText(event.target.value)}
             />
@@ -448,9 +474,9 @@ export function SessionView({ sessionId }: { sessionId: string }) {
                   submitPosition();
                 }}
                 disabled={busy || positionText.length < 100}
-                aria-label={hasSubmitted ? "Save position changes" : "Submit your position"}
+                aria-label={hasSubmitted ? "Save perspective changes" : "Submit your perspective"}
               >
-                {busy ? "Working..." : hasSubmitted ? "Save Changes" : "Submit Position"}
+                {busy ? "Saving…" : hasSubmitted ? "Save changes" : "Submit perspective"}
               </button>
               {hasSubmitted && (
                 <button className="secondary" onClick={() => setEditing(false)}>
@@ -466,15 +492,15 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             </div>
             <div style={{ display: "flex", gap: "0.8rem", alignItems: "center" }}>
               {!isLocked && (
-                <button onClick={() => setEditing(true)}>Edit Position</button>
+                <button onClick={() => setEditing(true)}>Edit perspective</button>
               )}
               {currentUserId === session?.creatorUserId ? (
                 <button className="secondary" onClick={triggerAnalysis} disabled={busy || isLocked}>
-                  {isLocked ? "Analysis Started" : "Trigger Analysis"}
+                  {isLocked ? "Finding common ground…" : "Find common ground"}
                 </button>
               ) : (
                 <span style={{ fontSize: "0.9rem", color: "#6b7280", fontStyle: "italic" }}>
-                  {isLocked ? "Analysis in progress…" : "Waiting for the session creator to trigger the analysis."}
+                  {isLocked ? "Finding common ground…" : "Waiting for the conversation host to begin analysis."}
                 </span>
               )}
             </div>
@@ -482,7 +508,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         )}
       </article>
 
-      <article className="card grid">
+      {(analysis?.result || isLocked) && <article className="card grid results-card">
         {analysis?.result ? (
           <>
             <CommonGroundMap
@@ -496,7 +522,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             {/* Re-entry & round comparison controls */}
             <div className="cgm-reentry">
               <button onClick={handleReenter} disabled={busy}>
-                {busy ? "Working..." : "Revise & Re-enter"}
+                {busy ? "Working…" : "Revise perspectives"}
               </button>
               {rounds.length > 1 && (
                 <button
@@ -526,7 +552,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         ) : (
           <AnalysisStatus status={status} estimatedCompletionAt={analysis?.estimatedCompletionAt ?? null} />
         )}
-      </article>
+      </article>}
 
       {error ? <p style={{ color: "#b91c1c" }}>{error}</p> : null}
     </section>
@@ -538,10 +564,10 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 /* ------------------------------------------------------------------ */
 
 const STATUS_MESSAGES: Record<string, { label: string; description: string }> = {
-  draft: { label: "Draft", description: "Waiting for participants to submit positions." },
-  collecting_positions: { label: "Collecting", description: "Participants are submitting their positions." },
-  queued: { label: "Queued", description: "Analysis is queued and will begin shortly." },
-  running: { label: "Analyzing", description: "AI analysis is in progress\u2026" },
+  draft: { label: "Ready for perspectives", description: "Invite participants and share your perspectives." },
+  collecting_positions: { label: "Gathering perspectives", description: "Participants are sharing what matters to them." },
+  queued: { label: "Preparing analysis", description: "Your conversation is queued and will begin shortly." },
+  running: { label: "Finding common ground", description: "Looking for shared foundations and meaningful differences…" },
   failed: { label: "Failed", description: "Analysis encountered an error. Please try again." },
   needs_input: { label: "Needs Input", description: "Additional input is required before analysis can complete." },
 };
@@ -752,7 +778,7 @@ function InvitePanel({ sessionId }: { sessionId: string }) {
 
   return (
     <article className="card grid">
-      <h3>Invite Participant</h3>
+      <div className="section-heading"><span className="eyebrow">Build the conversation</span><h3>Invite someone</h3><p>Bring another perspective into this discussion.</p></div>
       <form onSubmit={handleInvite} className="cgm-invite-form">
         <label htmlFor="invite-email">Email address</label>
         <input
@@ -775,7 +801,7 @@ function InvitePanel({ sessionId }: { sessionId: string }) {
           aria-label="Personal message for invitation"
         />
         <button type="submit" disabled={sending || !email}>
-          {sending ? "Sending…" : "Send Invitation"}
+          {sending ? "Sending…" : "Send invitation"}
         </button>
       </form>
       {result && <p className="cgm-invite-result">{result}</p>}

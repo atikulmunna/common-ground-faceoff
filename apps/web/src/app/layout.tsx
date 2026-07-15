@@ -1,12 +1,15 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import Image from "next/image";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { AuthProvider } from "../components/auth-provider";
 import { AuthNav } from "../components/auth-nav";
 
 export const metadata: Metadata = {
-  title: "Common Ground MVP",
-  description: "AI-powered debate and perspective alignment tool"
+  title: "Common Ground — Shared understanding starts here",
+  description: "A guided space for understanding perspectives and finding meaningful common ground.",
+  icons: { icon: "/logo.png", apple: "/logo.png" }
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -18,9 +21,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <a href="#main-content" className="skip-link">
             Skip to main content
           </a>
-          <header className="card site-header" role="banner" style={{ marginBottom: "1rem" }}>
-            <nav aria-label="Main navigation" style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
-              <strong>Common Ground MVP</strong>
+          <header className="site-header" role="banner">
+            <nav aria-label="Main navigation" className="site-nav">
+              <Link href="/" className="brand" aria-label="Common Ground home"><span className="brand-mark" aria-hidden="true"><Image src="/logo.png" alt="" width={44} height={44} priority /></span><span>Common Ground</span></Link>
               <AuthNav />
             </nav>
           </header>

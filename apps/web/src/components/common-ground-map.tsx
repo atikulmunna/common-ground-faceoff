@@ -154,7 +154,7 @@ export function CommonGroundMap({ result, reactions, onReact, comments, onCommen
     <div className="cgm">
       {/* ---- Header ---- */}
       <div className="cgm__header">
-        <h2 className="cgm__title">Common Ground Map</h2>
+        <div><span className="eyebrow">Conversation results</span><h2 className="cgm__title">Your common ground</h2></div>
         {confidence && (
           <div className="cgm__confidence-row">
             <ConfidenceBadge label="Shared Foundations" score={confidence.sharedFoundations} />
@@ -172,7 +172,7 @@ export function CommonGroundMap({ result, reactions, onReact, comments, onCommen
       )}
 
       {/* ---- Two-column Steelmans ---- */}
-      <ExpandableSection title="Steelmanned Positions" defaultOpen={true}>
+      <ExpandableSection title="Perspectives, thoughtfully restated" defaultOpen={false}>
         <div className="cgm-columns">
           {participants.map((label) => {
             const sectionKey = `steelman:${label}`;
@@ -231,7 +231,7 @@ export function CommonGroundMap({ result, reactions, onReact, comments, onCommen
 
       {/* ---- True Disagreements ---- */}
       <ExpandableSection
-        title="True Points of Disagreement"
+        title="Important points of difference"
         badge={
           confidence ? (
             <ConfidenceTag score={confidence.disagreements} />
