@@ -73,7 +73,7 @@ jobs:
           sudo docker compose -f "$runtime/docker-compose.yml" config --images | grep --fixed-strings 'staging-4d33170-ui-refresh' | grep -q common-ground-api
           sudo docker compose -f "$runtime/docker-compose.yml" config --images | grep --fixed-strings 'staging-4d33170-ui-refresh' | grep -q common-ground-web
           sudo docker compose -f "$runtime/docker-compose.yml" pull api web
-          sudo docker compose -f "$runtime/docker-compose.yml" run --rm api ./node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma
+          sudo docker compose -f "$runtime/docker-compose.yml" run -T --rm api ./node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma </dev/null
           sudo docker compose -f "$runtime/docker-compose.yml" up -d --force-recreate api web
           curl --fail --silent --show-error --retry 12 --retry-delay 5 https://api.common-ground.100-60-92-23.sslip.io/ready
           trap - ERR
