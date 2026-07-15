@@ -1,322 +1,227 @@
-# Common Ground
+<p align="center">
+  <img src="assets/logo.png" alt="Common Ground logo" width="120" />
+</p>
 
-Common Ground is an AI-mediated discourse platform for structured, high-friction conversations. Participants submit positions on a shared topic, the system runs a multi-stage analysis pipeline, and the UI renders a Common Ground Map that separates shared foundations from irreducible disagreements.
+<h1 align="center">Common Ground</h1>
 
-The product is designed for clarity, neutrality, and traceability, not winner/loser debate scoring.
+<p align="center">
+  AI-mediated conversations that turn disagreement into shared understanding.
+</p>
 
-## Table of Contents
+<p align="center">
+  <a href="https://common-ground.100-60-92-23.sslip.io"><img src="https://img.shields.io/badge/Live_Demo-Open_Common_Ground-137D6B?style=for-the-badge" alt="Open live demo" /></a>
+  <a href="https://youtu.be/TbjtFvMk2Hk"><img src="https://img.shields.io/badge/Demo_Walkthrough-Watch_on_YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Watch the demo walkthrough" /></a>
+</p>
 
-- [Product Goals](#product-goals)
-- [Core Capabilities](#core-capabilities)
-- [Demo Walkthrough](#demo-walkthrough)
-- [How the System Works](#how-the-system-works)
-- [End-to-End User Flow](#end-to-end-user-flow)
-- [Architecture](#architecture)
-- [Data Model Highlights](#data-model-highlights)
-- [Security, Privacy, and Moderation](#security-privacy-and-moderation)
-- [Performance and Reliability Design](#performance-and-reliability-design)
-- [API Surface (High-Level)](#api-surface-high-level)
-- [Local Development Setup](#local-development-setup)
-- [Environment Variables](#environment-variables)
-- [Testing and Quality Gates](#testing-and-quality-gates)
-- [Operational Notes](#operational-notes)
-- [Known Deployment Dependencies](#known-deployment-dependencies)
-- [Repository Structure](#repository-structure)
-- [License](#license)
+Common Ground is a structured discourse platform for conversations where people disagree but still want to understand one another. Participants contribute their perspectives, an AI pipeline analyzes the strongest version of each position, and the product produces a Common Ground Map separating shared foundations, important differences, and unresolved disagreements.
 
-## Product Goals
+The goal is not to score a winner. It is to make the conversation clearer, fairer, and more constructive.
 
-- Reduce rhetorical noise by requiring explicit position statements.
-- Improve mutual understanding through steelmanned summaries.
-- Distinguish disagreement types (empirical, value, semantic, policy).
-- Preserve participant safety with moderation and redaction controls.
-- Maintain auditable analysis lineage and security-sensitive event logs.
+> The public deployment is a limited beta running on AWS Lightsail with a temporary `sslip.io` hostname. Do not submit sensitive or confidential information.
 
-## Core Capabilities
+## What you can do
 
-- Account and auth:
-  - Email/password registration with email verification
-  - OAuth (Google and Microsoft)
-  - Experimental SAML SSO path for institutional orgs (not production-ready)
-  - MFA support (TOTP and SMS)
-- Session lifecycle:
-  - Topic creation, participant invitation, shareable links
-  - Position submission with character/readability assistance
-  - Optional anonymous mode and optional submission deadline
-- Analysis:
-  - 5-stage analysis pipeline
-  - Sync and async routing based on total input size
-  - Round-based re-entry and round-to-round comparison
-  - Confidence indicators for output sections
-- Moderation and trust:
-  - Auto-flag and participant reporting
-  - Moderator queue and appeal flow
-  - Severity taxonomy and participant-visible SLA summary
-- Export and sharing:
-  - PDF, Markdown, and JSON exports (available to all session participants)
-  - Revocable read-only share links
-- Privacy and compliance features:
-  - PII redaction pipeline before LLM calls
-  - Data export and account deletion endpoints
-  - Consent and data subject request records
-  - Subprocessor inventory endpoint
+- Create a guided conversation around a shared topic.
+- Invite participants by link or email.
+- Submit and revise perspectives across multiple rounds.
+- Run a five-stage AI analysis with PII redaction before provider calls.
+- Review steelmanned positions, shared values, conflict types, and synthesis.
+- React to individual result sections and leave contextual comments.
+- Report unsafe content and follow moderation status.
+- Share a revocable, read-only result link.
+- Export results as PDF, Markdown, or JSON.
+- Manage profile, MFA, privacy export, and account deletion controls.
+- Enable Stripe billing and external export storage through feature flags.
 
-## Demo Walkthrough
+## Product journey
 
-[![Common Ground Demo](https://img.youtube.com/vi/TbjtFvMk2Hk/maxresdefault.jpg)](https://youtu.be/TbjtFvMk2Hk)
+1. Sign in and create a conversation.
+2. Define the topic, privacy mode, and optional deadline.
+3. Invite the people whose perspectives should be represented.
+4. Each participant submits a position in their own words.
+5. The API redacts sensitive information and runs the analysis pipeline.
+6. Participants explore the Common Ground Map and provide feedback.
+7. The group can revise perspectives and begin another round.
 
-[![YouTube](https://img.shields.io/badge/YouTube-Watch%20Demo-red?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/TbjtFvMk2Hk)
+## How analysis works
 
-## How the System Works
+Every analysis-bound perspective passes through a redaction gate before leaving the application. Low-confidence redaction stops the pipeline and requests user input instead of silently forwarding uncertain content.
 
-### 1) Position intake
+The analysis then runs five stages:
 
-Participants submit individual position text for a shared topic. Before analysis:
+1. Normalize the submitted positions.
+2. Generate a charitable steelman of each position.
+3. Extract shared and divergent values.
+4. Classify empirical, value, semantic, and policy conflicts.
+5. Synthesize common ground and the remaining disagreements.
 
-- Content policy warnings can be shown.
-- Position visibility can be restricted (anonymous mode + pre-analysis privacy).
-- Combined input is measured to choose sync or async path.
-
-### 2) Redaction gate
-
-All analysis-bound text passes a 4-stage redaction pipeline:
-
-1. Detect potential PII
-2. Mask sensitive fragments
-3. Validate transformed text
-4. Uncertainty check
-
-If redaction confidence falls below threshold, analysis is blocked and session state moves to `needs_input`.
-
-### 3) Analysis pipeline
-
-The engine runs these stages in order:
-
-1. Normalization
-2. Steelman generation
-3. Value extraction
-4. Conflict classification
-5. Synthesis
-
-Outputs are stored as structured artifacts (`AnalysisResult`) with reproducibility metadata (provider/model/version/hash fields).
-
-### 4) Delivery and interaction
-
-The web app polls analysis state (`queued`, `running`, `completed`, `failed`, `needs_input`). On completion, participants can:
-
-- Review steelmans and synthesis
-- React per section (`represents`, `misrepresents`, `neutral`)
-- Add section comments
-- Submit post-analysis ratings
-- Export artifacts
-- Re-enter with revised positions for a new round
-
-### 5) Notification handling
-
-Email notifications (including analysis completion) use a durable outbox model in the API with retry/backoff and delivery status tracking.
-
-## End-to-End User Flow
-
-1. User registers or signs in.
-2. Creator opens a session and sets topic/options.
-3. Participants join via link or email invitation.
-4. Each participant submits position text.
-5. Creator triggers analysis.
-6. API runs redaction and analysis pipeline (sync or queued async).
-7. Session transitions to `completed` with result artifacts.
-8. Completion notifications are dispatched.
-9. Participants review, react, comment, rate, and optionally export.
-10. Optional re-entry starts next round with lineage preserved.
+Results are stored as structured analysis artifacts with provider, model, version, and lineage metadata. Larger inputs can be routed through a Redis-backed worker; the single-instance beta can also process them in the API process.
 
 ## Architecture
 
-Monorepo with two apps and shared packages.
+```mermaid
+flowchart LR
+    Browser[Next.js web app] -->|HTTPS| Caddy[Caddy reverse proxy]
+    Caddy --> Web[Next.js container]
+    Caddy --> API[Express API container]
+    Web -->|Internal OAuth exchange| API
+    API --> DB[(PostgreSQL)]
+    API --> LLM[LLM providers]
+    API -. optional .-> Redis[(Redis / BullMQ)]
+    API -. optional .-> Stripe[Stripe]
+    API -. optional .-> Email[Resend]
+    API -. optional .-> Storage[R2 / S3-compatible storage]
+```
 
-- `apps/api`: Express API, Prisma ORM, PostgreSQL, queue worker logic
-- `apps/web`: Next.js app (React), NextAuth integration
-- `packages/shared`: Zod contracts and shared types
-- `packages/config`: environment schema and parsing
+The monorepo contains:
 
-Primary runtime technologies:
+- `apps/web` — Next.js 15 interface and NextAuth integration.
+- `apps/api` — Express API, Prisma data access, workers, and provider services.
+- `packages/shared` — shared Zod contracts and TypeScript types.
+- `packages/config` — runtime environment parsing and validation.
+- `e2e` — Playwright coverage for the primary product journey.
+- `docker` — production API and web image definitions.
 
-- TypeScript
-- Next.js 15
-- Express 4
-- Prisma + PostgreSQL
-- BullMQ (Redis-backed queue when configured)
-- LLM provider adapters (Mistral/Groq/OpenRouter/OpenAI-compatible patterns)
+The beta deployment uses one AWS Lightsail instance with Caddy, the web and API containers, and PostgreSQL. Images are stored in private ECR. Database backups are encrypted in S3, and container logs are shipped to CloudWatch.
 
-## Data Model Highlights
+## Technology
 
-Key entities:
+- TypeScript, React, and Next.js 15
+- Express 4 and Prisma
+- PostgreSQL 16
+- NextAuth and JWT refresh-token rotation
+- Mistral, Groq, and OpenRouter provider adapters
+- BullMQ with optional Redis
+- Stripe, Resend, Twilio, Sentry, and S3-compatible integrations
+- Docker Compose, Caddy, AWS Lightsail, ECR, S3, and CloudWatch
+- Vitest, Supertest, and Playwright
 
-- `User`, `RefreshToken`, `EmailVerificationToken`
-- `Session`, `SessionParticipant`, `PositionSnapshot`
-- `AnalysisResult`, `AnalysisEvent`, `PromptLog`
-- `ModerationFlag`, `NotificationEmail` (outbox)
-- `ShareLink`, `FeedbackRating`, `SectionReaction`, `SectionComment`
-- Compliance models: `ConsentRecord`, `DataSubjectRequest`, `SubprocessorEntry`
+## Security and privacy
 
-## Security, Privacy, and Moderation
+- PII redaction is enforced before LLM analysis.
+- API access uses short-lived JWTs and rotating refresh tokens.
+- The NextAuth-to-API OAuth exchange uses a separate internal secret and is blocked at the public proxy.
+- Authorization checks protect sessions, exports, moderation, billing, and administration.
+- Security-sensitive actions are recorded in audit logs.
+- Rate limiting, secure headers, restricted CORS, and HTTPS are enabled in staging.
+- Account erasure revokes tokens, pseudonymizes user data, and scrubs authored positions.
+- Free-tier retention cleanup removes expired conversation data and linked records.
 
-- JWT-based API auth with refresh-token rotation.
-- Role/permission checks for privileged actions.
-- Denied-action and auth event audit logging.
-- Rate limiting and security headers via middleware.
-- Redaction-before-LLM enforcement.
-- Moderation lifecycle with report queue, action states, appeals, and SLA visibility.
+SAML exists only as an experimental path and is rejected in production. It requires signed assertion validation, audience and destination validation, request correlation, replay protection, and interoperability testing before launch.
 
-SAML support currently uses simplified assertion parsing and must remain disabled in production until signed assertion validation, audience/destination validation, request correlation, and replay protection are implemented.
-
-## Performance and Reliability Design
-
-- Input-threshold routing for sync/async analysis.
-- Async queue with a Redis-backed worker when `REDIS_URL` is set; the worker currently runs in the API process.
-- Outbox-based email reliability with retries and status records; polling currently runs in the API process.
-- Session ETA estimation for async runs.
-- Backup/restore scripts included for operational workflows.
-
-## API Surface (High-Level)
-
-Representative endpoints (not exhaustive):
-
-- Auth: `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/verify-email`
-- Sessions: `/sessions`, `/sessions/:id/positions`, `/sessions/:id/analyze`, `/sessions/:id/analysis`
-- Moderation: `/moderation/report/:sessionId`, `/moderation/queue`, `/moderation/session/:sessionId/sla`
-- Profile: `/profile`
-- Sharing: `/share-links/*`
-- Privacy: `/privacy/export`, `/privacy/account`, `/privacy/subprocessors`
-- Billing: `/billing/*`
-- Institutional admin: `/admin/*`, `/saml/*`
-
-For exact request/response contracts, see `packages/shared/src/contracts.ts`.
-
-## Local Development Setup
+## Local development
 
 ### Prerequisites
 
-- Node.js 20+
-- npm 10+
-- PostgreSQL database
-- API keys for at least one LLM provider
+- Node.js 20 or newer
+- npm 10 or newer
+- PostgreSQL
+- Docker for browser and disposable-database tests
+- At least one supported LLM provider key for real analysis
 
 ### Install
 
 ```bash
 npm install
-```
-
-### Configure env
-
-```bash
-cp .env.example .env
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
 ```
 
-Populate required values (database URL, auth secrets, provider keys, etc.).
+Generate two different random secrets of at least 32 characters. `NEXTAUTH_SECRET` and `OAUTH_EXCHANGE_SECRET` must each match between the API and web environments, but they must not match one another.
 
-### Database
+Configure the database and generate the Prisma client:
 
 ```bash
 npm -w @common-ground/api run prisma:generate
-cd apps/api
-npx prisma migrate deploy
-npm run db:seed
+npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
 ```
 
-### Run services
-
-In separate terminals:
+Start the applications in separate terminals:
 
 ```bash
 npm -w @common-ground/api run dev
 npm -w @common-ground/web run dev
 ```
 
-Default local URLs:
+Default addresses:
 
 - Web: `http://localhost:3000`
-- API: `http://localhost:4100`
+- API health: `http://localhost:4100/health`
+- API readiness: `http://localhost:4100/ready`
 
-## Environment Variables
+## Environment configuration
 
-Commonly used variables:
+The application treats integrations as capabilities: credentials configure a provider, while feature flags decide whether users can access it.
 
-- API/Auth: `DATABASE_URL`, `NEXTAUTH_SECRET`, `API_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `NEXTAUTH_URL`, `CORS_ORIGIN`
-- LLM providers: `MISTRAL_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`
-- Email: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
-- SMS MFA: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_PHONE`, `SMS_MFA_SECRET`
-- Queue: `REDIS_URL`
-- Billing: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, price IDs
-- Observability: `SENTRY_DSN`, optional Datadog env vars
+Required API settings:
 
-Optional beta features are disabled unless their flag is explicitly set to `true`:
+```env
+DATABASE_URL=postgresql://...
+NEXTAUTH_SECRET=at-least-32-random-characters
+OAUTH_EXCHANGE_SECRET=a-different-32-character-secret
+CORS_ORIGIN=http://localhost:3000
+```
 
-- `ENABLE_SAML`
-- `ENABLE_BILLING`
-- `ENABLE_SMS_MFA` and the matching web-build flag `NEXT_PUBLIC_ENABLE_SMS_MFA`
-- `ENABLE_EXTERNAL_EXPORT_STORAGE`
-- `ENABLE_DATADOG`
+Required web settings:
 
-See `apps/api/.env.example` and `apps/web/.env.example` for the full list.
+```env
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=the-same-nextauth-secret-as-the-api
+OAUTH_EXCHANGE_SECRET=the-same-exchange-secret-as-the-api
+API_BASE_URL=http://localhost:4100
+NEXT_PUBLIC_API_BASE_URL=http://localhost:4100
+```
 
-## Testing and Quality Gates
+Configure at least one analysis provider with `MISTRAL_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY`.
 
-Run the complete local gate with:
+Optional integrations include:
+
+- Billing: Stripe secret, webhook secret, price IDs, and `ENABLE_BILLING=true`.
+- Email: Resend API key and sender address.
+- SMS MFA: Twilio credentials, a separate MFA secret, and the API/web SMS flags.
+- Queue processing: `REDIS_URL` and an appropriate `API_PROCESS_ROLE`.
+- External exports: R2 credentials and `ENABLE_EXTERNAL_EXPORT_STORAGE=true`.
+- Monitoring: Sentry or Datadog credentials and flags.
+
+Never commit `.env`, `.env.local`, provider keys, webhook secrets, or production connection strings.
+
+## Quality gates
+
+Run the standard repository checks:
 
 ```bash
 npm run lint
-npm test
 npm run typecheck
+npm test
 npm run build
+npm run test:accessibility
 ```
 
-Database integration tests require a disposable PostgreSQL database whose name contains `test`:
+Run the migration-backed API integration suite with a disposable database whose name contains `test`:
 
 ```bash
 TEST_DATABASE_URL=postgresql://user:password@localhost:5432/common_ground_test npm run test:integration
 ```
 
-The integration runner refuses any database URL whose database name does not contain `test`.
-
-Browser E2E tests require Docker and a one-time local Chromium installation:
+Run the primary browser journey:
 
 ```bash
 npx playwright install chromium
 npm run test:e2e
 ```
 
-The E2E runner creates and removes an isolated PostgreSQL container, applies migrations, starts the API and web app on dedicated test ports, and never uses configured external Redis or LLM providers.
+The E2E runner creates an isolated PostgreSQL container, applies every migration, starts dedicated API and web processes, exercises the core journey, and removes its database afterward. Paid or external boundaries use deterministic fixtures where appropriate.
 
-API:
+Current automated coverage includes authentication, profile updates, TOTP setup, conversation creation, invitations, moderation reports, perspective submission and revision, completed analysis rendering, public sharing, reactions, comments, feedback, and PDF/Markdown/JSON exports.
 
-```bash
-npm -w @common-ground/api test
-npm -w @common-ground/api run typecheck
-```
+## Containers
 
-Web:
-
-```bash
-npm -w @common-ground/web test
-npm -w @common-ground/web run typecheck
-```
-
-Additional scripts:
-
-- Accessibility smoke checks: `scripts/a11y-smoke.js`
-- Backup/restore helpers: `scripts/backup-db.sh`, `scripts/restore-db.sh`
-
-## Production Containers
-
-The repository includes separate production images for the API and Next.js web process. Both run as the unprivileged `node` user. The local Compose stack also provides PostgreSQL; Redis remains disabled for the single-instance beta profile.
-
-PowerShell example:
+The production images run as an unprivileged `node` user. The local Compose profile includes PostgreSQL and keeps Redis disabled for the single-instance beta.
 
 ```powershell
 $env:POSTGRES_PASSWORD = "replace-with-a-long-random-password"
 $env:NEXTAUTH_SECRET = "replace-with-at-least-32-random-characters"
+$env:OAUTH_EXCHANGE_SECRET = "replace-with-a-different-32-character-secret"
 
 docker compose build
 docker compose up -d db
@@ -324,65 +229,40 @@ docker compose run --rm api ./node_modules/.bin/prisma migrate deploy --schema a
 docker compose up -d api web
 ```
 
+Local container addresses:
+
 - Web: `http://localhost:3001`
-- API liveness: `http://localhost:4100/health`
+- API health: `http://localhost:4100/health`
 - API readiness: `http://localhost:4100/ready`
-- Images: `common-ground-web:local` and `common-ground-api:local`
 
-Run the 90-day free-tier retention job from the API image:
+## Beta limitations
 
-```powershell
-docker compose run --rm api node apps/api/dist/retention-job.mjs
-```
+- The public link uses a temporary hostname rather than an owned domain.
+- Email delivery remains restricted by the configured sender/domain status.
+- Redis is optional on the current single-instance deployment; in-memory queued work can be lost during a restart.
+- The API, analysis worker, and email outbox share a process in the constrained beta profile and should not be horizontally scaled in that mode.
+- Automated accessibility checks do not replace manual keyboard and screen-reader acceptance testing.
+- Real provider behavior still depends on LLM, email, Stripe, SMS, OAuth, and storage sandbox or production configuration.
+- SAML is not production-ready and must remain disabled.
 
-To remove this local stack while the same environment variables are still set:
+## API overview
 
-```powershell
-docker compose down --volumes
-docker image rm common-ground-web:local common-ground-api:local
-```
+Representative route groups:
 
-## Operational Notes
+- `/auth` — registration, login, refresh, verification, and internal OAuth exchange.
+- `/sessions` — conversation lifecycle, positions, analysis, invitations, and exports.
+- `/share-links` — revocable public result sharing.
+- `/moderation` — reports, queue actions, appeals, and SLA information.
+- `/profile` and `/mfa` — account preferences and multi-factor authentication.
+- `/privacy` — data export, account erasure, and subprocessors.
+- `/billing` — Stripe checkout, portal, and webhook handling.
+- `/admin` — institutional administration.
 
-- Resend test-mode accounts can only send to allowed recipients until a domain is verified.
-- `NEXTAUTH_URL` should point to your actual web origin so links in emails resolve correctly.
-- `NEXTAUTH_SECRET` must contain at least 32 characters. SMS MFA additionally requires a separate `SMS_MFA_SECRET` of at least 32 characters.
-- Export endpoints are authorized for all session participants.
-- For production/staging deployments, use `prisma migrate deploy` (not `migrate dev`).
-- The Redis analysis worker and email-outbox poller currently share the API process. Do not scale the API horizontally until background-process ownership is separated or coordinated.
-- Without `REDIS_URL`, queued analysis falls back to process memory and can be lost on restart; this mode is for local development or a constrained beta only.
-- Use `GET /health` for container liveness and `GET /ready` for traffic readiness. The readiness endpoint checks PostgreSQL and checks Redis whenever `REDIS_URL` is configured.
+Exact request and response schemas live in `packages/shared/src/contracts.ts`.
 
-The same API image supports three process roles through `API_PROCESS_ROLE`:
+## Repository status
 
-- `all` (default): HTTP API, analysis worker, and email outbox together; suitable for the single-instance beta.
-- `api`: HTTP only; requires Redis before asynchronous analysis can be queued.
-- `worker`: analysis worker and email outbox only; requires Redis.
-
-## Known Deployment Dependencies
-
-Some non-functional requirements are deployment/platform dependent and require infra controls outside this repo, including:
-
-- TLS policy enforcement
-- At-rest encryption configuration
-- secrets manager integration
-- uptime/failover guarantees
-- formal benchmark evidence and restore-drill reporting
-- production-safe background worker scheduling
-- SAML protocol validation and interoperability testing
-
-## Repository Structure
-
-```text
-apps/
-  api/        Express API, Prisma schema/migrations, services, routes
-  web/        Next.js app, UI components, auth pages
-packages/
-  shared/     shared contracts and DTO schemas
-  config/     environment parsing/validation
-scripts/      operational and quality scripts
-tests/        e2e notes and test artifacts
-```
+The staging release currently provides HTTPS, health/readiness checks, encrypted database backups, restore validation, CloudWatch logs, Lightsail alarms, and an immutable ECR release process. Launch work still includes an owned domain, provider callback updates, formal policies, manual accessibility acceptance, email-domain authentication, and a limited beta review.
 
 ## License
 
