@@ -27,6 +27,7 @@ describe("parseEnv", () => {
     const env = parseEnv(requiredEnv);
 
     expect(env.ENABLE_SAML).toBe("false");
+    expect(env.ENABLE_PUBLIC_REGISTRATION).toBe("false");
     expect(env.ENABLE_BILLING).toBe("false");
     expect(featureEnabled(env.ENABLE_SAML)).toBe(false);
     expect(featureEnabled("true")).toBe(true);

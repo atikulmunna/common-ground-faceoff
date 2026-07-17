@@ -24,6 +24,14 @@ const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
 // POST /auth/register
 authRouter.post("/register", async (req, res) => {
+  if (!featureEnabled(process.env.ENABLE_PUBLIC_REGISTRATION)) {
+    res.status(403).json(createErrorResponse(
+      "auth_error",
+      "Registration is closed during the invite-only beta",
+    ));
+    return;
+  }
+
   const parse = registerSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json(

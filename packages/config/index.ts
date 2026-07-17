@@ -31,6 +31,7 @@ export const envSchema = z.object({
   STRIPE_PRICE_ENTERPRISE: z.string().min(1).optional(),
   SENTRY_DSN: z.string().min(1).optional(),
   ENABLE_SAML: z.enum(["true", "false"]).default("false"),
+  ENABLE_PUBLIC_REGISTRATION: z.enum(["true", "false"]).default("false"),
   ENABLE_BILLING: z.enum(["true", "false"]).default("false"),
   ENABLE_SMS_MFA: z.enum(["true", "false"]).default("false"),
   ENABLE_EXTERNAL_EXPORT_STORAGE: z.enum(["true", "false"]).default("false"),

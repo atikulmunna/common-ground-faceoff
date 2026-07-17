@@ -33,4 +33,17 @@ describe("API application", () => {
     expect(response.status).toBe(401);
     expect(response.body.error.code).toBe("auth_error");
   });
+
+  it("keeps public registration closed by default", async () => {
+    const response = await request(app)
+      .post("/auth/register")
+      .send({
+        email: "uninvited@example.test",
+        displayName: "Uninvited User",
+        password: "SecurePassword!234",
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe("auth_error");
+  });
 });

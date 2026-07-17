@@ -5,6 +5,8 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getPublicApiBaseUrl } from "../../lib/api-base";
 
+const REGISTRATION_ENABLED = process.env.NEXT_PUBLIC_ENABLE_REGISTRATION === "true";
+
 export default function SignInPage() {
   return (
     <Suspense fallback={<section className="card grid" style={{ maxWidth: "28rem", margin: "0 auto" }}><p>Loading...</p></section>}>
@@ -150,13 +152,17 @@ function SignInPageContent() {
         </button>
       </form>
 
-      <button
-        className="secondary"
-        onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}
-        type="button"
-      >
-        {mode === "login" ? "Need an account? Register" : "Already have an account? Sign In"}
-      </button>
+      {REGISTRATION_ENABLED ? (
+        <button
+          className="secondary"
+          onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}
+          type="button"
+        >
+          {mode === "login" ? "Need an account? Register" : "Already have an account? Sign In"}
+        </button>
+      ) : (
+        <p className="form-helper">Invite-only beta. Access credentials are provided by the project owner.</p>
+      )}
 
       {(process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true" ||
         process.env.NEXT_PUBLIC_MICROSOFT_AUTH_ENABLED === "true") && (

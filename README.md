@@ -157,6 +157,8 @@ Default addresses:
 
 The application treats integrations as capabilities: credentials configure a provider, while feature flags decide whether users can access it.
 
+The checked-in container profile is intentionally locked to the invite-only beta: public registration, social OAuth buttons, billing, SMS MFA, SAML, external export storage, and Datadog are disabled. TOTP, the core conversation journey, local exports, sharing, moderation, and privacy controls remain available.
+
 Required API settings:
 
 ```env
