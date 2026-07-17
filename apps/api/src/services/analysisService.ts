@@ -15,9 +15,20 @@ interface BuildAnalysisInput {
   promptTemplateVersion: string;
 }
 
-interface ParticipantPosition {
+export interface ParticipantPosition {
   participantLabel: string;
   positionText: string;
+}
+
+export interface AnalysisPipelineOutput {
+  steelmans: Record<string, string>;
+  conflictMap: Record<string, string[]>;
+  sharedFoundations: string;
+  trueDisagreements: string;
+  confidenceScores: { sharedFoundations: number; disagreements: number };
+  llmProvider: string;
+  modelVersion: string;
+  promptTemplateHash: string;
 }
 
 interface NormalizationResult {
@@ -66,7 +77,7 @@ function normalizationPrompt(topic: string, positions: ParticipantPosition[]): s
 
 Topic: "${topic}"
 
-Below are the raw participant positions. Rewrite each for clarity, fixing grammar and removing rhetorical excess, WITHOUT changing meaning. Return JSON:
+Below are the raw participant positions. Rewrite each for clarity, fixing grammar and removing rhetorical excess, WITHOUT changing meaning. Preserve every participant label exactly and keep the same order. Return JSON:
 
 \`\`\`json
 {
@@ -88,7 +99,7 @@ function steelmanPrompt(topic: string, normalized: NormalizationResult): string 
 
 Topic: "${topic}"
 
-Construct the strongest, most charitable version of each position below. Strengthen weak arguments while preserving the core claim. Return JSON:
+Construct the strongest, most charitable version of each position below. Strengthen weak arguments while preserving the core claim. Preserve every participant label exactly, keep the same order, and limit each steelman to 80–160 words. Return JSON:
 
 \`\`\`json
 {
@@ -276,50 +287,50 @@ async function runPipeline(
   topic: string,
   positions: ParticipantPosition[],
   sessionId: string,
-  pipelineRunId: string
-): Promise<{
-  steelmans: Record<string, string>;
-  conflictMap: Record<string, string[]>;
-  sharedFoundations: string;
-  trueDisagreements: string;
-  confidenceScores: { sharedFoundations: number; disagreements: number };
-  llmProvider: string;
-  modelVersion: string;
-  promptTemplateHash: string;
-}> {
+  pipelineRunId: string,
+  persistPromptLogs = true,
+): Promise<AnalysisPipelineOutput> {
   // Stage 1 – Normalization
   const normPrompt = normalizationPrompt(topic, positions);
   const normStart = Date.now();
   const normRes = await callLlm(SYSTEM_PROMPT, normPrompt);
-  await logPrompt(sessionId, pipelineRunId, "normalization", normPrompt, normRes, Date.now() - normStart);
+  if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "normalization", normPrompt, normRes, Date.now() - normStart);
   const normData = parseJsonResponse<NormalizationResult>(normRes.content);
+  normData.positions = normData.positions.map((position, index) => ({
+    ...position,
+    label: positions[index]?.participantLabel ?? position.label,
+  }));
 
   // Stage 2 – Steelman
   const steelPrompt_ = steelmanPrompt(topic, normData);
   const steelStart = Date.now();
   const steelRes = await callLlm(SYSTEM_PROMPT, steelPrompt_);
-  await logPrompt(sessionId, pipelineRunId, "steelman", steelPrompt_, steelRes, Date.now() - steelStart);
+  if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "steelman", steelPrompt_, steelRes, Date.now() - steelStart);
   const steelData = parseJsonResponse<SteelmanResult>(steelRes.content);
+  steelData.steelmans = steelData.steelmans.map((steelman, index) => ({
+    ...steelman,
+    label: positions[index]?.participantLabel ?? steelman.label,
+  }));
 
   // Stage 3 – Value Extraction
   const valPrompt = valueExtractionPrompt(topic, steelData);
   const valStart = Date.now();
   const valRes = await callLlm(SYSTEM_PROMPT, valPrompt);
-  await logPrompt(sessionId, pipelineRunId, "value_extraction", valPrompt, valRes, Date.now() - valStart);
+  if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "value_extraction", valPrompt, valRes, Date.now() - valStart);
   const valData = parseJsonResponse<ValueExtractionResult>(valRes.content);
 
   // Stage 4 – Conflict Classification
   const confPrompt = conflictClassificationPrompt(topic, steelData, valData);
   const confStart = Date.now();
   const confRes = await callLlm(SYSTEM_PROMPT, confPrompt);
-  await logPrompt(sessionId, pipelineRunId, "conflict_classification", confPrompt, confRes, Date.now() - confStart);
+  if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "conflict_classification", confPrompt, confRes, Date.now() - confStart);
   const confData = parseJsonResponse<ConflictClassificationResult>(confRes.content);
 
   // Stage 5 – Synthesis
   const synthPrompt = synthesisPrompt(topic, steelData, valData, confData);
   const synthStart = Date.now();
   const synthRes = await callLlm(SYSTEM_PROMPT, synthPrompt);
-  await logPrompt(sessionId, pipelineRunId, "synthesis", synthPrompt, synthRes, Date.now() - synthStart);
+  if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "synthesis", synthPrompt, synthRes, Date.now() - synthStart);
   const synthData = parseJsonResponse<SynthesisResult>(synthRes.content);
 
   // Build steelmans map keyed by label
@@ -344,6 +355,14 @@ async function runPipeline(
     modelVersion: synthRes.model,
     promptTemplateHash: computePromptTemplateHash(),
   };
+}
+
+/** Runs the production prompt pipeline without writing benchmark fixtures to PromptLog. */
+export async function runAnalysisPipelineForQuality(
+  topic: string,
+  positions: ParticipantPosition[],
+): Promise<AnalysisPipelineOutput> {
+  return runPipeline(topic, positions, "quality-benchmark", randomUUID(), false);
 }
 
 /* ------------------------------------------------------------------ */

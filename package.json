@@ -16,6 +16,7 @@
     "test:e2e": "node scripts/run-e2e.mjs",
     "test:integration": "npm -w @common-ground/api run test:integration",
     "test:accessibility": "node scripts/a11y-smoke.js",
+    "quality:analysis": "npm -w @common-ground/api run quality:analysis --",
     "postinstall": "npm -w @common-ground/api run prisma:generate"
   },
   "devDependencies": {
