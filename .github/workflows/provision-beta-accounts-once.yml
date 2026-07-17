@@ -1,0 +1,77 @@
+name: Provision beta accounts once
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure temporary SSH access
+        env:
+          LIGHTSAIL_SSH_KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$LIGHTSAIL_SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          printf '%s\n' '100.60.92.23 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN1XaA4Ve/lETLJVeuZ5u7ZpShFhgLrw9JkJzdLsB/1f' > ~/.ssh/known_hosts
+
+      - name: Transfer encrypted-session payload
+        env:
+          BETA_ACCOUNTS_PAYLOAD: ${{ secrets.BETA_ACCOUNTS_PAYLOAD }}
+        run: |
+          install -m 600 /dev/null /tmp/common-ground-beta-accounts
+          printf '%s' "$BETA_ACCOUNTS_PAYLOAD" > /tmp/common-ground-beta-accounts
+          scp -q /tmp/common-ground-beta-accounts ubuntu@100.60.92.23:/tmp/common-ground-beta-accounts
+          rm -f /tmp/common-ground-beta-accounts
+
+      - name: Back up and provision accounts
+        run: |
+          ssh -o BatchMode=yes ubuntu@100.60.92.23 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          payload=/tmp/common-ground-beta-accounts
+          trap 'rm -f "$payload"' EXIT
+          chmod 600 "$payload"
+
+          sudo systemctl start common-ground-backup.service
+          sudo systemctl is-failed --quiet common-ground-backup.service && exit 1 || true
+
+          sudo docker compose -f /opt/common-ground/docker-compose.yml exec -T api node --input-type=module -e '
+          import fs from "node:fs";
+          import { PrismaClient } from "@prisma/client";
+
+          const encoded = fs.readFileSync(0, "utf8").trim();
+          const accounts = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+          const prisma = new PrismaClient();
+          try {
+            for (const account of accounts) {
+              await prisma.user.upsert({
+                where: { email: account.email },
+                update: {
+                  displayName: account.displayName,
+                  passwordHash: account.passwordHash,
+                  emailVerified: true,
+                  failedLoginCount: 0,
+                  lockedUntil: null,
+                  role: "individual_user",
+                  tier: "free",
+                },
+                create: {
+                  email: account.email,
+                  displayName: account.displayName,
+                  passwordHash: account.passwordHash,
+                  emailVerified: true,
+                  role: "individual_user",
+                  tier: "free",
+                },
+              });
+            }
+            console.log(JSON.stringify({ provisioned: accounts.map(({ email }) => email) }));
+          } finally {
+            await prisma.$disconnect();
+          }
+          ' < "$payload"
+          REMOTE
