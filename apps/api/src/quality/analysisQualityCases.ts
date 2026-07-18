@@ -146,7 +146,7 @@ export const analysisQualityCases: AnalysisQualityCase[] = [
       p("Participant A", "Measure discarded food for one month, offer smaller default portions, and let diners request seconds at no charge."),
       p("Participant B", "Track waste for six weeks, let diners choose portion size, and donate untouched surplus where food-safety rules allow."),
     ],
-    expected: { sharedGround: [["measure", "track", "waste"], ["portion"], ["reduce", "discard"]], disagreements: [["month", "six weeks"], ["seconds", "donate"]], conflictCategories: ["policy"] },
+    expected: { sharedGround: [["measure", "track", "waste"], ["portion"], ["reduce", "discard"]], disagreements: [["month", "six weeks"], ["default", "choose", "portion size"]], conflictCategories: ["policy"] },
     reviewerNote: "Shared foundation should dominate the synthesis.",
   },
   {

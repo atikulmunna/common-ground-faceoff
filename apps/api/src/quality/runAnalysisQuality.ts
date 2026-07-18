@@ -14,6 +14,7 @@ interface CaseRun {
   durationMs?: number;
   provider?: string;
   model?: string;
+  inputPositions: { participantLabel: string; positionText: string }[];
   automated?: AutomatedQualityResult;
   output?: {
     steelmans: Record<string, string>;
@@ -64,6 +65,10 @@ function scrubSensitive<T>(value: T, fixture: AnalysisQualityCase): T {
   return JSON.parse(serialized) as T;
 }
 
+function safeFixturePositions(fixture: AnalysisQualityCase): CaseRun["inputPositions"] {
+  return scrubSensitive(fixture.positions, fixture);
+}
+
 async function runLiveCase(fixture: AnalysisQualityCase): Promise<CaseRun> {
   const { redactPII } = await import("../services/redactionService.js");
   const { runAnalysisPipelineForQuality } = await import("../services/analysisService.js");
@@ -82,6 +87,7 @@ async function runLiveCase(fixture: AnalysisQualityCase): Promise<CaseRun> {
     durationMs: Date.now() - startedAt,
     provider: output.llmProvider,
     model: output.modelVersion,
+    inputPositions: positions,
     automated,
     output: {
       steelmans: output.steelmans,
@@ -104,6 +110,14 @@ function markdownReport(mode: string, generatedAt: string, runs: CaseRun[]): str
     const metric = run.automated;
     const status = run.error ? `ERROR — ${run.error}` : metric ? `${metric.passed ? "PASS" : "FAIL"} — ${metric.score}/100` : "PENDING LIVE RUN";
     const output = run.output;
+    const inputs = run.inputPositions
+      .map((position) => `#### ${position.participantLabel}\n\n${position.positionText}`)
+      .join("\n\n");
+    const steelmans = output
+      ? Object.entries(output.steelmans)
+        .map(([label, steelman]) => `#### ${label}\n\n${steelman}`)
+        .join("\n\n")
+      : "";
     return [
       `## ${run.caseId}`,
       "",
@@ -113,7 +127,8 @@ function markdownReport(mode: string, generatedAt: string, runs: CaseRun[]): str
       `- Duration: ${run.durationMs ?? "—"} ms`,
       `- Hard failures: ${metric?.hardFailures.join(", ") || "none"}`,
       "",
-      output ? `### Shared foundations\n\n${output.sharedFoundations}\n\n### True disagreements\n\n${output.trueDisagreements}` : "",
+      `### Sanitized source positions\n\n${inputs}`,
+      output ? `### Steelmans\n\n${steelmans}\n\n### Shared foundations\n\n${output.sharedFoundations}\n\n### True disagreements\n\n${output.trueDisagreements}` : "",
       "",
       "### Human review (1–5)",
       "",
@@ -138,10 +153,24 @@ function markdownReport(mode: string, generatedAt: string, runs: CaseRun[]): str
   ].join("\n");
 }
 
+async function writeReportFiles(
+  base: string,
+  mode: string,
+  generatedAt: string,
+  runs: CaseRun[],
+): Promise<void> {
+  const report = { generatedAt, mode, caseCount: runs.length, runs };
+  await writeFile(`${base}.json`, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  await writeFile(`${base}.md`, markdownReport(mode, generatedAt, runs), "utf8");
+}
+
 async function main(): Promise<void> {
   const { live, fixtures } = selectCases();
   const generatedAt = new Date().toISOString();
   const runs: CaseRun[] = [];
+  const outputDir = path.join(repoRoot, ".codex-local/quality");
+  await mkdir(outputDir, { recursive: true });
+  const checkpointBase = path.join(outputDir, "analysis-quality-in-progress");
 
   if (live) {
     for (const fixture of fixtures) {
@@ -156,28 +185,28 @@ async function main(): Promise<void> {
           caseId: fixture.id,
           category: fixture.category,
           topic: fixture.topic,
+          inputPositions: safeFixturePositions(fixture),
           error: message,
           humanReview: blankHumanReview(fixture),
         });
         process.stdout.write(`ERROR (${message})\n`);
       }
+      await writeReportFiles(checkpointBase, "live-in-progress", generatedAt, runs);
     }
   } else {
     runs.push(...fixtures.map((fixture) => ({
       caseId: fixture.id,
       category: fixture.category,
       topic: fixture.topic,
+      inputPositions: safeFixturePositions(fixture),
       humanReview: blankHumanReview(fixture),
     })));
   }
 
-  const outputDir = path.join(repoRoot, ".codex-local/quality");
-  await mkdir(outputDir, { recursive: true });
   const stamp = generatedAt.replaceAll(":", "-").replace(".", "-");
   const base = path.join(outputDir, `analysis-quality-${stamp}`);
-  const report = { generatedAt, mode: live ? "live" : "validation", caseCount: runs.length, runs };
-  await writeFile(`${base}.json`, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  await writeFile(`${base}.md`, markdownReport(report.mode, generatedAt, runs), "utf8");
+  const mode = live ? "live" : "validation";
+  await writeReportFiles(base, mode, generatedAt, runs);
   process.stdout.write(`Report: ${base}.md\n`);
 
   if (live && runs.some((run) => run.error || !run.automated?.passed)) process.exitCode = 1;
@@ -187,4 +216,3 @@ void main().catch((error) => {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });
-

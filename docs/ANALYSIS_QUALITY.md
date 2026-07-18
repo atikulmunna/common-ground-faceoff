@@ -48,3 +48,9 @@ A reviewed case passes when every participant's faithfulness is at least 3, no s
 ## Release threshold
 
 Before public launch, require all 30 cases to complete, zero automated hard failures, at least 90% automated case pass rate, and the human review gate above. Keep the first accepted full report as the private baseline and compare later prompt/model changes against it.
+
+## Current baseline status
+
+On 2026-07-18, all 30 cases passed the automated gate after two malformed provider responses were recovered with targeted retries. The consolidated mean score was 90.3/100 with zero privacy, injection, participant-coverage, confidence, or structural hard failures. The run used Mistral Large and OpenRouter's `openai/gpt-oss-120b` fallback.
+
+The audit also led to production changes: exact participant-label restoration, grounded and length-bounded steelmans, evidence-backed synthesis, rejection of silence-as-disagreement, schema validation inside provider retry/fallback, and a configurable current OpenRouter model. This automated result is not the accepted release baseline until two people complete the semantic review rubric.

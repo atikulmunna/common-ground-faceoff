@@ -82,7 +82,7 @@ function buildProviders(): ProviderConfig[] {
       apiKey: process.env.OPENROUTER_API_KEY,
       baseURL: "https://openrouter.ai/api/v1",
     });
-    const model = "google/gemini-2.0-flash-001";
+    const model = process.env.OPENROUTER_MODEL ?? "openai/gpt-oss-120b";
     providers.push({
       name: "openrouter",
       model,
@@ -95,6 +95,7 @@ function buildProviders(): ProviderConfig[] {
           ],
           temperature: 0.3,
           max_tokens: 4096,
+          response_format: { type: "json_object" },
         });
         const choice = res.choices[0];
         return {
@@ -165,7 +166,8 @@ export async function withRetryBudget<T>(
  */
 export async function callLlm(
   systemPrompt: string,
-  userPrompt: string
+  userPrompt: string,
+  validate?: (content: string) => void,
 ): Promise<LlmResponse> {
   const providers = buildProviders();
   if (providers.length === 0) {
@@ -177,7 +179,9 @@ export async function callLlm(
   for (const provider of providers) {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        return await withTimeout(provider.call(systemPrompt, userPrompt), LLM_CALL_TIMEOUT_MS);
+        const response = await withTimeout(provider.call(systemPrompt, userPrompt), LLM_CALL_TIMEOUT_MS);
+        validate?.(response.content);
+        return response;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`${provider.name} attempt ${attempt + 1}: ${msg}`);
