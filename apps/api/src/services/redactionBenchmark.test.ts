@@ -191,30 +191,10 @@ describe("PII Redaction Benchmark (CG-NFR29)", () => {
     }
   });
 
-  it("does not block clean debate text", () => {
-    for (const text of TRUE_NEGATIVE_CASES) {
-      const result = redactPII(text);
-      expect(result.blocked).toBe(false);
-    }
-  });
-
-  it("maintains pipeline confidence >= 0.85 on all inputs", () => {
-    const allTexts = [
-      ...TRUE_POSITIVE_CASES.map((tc) => tc.text),
-      ...TRUE_NEGATIVE_CASES,
-    ];
-
-    for (const text of allTexts) {
-      const result = redactPII(text);
-      expect(result.confidence).toBeGreaterThanOrEqual(0.85);
-    }
-  });
-
-  it("validate stage reports 0 residual after masking for all true-positives", () => {
+  it("leaves nothing detectable behind after masking", () => {
     for (const tc of TRUE_POSITIVE_CASES) {
-      const result = redactPII(tc.text);
-      const validateStage = result.stages.find((s) => s.stage === "validate");
-      expect(validateStage?.findingsCount, `Residual PII in: ${tc.text}`).toBe(0);
+      const masked = redactPII(tc.text).redactedText;
+      expect(redactPII(masked).findings, `Residual PII in: ${tc.text}`).toBe(0);
     }
   });
 

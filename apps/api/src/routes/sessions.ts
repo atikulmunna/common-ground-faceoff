@@ -358,9 +358,9 @@ sessionsRouter.post("/:id/analyze", requireSessionAccess, requirePermission("tri
   try {
     // The analysis runs in the analysis worker; the request only checks and queues it.
     const started = await startAnalysis(req.params.id);
-    if (started.status === "queued") wakeAnalysisWorker();
+    wakeAnalysisWorker();
 
-    res.status(started.status === "queued" ? 202 : 200).json(
+    res.status(202).json(
       createSuccessResponse({
         status: started.status,
         pipelineRunId: null,

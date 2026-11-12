@@ -10,6 +10,7 @@ const db = vi.hoisted(() => {
     results: [] as Row[],
     snapshots: [] as Row[],
     events: [] as Row[],
+    redactionLogs: [] as Row[],
   };
 
   const matches = (row: Row, where: Row): boolean =>
@@ -69,6 +70,12 @@ const db = vi.hoisted(() => {
       },
     },
     promptLog: { create: async () => ({}) },
+    redactionLog: {
+      create: async ({ data }: { data: Row }) => {
+        state.redactionLogs.push(data);
+        return data;
+      },
+    },
   };
 
   return { state, prisma };
@@ -129,6 +136,7 @@ describe("analysis worker steps", () => {
     db.state.results = [];
     db.state.snapshots = [];
     db.state.events = [];
+    db.state.redactionLogs = [];
     callLlm.mockReset();
   });
 
@@ -142,6 +150,26 @@ describe("analysis worker steps", () => {
     expect(db.state.results[0]).toMatchObject({ roundNumber: 1, status: "completed", llmProvider: "openrouter" });
     expect(db.state.snapshots).toHaveLength(2);
     expect(db.state.events.map((event) => event.eventType)).toEqual(["analysis_started", "analysis_completed"]);
+  });
+
+  it("redacts the topic as well as the perspectives, and logs what was found without the values", async () => {
+    answerEveryStage();
+    db.state.sessions[0].topic = "Should jane@example.com decide how many office days we keep?";
+    db.state.participants[0].positionText = "Office days help new hires learn quickly. Call 555-444-3333.";
+
+    await runClaimedAnalysis("session-1");
+
+    const prompts = callLlm.mock.calls.map((call) => String(call[1])).join("\n");
+    expect(prompts).not.toContain("jane@example.com");
+    expect(prompts).not.toContain("555-444-3333");
+    expect(prompts).toContain("Should [REDACTED:EMAIL] decide");
+
+    expect(db.state.redactionLogs).toHaveLength(1);
+    expect(db.state.redactionLogs[0]).toMatchObject({ findingsCount: 2, confidence: null, blocked: false });
+    const logged = JSON.stringify(db.state.redactionLogs[0]);
+    expect(logged).toContain("\"field\":\"topic\"");
+    expect(logged).not.toContain("jane@example.com");
+    expect(logged).not.toContain("555-444-3333");
   });
 
   it("marks the conversation failed, without throwing, when the pipeline fails", async () => {

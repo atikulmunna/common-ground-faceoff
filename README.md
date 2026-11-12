@@ -28,7 +28,7 @@ The goal is not to score a winner. It is to make the conversation clearer, faire
 - Create a guided conversation around a shared topic.
 - Invite participants by link or email.
 - Submit and revise perspectives across multiple rounds.
-- Run a five-stage AI analysis with PII redaction before provider calls.
+- Run a five-stage AI analysis, with structured personal data masked before provider calls.
 - Review steelmanned positions, shared values, conflict types, and synthesis.
 - React to individual result sections and leave contextual comments.
 - Report unsafe content and follow moderation status.
@@ -49,7 +49,7 @@ The goal is not to score a winner. It is to make the conversation clearer, faire
 
 ## How analysis works
 
-Every analysis-bound perspective passes through a redaction gate before leaving the application. Low-confidence redaction stops the pipeline and requests user input instead of silently forwarding uncertain content.
+Before anything is sent to a model, structured personal data is replaced with placeholders in the topic and in every perspective: email addresses, phone numbers, US social security numbers, payment card numbers, IP addresses and dates of birth. This is pattern matching, not language understanding, so names, street addresses and other free-text details are not detected; participants should leave them out. Each run logs which kinds of values were masked and where, never the values themselves.
 
 The analysis then runs five stages:
 
@@ -101,7 +101,7 @@ The beta deployment uses one AWS Lightsail instance with Caddy, the web and API 
 
 ## Security and privacy
 
-- PII redaction is enforced before LLM analysis.
+- Structured personal data (emails, phone numbers, SSNs, card numbers, IP addresses, dates of birth) is masked in the topic and perspectives before LLM analysis. Names and addresses are not detected.
 - API access uses short-lived JWTs and rotating refresh tokens.
 - The NextAuth-to-API OAuth exchange uses a separate internal secret and is blocked at the public proxy.
 - Authorization checks protect sessions, exports, moderation, billing, and administration.

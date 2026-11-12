@@ -1,3 +1,10 @@
+/**
+ * Replaces structured personal data with placeholders before text is sent to a model (CG-FR59).
+ *
+ * This is pattern matching, not language understanding: it catches email addresses, phone
+ * numbers, US social security numbers, payment card numbers, IP addresses and dates of birth.
+ * Names, street addresses and other free-text details are not detected.
+ */
 const piiPatterns = [
   { name: "ssn", pattern: /\b\d{3}-\d{2}-\d{4}\b/g },
   { name: "phone", pattern: /\b(?:\+?\d{1,2}\s?)?(?:\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})\b/g },
@@ -7,162 +14,44 @@ const piiPatterns = [
   { name: "date_of_birth", pattern: /\b(?:0[1-9]|1[0-2])\/(?:0[1-9]|[12]\d|3[01])\/(?:19|20)\d{2}\b/g },
 ];
 
-// Configurable confidence threshold (CG-FR60)
-const CONFIDENCE_THRESHOLD = Number(process.env.PII_CONFIDENCE_THRESHOLD ?? "0.85");
-
-export interface RedactionFinding {
-  type: string;
-  original: string;
-  position: number;
-}
-
-export interface RedactionStageResult {
-  stage: "detect" | "mask" | "validate" | "uncertainty_check";
-  findingsCount: number;
-  confidence: number;
-  blocked: boolean;
-  findings?: RedactionFinding[];
-}
-
 export interface RedactionResult {
   redactedText: string;
-  confidence: number;
-  blocked: boolean;
+  /** Number of values replaced. */
   findings: number;
-  stages: RedactionStageResult[];
+  /** The kind and position of each replaced value; never the value itself. */
+  detected: { type: string; position: number }[];
 }
 
-/* ------------------------------------------------------------------ */
-/*  Stage 1: Detect — identify PII patterns                            */
-/* ------------------------------------------------------------------ */
-
-function detectStage(input: string): { findings: RedactionFinding[]; confidence: number } {
-  const findings: RedactionFinding[] = [];
-
-  for (const { name, pattern } of piiPatterns) {
-    // Reset regex state
-    const regex = new RegExp(pattern.source, pattern.flags);
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(input)) !== null) {
-      findings.push({
-        type: name,
-        original: match[0],
-        position: match.index,
-      });
-    }
-  }
-
-  // Higher confidence when patterns are clearly identifiable
-  const confidence = findings.length > 0 ? 0.99 : 0.96;
-  return { findings, confidence };
+interface Match {
+  type: string;
+  start: number;
+  end: number;
 }
-
-/* ------------------------------------------------------------------ */
-/*  Stage 2: Mask — replace detected PII with placeholders             */
-/* ------------------------------------------------------------------ */
-
-function maskStage(input: string, findings: RedactionFinding[]): string {
-  let result = input;
-  // Sort findings by position descending so replacements don't shift positions
-  const sorted = [...findings].sort((a, b) => b.position - a.position);
-
-  for (const finding of sorted) {
-    const before = result.slice(0, finding.position);
-    const after = result.slice(finding.position + finding.original.length);
-    result = `${before}[REDACTED:${finding.type.toUpperCase()}]${after}`;
-  }
-
-  return result;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Stage 3: Validate — re-scan masked text for residual PII           */
-/* ------------------------------------------------------------------ */
-
-function validateStage(maskedText: string): { residualFindings: number; confidence: number } {
-  let residualFindings = 0;
-
-  for (const { pattern } of piiPatterns) {
-    const regex = new RegExp(pattern.source, pattern.flags);
-    const matches = maskedText.match(regex);
-    if (matches) {
-      // Filter out our own redaction markers
-      const real = matches.filter((m) => !m.includes("[REDACTED:"));
-      residualFindings += real.length;
-    }
-  }
-
-  const confidence = residualFindings === 0 ? 0.99 : 0.7;
-  return { residualFindings, confidence };
-}
-
-/* ------------------------------------------------------------------ */
-/*  Stage 4: Uncertainty check — block if confidence below threshold   */
-/*  (CG-FR60)                                                         */
-/* ------------------------------------------------------------------ */
-
-function uncertaintyCheckStage(
-  detectConfidence: number,
-  validateConfidence: number,
-): { finalConfidence: number; blocked: boolean } {
-  // Combined confidence is the minimum of detect and validate stages
-  const finalConfidence = Math.min(detectConfidence, validateConfidence);
-  
-  // Block if confidence is below threshold OR if there are residual findings
-  const blocked = finalConfidence < CONFIDENCE_THRESHOLD;
-
-  return { finalConfidence, blocked };
-}
-
-/* ------------------------------------------------------------------ */
-/*  Main pipeline (CG-FR59)                                            */
-/* ------------------------------------------------------------------ */
 
 export function redactPII(input: string): RedactionResult {
-  const stages: RedactionStageResult[] = [];
+  const matches: Match[] = [];
+  for (const { name, pattern } of piiPatterns) {
+    for (const match of input.matchAll(new RegExp(pattern.source, pattern.flags))) {
+      matches.push({ type: name, start: match.index, end: match.index + match[0].length });
+    }
+  }
 
-  // Stage 1: Detect
-  const detect = detectStage(input);
-  stages.push({
-    stage: "detect",
-    findingsCount: detect.findings.length,
-    confidence: detect.confidence,
-    blocked: false,
-    findings: detect.findings,
-  });
+  // Keep the earliest (then longest) match wherever two overlap, so masking never splices text.
+  matches.sort((a, b) => a.start - b.start || b.end - a.end);
+  const kept: Match[] = [];
+  for (const match of matches) {
+    if (kept.length === 0 || match.start >= kept[kept.length - 1].end) kept.push(match);
+  }
 
-  // Stage 2: Mask
-  const maskedText = maskStage(input, detect.findings);
-  stages.push({
-    stage: "mask",
-    findingsCount: detect.findings.length,
-    confidence: detect.confidence,
-    blocked: false,
-  });
-
-  // Stage 3: Validate
-  const validate = validateStage(maskedText);
-  stages.push({
-    stage: "validate",
-    findingsCount: validate.residualFindings,
-    confidence: validate.confidence,
-    blocked: false,
-  });
-
-  // Stage 4: Uncertainty check
-  const uncertainty = uncertaintyCheckStage(detect.confidence, validate.confidence);
-  stages.push({
-    stage: "uncertainty_check",
-    findingsCount: 0,
-    confidence: uncertainty.finalConfidence,
-    blocked: uncertainty.blocked,
-  });
+  let redactedText = input;
+  for (const match of [...kept].reverse()) {
+    redactedText =
+      redactedText.slice(0, match.start) + `[REDACTED:${match.type.toUpperCase()}]` + redactedText.slice(match.end);
+  }
 
   return {
-    redactedText: maskedText,
-    confidence: uncertainty.finalConfidence,
-    blocked: uncertainty.blocked,
-    findings: detect.findings.length,
-    stages,
+    redactedText,
+    findings: kept.length,
+    detected: kept.map((match) => ({ type: match.type, position: match.start })),
   };
 }

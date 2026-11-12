@@ -72,11 +72,11 @@ function safeFixturePositions(fixture: AnalysisQualityCase): CaseRun["inputPosit
 async function runLiveCase(fixture: AnalysisQualityCase): Promise<CaseRun> {
   const { redactPII } = await import("../services/redactionService.js");
   const { runAnalysisPipelineForQuality } = await import("../services/analysisService.js");
-  const positions = fixture.positions.map((position) => {
-    const redaction = redactPII(position.positionText);
-    if (redaction.blocked) throw new Error(`PII redaction blocked ${fixture.id}`);
-    return { ...position, positionText: redaction.redactedText };
-  });
+  // The pipeline redacts the topic and positions itself; this copy is what the report shows as input.
+  const positions = fixture.positions.map((position) => ({
+    ...position,
+    positionText: redactPII(position.positionText).redactedText,
+  }));
   const startedAt = Date.now();
   const output = await runAnalysisPipelineForQuality(fixture.topic, positions);
   const automated = evaluateAnalysisQuality(fixture, output);

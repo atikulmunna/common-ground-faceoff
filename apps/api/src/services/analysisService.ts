@@ -515,12 +515,33 @@ async function runPipeline(
   };
 }
 
-/** Runs the production prompt pipeline without writing benchmark fixtures to PromptLog. */
+/**
+ * CG-FR59: replaces structured personal data in everything sent to the model, the topic as well
+ * as each position. `detected` records where values were found (field, type, position), never
+ * the values themselves.
+ */
+function redactForModel(topic: string, positions: ParticipantPosition[]) {
+  const redactedTopic = redactPII(topic);
+  const redactedPositions = positions.map((position) => ({ position, redaction: redactPII(position.positionText) }));
+  return {
+    topic: redactedTopic.redactedText,
+    positions: redactedPositions.map(({ position, redaction }) => ({ ...position, positionText: redaction.redactedText })),
+    detected: [
+      ...redactedTopic.detected.map((found) => ({ field: "topic", ...found })),
+      ...redactedPositions.flatMap(({ position, redaction }) =>
+        redaction.detected.map((found) => ({ field: position.participantLabel, ...found })),
+      ),
+    ],
+  };
+}
+
+/** Runs the production pipeline, redaction included, without writing benchmark fixtures to PromptLog. */
 export async function runAnalysisPipelineForQuality(
   topic: string,
   positions: ParticipantPosition[],
 ): Promise<AnalysisPipelineOutput> {
-  return runPipeline(topic, positions, "quality-benchmark", randomUUID(), false);
+  const redacted = redactForModel(topic, positions);
+  return runPipeline(redacted.topic, redacted.positions, "quality-benchmark", randomUUID(), false);
 }
 
 /* ------------------------------------------------------------------ */
@@ -595,7 +616,7 @@ async function loadPositions(sessionId: string) {
  */
 export async function startAnalysis(
   sessionId: string,
-): Promise<{ status: "queued" | "needs_input"; estimatedCompletionAt: Date | null }> {
+): Promise<{ status: "queued"; estimatedCompletionAt: Date }> {
   const { session, participants, positions } = await loadPositions(sessionId);
 
   // A conversation analyzed without one side would misrepresent it, so wait for the rewrite.
@@ -621,46 +642,15 @@ export async function startAnalysis(
     throw new AnalysisConflictError("This conversation is on hold while a moderator reviews flagged content.");
   }
 
-  // PII redaction (CG-FR59: 4-stage pipeline with audit logging)
-  const redaction = redactPII(combined);
   const estimatedCompletionAt = new Date(Date.now() + estimateCompletionSeconds(combined.length) * 1000);
 
   // Claim the conversation in one conditional update, so concurrent requests cannot queue two runs.
   const claim = await prisma.session.updateMany({
     where: { id: sessionId, status: { in: [...ANALYZABLE_STATUSES] } },
-    data: redaction.blocked ? { status: "needs_input" } : { status: "queued", estimatedCompletionAt },
+    data: { status: "queued", estimatedCompletionAt },
   });
   if (claim.count !== 1) {
     throw await explainRefusedClaim(sessionId);
-  }
-
-  for (const stage of redaction.stages) {
-    await prisma.redactionLog.create({
-      data: {
-        sessionId,
-        participantId: "combined",
-        stage: stage.stage,
-        findingsCount: stage.findingsCount,
-        confidence: stage.confidence,
-        blocked: stage.blocked,
-        metadata: stage.findings ? { findings: stage.findings.map((f) => ({ type: f.type, position: f.position })) } : undefined,
-      },
-    });
-  }
-
-  if (redaction.blocked) {
-    await prisma.analysisEvent.create({
-      data: {
-        sessionId,
-        pipelineRunId: "redaction",
-        eventType: "redaction_blocked",
-        fromState: session.status,
-        toState: "needs_input",
-        reasonCode: "low_redaction_confidence",
-        actorType: "system",
-      },
-    });
-    return { status: "needs_input", estimatedCompletionAt: null };
   }
 
   await prisma.analysisEvent.create({
@@ -722,13 +712,23 @@ export async function runClaimedAnalysis(sessionId: string): Promise<void> {
       throw new Error("At least 2 participant positions are required for analysis");
     }
 
-    const redactedPositions = positions.map((p) => ({
-      ...p,
-      positionText: redactPII(p.positionText).redactedText,
-    }));
+    const redacted = redactForModel(session.topic, positions);
     const inputHash = createHash("sha256")
-      .update(redactedPositions.map((p) => p.positionText).join("\n\n"))
+      .update(redacted.positions.map((p) => p.positionText).join("\n\n"))
       .digest("hex");
+
+    // CG-FR59 audit: what kinds of values were masked and where, never the values themselves.
+    await prisma.redactionLog.create({
+      data: {
+        sessionId,
+        participantId: "combined",
+        stage: "mask",
+        findingsCount: redacted.detected.length,
+        confidence: null,
+        blocked: false,
+        metadata: { pipelineRunId, findings: redacted.detected },
+      },
+    });
 
     // Restart the estimate now that work begins; it also serves as this run's lease (see requeueStaleAnalyses).
     const totalChars = positions.reduce((sum, p) => sum + p.positionText.length, 0);
@@ -764,7 +764,7 @@ export async function runClaimedAnalysis(sessionId: string): Promise<void> {
       });
     }
 
-    const pipelineOutput = await runPipeline(session.topic, redactedPositions, sessionId, pipelineRunId);
+    const pipelineOutput = await runPipeline(redacted.topic, redacted.positions, sessionId, pipelineRunId);
 
     await prisma.analysisResult.create({
       data: {

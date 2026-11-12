@@ -286,7 +286,7 @@ model RedactionLog {
   participantId  String
   stage          RedactionStage
   findingsCount  Int             @default(0)
-  confidence     Float
+  confidence     Float?          // no longer recorded; earlier rows hold a fixed placeholder value
   blocked        Boolean         @default(false)
   metadata       Json?
   createdAt      DateTime        @default(now())
