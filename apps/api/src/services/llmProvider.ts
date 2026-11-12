@@ -156,66 +156,28 @@ export async function callLlm(
 }
 
 /**
- * Parse a JSON block from LLM output. Tolerates markdown fences and
- * control characters that LLMs sometimes emit inside string values.
+ * Parse a JSON block from LLM output. Tolerates markdown fences and raw control characters that
+ * models sometimes emit inside string values. Truncated JSON is rejected on purpose: patching it
+ * would let partial content pass validation, while rejecting it makes callLlm ask again.
  */
 export function parseJsonResponse<T>(raw: string): T {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   const text = fenced ? fenced[1].trim() : raw.trim();
 
-  const attempts = [
-    () => JSON.parse(text) as T,
-    () => {
-      // Escape unescaped control chars inside JSON string values only
-      const sanitized = text.replace(
-        /"(?:[^"\\]|\\.)*"/g,
-        (str) =>
-          str.replace(/[\x00-\x1f]/g, (ch) => {
-            if (ch === "\n") return "\\n";
-            if (ch === "\r") return "\\r";
-            if (ch === "\t") return "\\t";
-            return "";
-          })
-      );
-      return JSON.parse(sanitized) as T;
-    },
-    () => {
-      // Try to repair truncated JSON by closing open brackets/braces/strings
-      let repaired = text.replace(
-        /"(?:[^"\\]|\\.)*"/g,
-        (str) =>
-          str.replace(/[\x00-\x1f]/g, (ch) => {
-            if (ch === "\n") return "\\n";
-            if (ch === "\r") return "\\r";
-            if (ch === "\t") return "\\t";
-            return "";
-          })
-      );
-      // Remove trailing comma before we close
-      repaired = repaired.replace(/,\s*$/, "");
-      // Close any unclosed strings
-      const quoteCount = (repaired.match(/(?<!\\)"/g) ?? []).length;
-      if (quoteCount % 2 !== 0) repaired += '"';
-      // Close unclosed brackets/braces
-      const opens = { "{": 0, "[": 0 };
-      const closes: Record<string, keyof typeof opens> = { "}": "{", "]": "[" };
-      for (const ch of repaired) {
-        if (ch in opens) opens[ch as keyof typeof opens]++;
-        if (ch in closes) opens[closes[ch]]--;
-      }
-      for (let i = 0; i < opens["["]; i++) repaired += "]";
-      for (let i = 0; i < opens["{"]; i++) repaired += "}";
-      return JSON.parse(repaired) as T;
-    },
-  ];
-
-  for (let i = 0; i < attempts.length; i++) {
-    try {
-      return attempts[i]();
-    } catch (err) {
-      if (i === attempts.length - 1) throw err;
-    }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // Escape unescaped control characters inside JSON string values only.
+    const sanitized = text.replace(
+      /"(?:[^"\\]|\\.)*"/g,
+      (str) =>
+        str.replace(/[\x00-\x1f]/g, (ch) => {
+          if (ch === "\n") return "\\n";
+          if (ch === "\r") return "\\r";
+          if (ch === "\t") return "\\t";
+          return "";
+        })
+    );
+    return JSON.parse(sanitized) as T;
   }
-
-  throw new Error("Failed to parse JSON response");
 }

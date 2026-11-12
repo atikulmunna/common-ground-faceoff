@@ -171,31 +171,22 @@ describe("parseJsonResponse", () => {
     expect(result.text).toBe("hello\tworld\nfoo");
   });
 
-  it("repairs truncated JSON with unclosed braces", () => {
-    const raw = '{"items": [{"a": 1}, {"b": 2}';
-    const result = parseJsonResponse<{ items: Array<{ a?: number; b?: number }> }>(raw);
-    expect(result.items).toHaveLength(2);
-    expect(result.items[0].a).toBe(1);
-    expect(result.items[1].b).toBe(2);
+  // A cut-off answer must fail, so the model is asked again; patching it up would let partial
+  // content (a half-written restatement, a missing participant) pass validation.
+  it("rejects truncated JSON with unclosed braces", () => {
+    expect(() => parseJsonResponse('{"items": [{"a": 1}, {"b": 2}')).toThrow();
   });
 
-  it("repairs truncated JSON with trailing comma", () => {
-    const raw = '{"a": 1, "b": 2,';
-    const result = parseJsonResponse<{ a: number; b: number }>(raw);
-    expect(result.a).toBe(1);
-    expect(result.b).toBe(2);
+  it("rejects truncated JSON with a trailing comma", () => {
+    expect(() => parseJsonResponse('{"a": 1, "b": 2,')).toThrow();
   });
 
-  it("repairs truncated JSON with unclosed string", () => {
-    const raw = '{"text": "hello world';
-    const result = parseJsonResponse<{ text: string }>(raw);
-    expect(result.text).toBe("hello world");
+  it("rejects truncated JSON with an unclosed string", () => {
+    expect(() => parseJsonResponse('{"text": "hello world')).toThrow();
   });
 
-  it("repairs deeply nested truncated JSON", () => {
-    const raw = '{"outer": {"inner": [1, 2, 3';
-    const result = parseJsonResponse<{ outer: { inner: number[] } }>(raw);
-    expect(result.outer.inner).toEqual([1, 2, 3]);
+  it("rejects deeply nested truncated JSON", () => {
+    expect(() => parseJsonResponse('{"outer": {"inner": [1, 2, 3')).toThrow();
   });
 
   it("throws for completely invalid content", () => {
