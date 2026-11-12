@@ -340,20 +340,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     setBusy(true);
     setError(null);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300_000); // 5 min timeout
-      await apiPost(`/sessions/${sessionId}/analyze`, {
-        analysisVersion: "v1",
-        promptTemplateVersion: "tpl-v1"
-      }, undefined, controller.signal);
-      clearTimeout(timeoutId);
+      // The API queues the analysis and answers at once; the page then follows its progress.
+      await apiPost(`/sessions/${sessionId}/analyze`, {});
       await refreshAnalysis();
     } catch (analyzeError) {
-      if (analyzeError instanceof DOMException && analyzeError.name === "AbortError") {
-        setError("Analysis is taking too long. Please refresh and try again.");
-      } else {
-        setError(analyzeError instanceof Error ? analyzeError.message : "Failed to analyze");
-      }
+      setError(analyzeError instanceof Error ? analyzeError.message : "Failed to analyze");
     } finally {
       setBusy(false);
     }

@@ -297,17 +297,33 @@ ${confBlock}`;
 /*  Pipeline runner                                                    */
 /* ------------------------------------------------------------------ */
 
-/** CG-NFR40: Hash all prompt templates for reproducibility tracking */
-function computePromptTemplateHash(): string {
-  const templates = [
+/**
+ * CG-NFR40: hash of the prompts as they are sent, rendered with fixed sample input. Hashing the
+ * rendered text (not the functions' source) gives the same value in development and in the
+ * bundled build. A test checks it against PROMPT_TEMPLATE_HASH, so a prompt change cannot ship
+ * without a new PROMPT_TEMPLATE_VERSION.
+ */
+export function computePromptTemplateHash(): string {
+  const labels = ["Participant A", "Participant B"];
+  const positions = labels.map((label) => ({ participantLabel: label, positionText: `POSITION ${label}` }));
+  const normalized = { positions: labels.map((label) => ({ label, normalized: `NORMALIZED ${label}` })) };
+  const steelmans = { steelmans: labels.map((label) => ({ label, steelman: `STEELMAN ${label}` })) };
+  const values = {
+    participants: labels.map((label) => ({ label, values: [{ name: "VALUE", description: `WHY ${label}` }] })),
+  };
+  const conflicts = {
+    conflicts: [{ category: "value" as const, description: "CONFLICT", participants: labels }],
+  };
+
+  const rendered = [
     SYSTEM_PROMPT,
-    normalizationPrompt.toString(),
-    steelmanPrompt.toString(),
-    valueExtractionPrompt.toString(),
-    conflictClassificationPrompt.toString(),
-    synthesisPrompt.toString(),
-  ].join("||");
-  return createHash("sha256").update(templates).digest("hex").slice(0, 16);
+    normalizationPrompt("TOPIC", positions),
+    steelmanPrompt("TOPIC", normalized),
+    valueExtractionPrompt("TOPIC", steelmans),
+    conflictClassificationPrompt("TOPIC", steelmans, values),
+    synthesisPrompt("TOPIC", steelmans, values, conflicts),
+  ].join("\n||\n");
+  return createHash("sha256").update(rendered).digest("hex").slice(0, 16);
 }
 
 function normalizedEvidenceText(value: string): string {
@@ -511,7 +527,7 @@ async function runPipeline(
     llmProvider: synthRes.provider,
     // The Auto Router may answer stages with different models; record each one, in stage order.
     modelVersion: [...new Set([normRes, steelRes, valRes, confRes, synthRes].map((res) => res.model))].join(", "),
-    promptTemplateHash: computePromptTemplateHash(),
+    promptTemplateHash: PROMPT_TEMPLATE_HASH,
   };
 }
 
@@ -553,7 +569,12 @@ const ANALYZABLE_STATUSES = ["draft", "collecting_positions", "failed", "needs_i
 
 /** Version labels stored with every result. */
 export const ANALYSIS_VERSION = "v1";
+/**
+ * Bump PROMPT_TEMPLATE_VERSION whenever a prompt changes, and set PROMPT_TEMPLATE_HASH to the new
+ * computePromptTemplateHash() value; a test fails until the two agree.
+ */
 export const PROMPT_TEMPLATE_VERSION = "tpl-v1";
+export const PROMPT_TEMPLATE_HASH = "4f6ae23ab3e01250";
 
 /** A run whose estimated finish is this far in the past is treated as abandoned by a dead worker. */
 const STALE_RUN_GRACE_MS = 15 * 60 * 1000;

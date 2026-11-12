@@ -57,9 +57,10 @@ export const submitPositionSchema = z.object({
   roundNumber: z.number().int().positive().default(1)
 });
 
+// Versions are set by the server; client-sent values are accepted for compatibility and ignored.
 export const analyzeSessionSchema = z.object({
-  analysisVersion: z.string().min(1),
-  promptTemplateVersion: z.string().min(1),
+  analysisVersion: z.string().min(1).optional(),
+  promptTemplateVersion: z.string().min(1).optional(),
   runMetadata: z.record(z.string(), z.unknown()).optional()
 });
 

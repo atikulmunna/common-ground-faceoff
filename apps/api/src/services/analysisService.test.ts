@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { estimateCompletionSeconds } from "../services/analysisService.js";
+import {
+  computePromptTemplateHash,
+  estimateCompletionSeconds,
+  PROMPT_TEMPLATE_HASH,
+} from "../services/analysisService.js";
 
 describe("estimateCompletionSeconds (CG-FR57)", () => {
   it("returns 60s for short (sync) positions ≤ 4000 chars", () => {
@@ -24,5 +28,17 @@ describe("estimateCompletionSeconds (CG-FR57)", () => {
   it("handles boundary at 4001 chars", () => {
     // 4001 → async → 30 + ceil(4001/100) = 30 + 41 = 71
     expect(estimateCompletionSeconds(4001)).toBe(71);
+  });
+});
+
+describe("prompt template version (CG-NFR40)", () => {
+  it("records a hash of the prompts as sent, matching the hash stored next to the version", () => {
+    // If this fails, a prompt changed. Bump PROMPT_TEMPLATE_VERSION in analysisService.ts and set
+    // PROMPT_TEMPLATE_HASH there to the new value, so results record which prompts produced them.
+    expect(computePromptTemplateHash()).toBe(PROMPT_TEMPLATE_HASH);
+  });
+
+  it("is a short hex digest that does not depend on how the code was compiled", () => {
+    expect(PROMPT_TEMPLATE_HASH).toMatch(/^[0-9a-f]{16}$/);
   });
 });
