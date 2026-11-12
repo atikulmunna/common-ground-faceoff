@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Row = Record<string, unknown>;
 
-// In-memory stand-in for the Prisma calls runAnalysis makes before an analysis is queued.
+// In-memory stand-in for the Prisma calls startAnalysis makes when it queues an analysis.
 const db = vi.hoisted(() => {
   const state = {
     session: {} as Row,
@@ -46,13 +46,12 @@ const db = vi.hoisted(() => {
 
 vi.mock("../lib/prisma.js", () => ({ prisma: db.prisma }));
 
-import { AnalysisConflictError, runAnalysis } from "./analysisService.js";
+import { AnalysisConflictError, startAnalysis } from "./analysisService.js";
 
-const input = { sessionId: "session-1", analysisVersion: "v1", promptTemplateVersion: "tpl-v1" };
-// Over the 4000-character synchronous limit, so runAnalysis queues the run instead of calling the LLM.
+// Long enough to look like a real conversation; every analysis is queued regardless of size.
 const LONG_POSITION = "Our team needs a predictable rhythm of shared office days for mentoring. ".repeat(40);
 
-describe("runAnalysis claim", () => {
+describe("startAnalysis claim", () => {
   beforeEach(() => {
     db.state.session = { id: "session-1", status: "collecting_positions", estimatedCompletionAt: null };
     db.state.participants = [
@@ -64,7 +63,7 @@ describe("runAnalysis claim", () => {
   });
 
   it("starts only one analysis when two requests race", async () => {
-    const outcomes = await Promise.allSettled([runAnalysis(input), runAnalysis(input)]);
+    const outcomes = await Promise.allSettled([startAnalysis("session-1"), startAnalysis("session-1")]);
 
     const started = outcomes.filter((outcome) => outcome.status === "fulfilled");
     const refused = outcomes.filter((outcome) => outcome.status === "rejected");
@@ -72,14 +71,14 @@ describe("runAnalysis claim", () => {
     expect(refused).toHaveLength(1);
     expect((refused[0] as PromiseRejectedResult).reason).toBeInstanceOf(AnalysisConflictError);
     expect(db.state.session.status).toBe("queued");
-    expect(db.state.events.filter((event) => event.eventType === "analysis_started")).toHaveLength(1);
+    expect(db.state.events.filter((event) => event.eventType === "analysis_queued")).toHaveLength(1);
   });
 
   it("refuses while a critical flag awaits a moderator", async () => {
     db.state.session.status = "needs_input";
     db.state.flags = [{ sessionId: "session-1", severity: "critical", status: "pending" }];
 
-    await expect(runAnalysis(input)).rejects.toThrow(/moderator/i);
+    await expect(startAnalysis("session-1")).rejects.toThrow(/moderator/i);
     expect(db.state.session.status).toBe("needs_input");
     expect(db.state.events).toHaveLength(0);
   });
@@ -88,26 +87,26 @@ describe("runAnalysis claim", () => {
     db.state.session.status = "needs_input";
     db.state.flags = [{ sessionId: "session-1", severity: "critical", status: "approved" }];
 
-    await expect(runAnalysis(input)).resolves.toMatchObject({ status: "queued" });
+    await expect(startAnalysis("session-1")).resolves.toMatchObject({ status: "queued" });
   });
 
   it("refuses a conversation that already has results until a new round starts", async () => {
     db.state.session.status = "completed";
 
-    await expect(runAnalysis(input)).rejects.toThrow(/new round/i);
+    await expect(startAnalysis("session-1")).rejects.toThrow(/new round/i);
     expect(db.state.session.status).toBe("completed");
   });
 
   it("waits while a participant rewrites a perspective a moderator removed", async () => {
     db.state.participants.push({ userId: "user-3", positionText: null, positionRemovedAt: new Date(), user: { displayName: "C" } });
 
-    await expect(runAnalysis(input)).rejects.toThrow(/rewrite/i);
+    await expect(startAnalysis("session-1")).rejects.toThrow(/rewrite/i);
     expect(db.state.session.status).toBe("collecting_positions");
   });
 
   it("allows a retry after a failed run", async () => {
     db.state.session.status = "failed";
 
-    await expect(runAnalysis(input)).resolves.toMatchObject({ status: "queued" });
+    await expect(startAnalysis("session-1")).resolves.toMatchObject({ status: "queued" });
   });
 });

@@ -16,7 +16,7 @@ describe("parseEnv", () => {
   });
 
   it("treats empty optional values as absent", () => {
-    expect(parseEnv({ ...requiredEnv, REDIS_URL: "" }).REDIS_URL).toBeUndefined();
+    expect(parseEnv({ ...requiredEnv, SENTRY_DSN: "" }).SENTRY_DSN).toBeUndefined();
   });
 
   it("rejects malformed URLs", () => {

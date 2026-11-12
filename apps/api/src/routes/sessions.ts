@@ -11,8 +11,13 @@ import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { requireSessionAccess } from "../middleware/rbac.js";
 import { requirePermission } from "../middleware/authorization.js";
-import { enqueueAnalysis } from "../services/queueService.js";
-import { AnalysisConflictError, runAnalysis } from "../services/analysisService.js";
+import {
+  ANALYSIS_VERSION,
+  AnalysisConflictError,
+  PROMPT_TEMPLATE_VERSION,
+  startAnalysis,
+} from "../services/analysisService.js";
+import { wakeAnalysisWorker } from "../services/analysisWorker.js";
 import { detectSeverity } from "./moderation.js";
 import { computeModerationSlaDueAt } from "../lib/moderationSla.js";
 import { sendSessionInvitation } from "../services/emailService.js";
@@ -351,39 +356,19 @@ sessionsRouter.post("/:id/analyze", requireSessionAccess, requirePermission("tri
   }
 
   try {
-    const result = await runAnalysis({
-      sessionId: req.params.id,
-      analysisVersion: parse.data.analysisVersion,
-      promptTemplateVersion: parse.data.promptTemplateVersion
-    });
+    // The analysis runs in the analysis worker; the request only checks and queues it.
+    const started = await startAnalysis(req.params.id);
+    if (started.status === "queued") wakeAnalysisWorker();
 
-    if (result.status === "queued") {
-      enqueueAnalysis({ sessionId: req.params.id, pipelineRunId: result.pipelineRunId });
-      // CG-FR57: Include estimated completion time for async runs
-      const updatedSession = await prisma.session.findUnique({
-        where: { id: req.params.id },
-        select: { estimatedCompletionAt: true },
-      });
-      res.status(202).json(
-        createSuccessResponse({
-          status: "queued",
-          pipelineRunId: result.pipelineRunId,
-          analysisVersion: parse.data.analysisVersion,
-          promptTemplateVersion: parse.data.promptTemplateVersion,
-          estimatedCompletionAt: updatedSession?.estimatedCompletionAt ?? null,
-        })
-      );
-      return;
-    }
-
-    res.json(
+    res.status(started.status === "queued" ? 202 : 200).json(
       createSuccessResponse({
-        status: result.status,
-        pipelineRunId: result.pipelineRunId,
-        analysisVersion: parse.data.analysisVersion,
-        promptTemplateVersion: parse.data.promptTemplateVersion,
-        result: result.status === "completed" ? result.result : null,
-        estimatedCompletionAt: null,
+        status: started.status,
+        pipelineRunId: null,
+        analysisVersion: ANALYSIS_VERSION,
+        promptTemplateVersion: PROMPT_TEMPLATE_VERSION,
+        result: null,
+        // CG-FR57: estimated completion time for the queued run
+        estimatedCompletionAt: started.estimatedCompletionAt,
       })
     );
   } catch (error) {

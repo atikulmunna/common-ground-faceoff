@@ -59,7 +59,7 @@ The analysis then runs five stages:
 4. Classify empirical, value, semantic, and policy conflicts.
 5. Synthesize common ground and the remaining disagreements.
 
-Results are stored as structured analysis artifacts with provider, model, version, and lineage metadata. Larger inputs can be routed through a Redis-backed worker; the single-instance beta can also process them in the API process.
+Results are stored as structured analysis artifacts with provider, model, version, and lineage metadata. Every analysis runs in the background: the request queues it in PostgreSQL and returns at once, and an analysis worker claims queued conversations, runs them, and puts runs abandoned by a crashed worker back in the queue.
 
 ## Architecture
 
@@ -71,7 +71,6 @@ flowchart LR
     Web -->|Internal OAuth exchange| API
     API --> DB[(PostgreSQL)]
     API --> LLM[OpenRouter]
-    API -. optional .-> Redis[(Redis / BullMQ)]
     API -. optional .-> Stripe[Stripe]
     API -. optional .-> Email[Resend]
     API -. optional .-> Storage[R2 / S3-compatible storage]
@@ -95,7 +94,7 @@ The beta deployment uses one AWS Lightsail instance with Caddy, the web and API 
 - PostgreSQL 16
 - NextAuth and JWT refresh-token rotation
 - OpenRouter for LLM access
-- BullMQ with optional Redis
+- A PostgreSQL-backed analysis queue and worker
 - Stripe, Resend, Twilio, Sentry, and S3-compatible integrations
 - Docker Compose, Caddy, AWS Lightsail, ECR, S3, and CloudWatch
 - Vitest, Supertest, and Playwright
@@ -193,7 +192,7 @@ Optional integrations include:
 - Billing: Stripe secret, webhook secret, price IDs, and `ENABLE_BILLING=true`.
 - Email: Resend API key and sender address.
 - SMS MFA: Twilio credentials, a separate MFA secret, and the API/web SMS flags.
-- Queue processing: `REDIS_URL` and an appropriate `API_PROCESS_ROLE`.
+- Process roles: `API_PROCESS_ROLE` is `all` (default: HTTP API plus analysis worker), `api`, or `worker`. Analyses queue in PostgreSQL, so at least one process must run with `all` or `worker`.
 - External exports: R2 credentials and `ENABLE_EXTERNAL_EXPORT_STORAGE=true`.
 - Monitoring: Sentry or Datadog credentials and flags.
 
@@ -230,7 +229,7 @@ Current automated coverage includes authentication, profile updates, TOTP setup,
 
 ## Containers
 
-The production images run as an unprivileged `node` user. The local Compose profile includes PostgreSQL and keeps Redis disabled for the single-instance beta.
+The production images run as an unprivileged `node` user. The local Compose profile includes PostgreSQL, which also serves as the analysis queue.
 
 ```powershell
 $env:POSTGRES_PASSWORD = "replace-with-a-long-random-password"
@@ -253,8 +252,7 @@ Local container addresses:
 
 - The public link uses a temporary hostname rather than an owned domain.
 - Email delivery remains restricted by the configured sender/domain status.
-- Redis is optional on the current single-instance deployment; in-memory queued work can be lost during a restart.
-- The API, analysis worker, and email outbox share a process in the constrained beta profile and should not be horizontally scaled in that mode.
+- The API, analysis worker, and email outbox share a process in the beta profile. Several workers can share the queue safely, but the email outbox has not been checked for running in more than one process.
 - Automated accessibility checks do not replace manual keyboard and screen-reader acceptance testing.
 - Real provider behavior still depends on LLM, email, Stripe, SMS, OAuth, and storage sandbox or production configuration.
 - SAML is not production-ready and must remain disabled.

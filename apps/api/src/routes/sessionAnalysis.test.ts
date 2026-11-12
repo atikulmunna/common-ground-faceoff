@@ -32,10 +32,10 @@ const db = vi.hoisted(() => {
 
 vi.mock("../lib/prisma.js", () => ({ prisma: db.prisma }));
 
-const runAnalysis = vi.hoisted(() => vi.fn());
+const startAnalysis = vi.hoisted(() => vi.fn());
 vi.mock("../services/analysisService.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../services/analysisService.js")>()),
-  runAnalysis,
+  startAnalysis,
 }));
 
 import { createApp } from "../app.js";
@@ -96,7 +96,7 @@ describe("POST /sessions/:id/analyze", () => {
       participants: [{ userId: "user-1", canExport: true }],
       status: "collecting_positions",
     };
-    runAnalysis.mockReset();
+    startAnalysis.mockReset();
   });
 
   function analyze() {
@@ -107,7 +107,7 @@ describe("POST /sessions/:id/analyze", () => {
   }
 
   it("answers 409 when the conversation cannot start an analysis right now", async () => {
-    runAnalysis.mockRejectedValueOnce(new AnalysisConflictError("An analysis is already in progress for this conversation."));
+    startAnalysis.mockRejectedValueOnce(new AnalysisConflictError("An analysis is already in progress for this conversation."));
 
     const response = await analyze().expect(409);
 
@@ -118,9 +118,22 @@ describe("POST /sessions/:id/analyze", () => {
   });
 
   it("still answers 422 when the input cannot be analyzed", async () => {
-    runAnalysis.mockRejectedValueOnce(new Error("At least 2 participant positions are required for analysis"));
+    startAnalysis.mockRejectedValueOnce(new Error("At least 2 participant positions are required for analysis"));
 
     await analyze().expect(422);
+  });
+
+  it("queues the analysis and answers 202 without running it in the request", async () => {
+    startAnalysis.mockResolvedValueOnce({ status: "queued", estimatedCompletionAt: new Date("2026-11-12T12:01:00Z") });
+
+    const response = await analyze().expect(202);
+
+    expect(startAnalysis).toHaveBeenCalledWith("session-1");
+    expect(response.body.data).toMatchObject({
+      status: "queued",
+      result: null,
+      estimatedCompletionAt: "2026-11-12T12:01:00.000Z",
+    });
   });
 });
 

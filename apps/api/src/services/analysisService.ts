@@ -10,12 +10,6 @@ import { enqueueAnalysisCompletionEmails, processNotificationEmailOutbox } from 
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-interface BuildAnalysisInput {
-  sessionId: string;
-  analysisVersion: string;
-  promptTemplateVersion: string;
-}
-
 export interface ParticipantPosition {
   participantLabel: string;
   positionText: string;
@@ -510,12 +504,15 @@ export async function runAnalysisPipelineForQuality(
 /*  Public API                                                         */
 /* ------------------------------------------------------------------ */
 
-function estimateStatus(totalChars: number): "queued" | "running" {
-  return totalChars > 4000 ? "queued" : "running";
-}
-
 /** Statuses an analysis may start from. A completed conversation must start a new round first. */
 const ANALYZABLE_STATUSES = ["draft", "collecting_positions", "failed", "needs_input"] as const;
+
+/** Version labels stored with every result. */
+export const ANALYSIS_VERSION = "v1";
+export const PROMPT_TEMPLATE_VERSION = "tpl-v1";
+
+/** A run whose estimated finish is this far in the past is treated as abandoned by a dead worker. */
+const STALE_RUN_GRACE_MS = 15 * 60 * 1000;
 
 /** The conversation is not in a state that allows starting an analysis; the route answers 409. */
 export class AnalysisConflictError extends Error {}
@@ -541,49 +538,56 @@ async function notifyAnalysisCompletion(sessionId: string, topic: string): Promi
   }
 }
 
-/** CG-FR57: estimate completion time based on character count & mode */
+/** CG-FR57: estimated time to complete an analysis, from the size of the input. */
 export function estimateCompletionSeconds(totalChars: number): number {
-  if (totalChars <= 4000) return 60; // sync: ≤60s per SRS
-  // Async: linear estimate ~1s per 100 chars with 30s base
+  if (totalChars <= 4000) return 60;
+  // Linear estimate: about 1 s per 100 characters on a 30 s base, capped at 10 minutes.
   return Math.min(600, 30 + Math.ceil(totalChars / 100));
 }
 
-export async function runAnalysis(input: BuildAnalysisInput) {
-  const session = await prisma.session.findUniqueOrThrow({
-    where: { id: input.sessionId },
-  });
-
+/** Loads a conversation and its submitted positions, labelled Participant A, B, ... */
+async function loadPositions(sessionId: string) {
+  const session = await prisma.session.findUniqueOrThrow({ where: { id: sessionId } });
   const participants = await prisma.sessionParticipant.findMany({
-    where: { sessionId: input.sessionId },
+    where: { sessionId },
     include: { user: { select: { displayName: true } } },
   });
-
-  // A conversation analyzed without one side would misrepresent it, so wait for the rewrite.
-  if (participants.some((p) => p.positionRemovedAt)) {
-    throw new AnalysisConflictError("Waiting for a participant to rewrite a perspective that a moderator removed.");
-  }
-
   const positions: ParticipantPosition[] = participants
     .filter((p) => p.positionText)
     .map((p, idx) => ({
       participantLabel: `Participant ${String.fromCharCode(65 + idx)}`,
       positionText: p.positionText!,
     }));
+  return { session, participants, positions };
+}
+
+/**
+ * Checks that a conversation can be analyzed and queues it. The analysis itself runs in the
+ * analysis worker, so this returns as soon as the conversation is claimed.
+ * Throws AnalysisConflictError when the conversation cannot start an analysis right now.
+ */
+export async function startAnalysis(
+  sessionId: string,
+): Promise<{ status: "queued" | "needs_input"; estimatedCompletionAt: Date | null }> {
+  const { session, participants, positions } = await loadPositions(sessionId);
+
+  // A conversation analyzed without one side would misrepresent it, so wait for the rewrite.
+  if (participants.some((p) => p.positionRemovedAt)) {
+    throw new AnalysisConflictError("Waiting for a participant to rewrite a perspective that a moderator removed.");
+  }
 
   if (positions.length < 2) {
     throw new Error("At least 2 participant positions are required for analysis");
   }
 
   const combined = positions.map((p) => p.positionText).join("\n\n");
-  const totalChars = combined.length;
-
-  if (totalChars > 30000) {
+  if (combined.length > 30000) {
     throw new Error("Combined payload exceeds asynchronous max threshold");
   }
 
   // CG-FR51: critical content suspends the conversation until a moderator has reviewed it.
   const moderationHold = await prisma.moderationFlag.findFirst({
-    where: { sessionId: input.sessionId, severity: "critical", status: { in: ["pending", "appealed"] } },
+    where: { sessionId, severity: "critical", status: { in: ["pending", "appealed"] } },
     select: { id: true },
   });
   if (moderationHold) {
@@ -592,34 +596,27 @@ export async function runAnalysis(input: BuildAnalysisInput) {
 
   // PII redaction (CG-FR59: 4-stage pipeline with audit logging)
   const redaction = redactPII(combined);
+  const estimatedCompletionAt = new Date(Date.now() + estimateCompletionSeconds(combined.length) * 1000);
 
-  const pipelineRunId = randomUUID();
-  const targetStatus = estimateStatus(totalChars);
-  const etaSeconds = estimateCompletionSeconds(totalChars);
-  const estimatedCompletionAt = new Date(Date.now() + etaSeconds * 1000);
-
-  // Claim the conversation in one conditional update, so concurrent requests cannot start two runs.
+  // Claim the conversation in one conditional update, so concurrent requests cannot queue two runs.
   const claim = await prisma.session.updateMany({
-    where: { id: input.sessionId, status: { in: [...ANALYZABLE_STATUSES] } },
-    data: redaction.blocked
-      ? { status: "needs_input" }
-      : { status: targetStatus, estimatedCompletionAt },
+    where: { id: sessionId, status: { in: [...ANALYZABLE_STATUSES] } },
+    data: redaction.blocked ? { status: "needs_input" } : { status: "queued", estimatedCompletionAt },
   });
   if (claim.count !== 1) {
-    throw await explainRefusedClaim(input.sessionId);
+    throw await explainRefusedClaim(sessionId);
   }
 
-  // Log each redaction stage to RedactionLog
   for (const stage of redaction.stages) {
     await prisma.redactionLog.create({
       data: {
-        sessionId: input.sessionId,
+        sessionId,
         participantId: "combined",
         stage: stage.stage,
         findingsCount: stage.findingsCount,
         confidence: stage.confidence,
         blocked: stage.blocked,
-        metadata: stage.findings ? { findings: stage.findings.map(f => ({ type: f.type, position: f.position })) } : undefined,
+        metadata: stage.findings ? { findings: stage.findings.map((f) => ({ type: f.type, position: f.position })) } : undefined,
       },
     });
   }
@@ -627,7 +624,7 @@ export async function runAnalysis(input: BuildAnalysisInput) {
   if (redaction.blocked) {
     await prisma.analysisEvent.create({
       data: {
-        sessionId: input.sessionId,
+        sessionId,
         pipelineRunId: "redaction",
         eventType: "redaction_blocked",
         fromState: session.status,
@@ -636,252 +633,170 @@ export async function runAnalysis(input: BuildAnalysisInput) {
         actorType: "system",
       },
     });
-
-    return { status: "needs_input" as const, pipelineRunId: "redaction" };
+    return { status: "needs_input", estimatedCompletionAt: null };
   }
-
-  // Apply redaction to position texts
-  const redactedPositions = positions.map((p) => ({
-    ...p,
-    positionText: redactPII(p.positionText).redactedText,
-  }));
 
   await prisma.analysisEvent.create({
     data: {
-      sessionId: input.sessionId,
-      pipelineRunId,
-      eventType: "analysis_started",
+      sessionId,
+      pipelineRunId: "queue",
+      eventType: "analysis_queued",
       fromState: session.status,
-      toState: targetStatus,
-      actorType: "system",
+      toState: "queued",
+      actorType: "user",
     },
   });
 
-  if (targetStatus === "queued") {
-    return { status: "queued" as const, pipelineRunId };
-  }
-
-  // CG-FR68: Snapshot per-round positions before running analysis
-  const currentRound = await prisma.analysisResult.findFirst({
-    where: { sessionId: input.sessionId, status: "completed" },
-    orderBy: { roundNumber: "desc" },
-    select: { roundNumber: true },
-  });
-  const snapshotRound = (currentRound?.roundNumber ?? 0) + 1;
-  for (const p of participants) {
-    if (p.positionText) {
-      await prisma.positionSnapshot.upsert({
-        where: {
-          sessionId_userId_roundNumber: {
-            sessionId: input.sessionId,
-            userId: p.userId,
-            roundNumber: snapshotRound,
-          },
-        },
-        update: { positionText: p.positionText },
-        create: {
-          sessionId: input.sessionId,
-          userId: p.userId,
-          roundNumber: snapshotRound,
-          positionText: p.positionText,
-        },
-      });
-    }
-  }
-
-  // Run the real LLM pipeline
-  const inputHash = createHash("sha256").update(redaction.redactedText).digest("hex");
-
-  let pipelineOutput;
-  try {
-    pipelineOutput = await runPipeline(session.topic, redactedPositions, input.sessionId, pipelineRunId);
-  } catch (err) {
-    await prisma.session.update({
-      where: { id: input.sessionId },
-      data: { status: "failed" },
-    });
-    await prisma.analysisEvent.create({
-      data: {
-        sessionId: input.sessionId,
-        pipelineRunId,
-        eventType: "analysis_failed",
-        fromState: "running",
-        toState: "failed",
-        reasonCode: err instanceof Error ? err.message.slice(0, 200) : "unknown",
-        actorType: "system",
-      },
-    });
-    throw err;
-  }
-
-  // Determine round number and lineage (CG-FR68)
-  const previousRound = await prisma.analysisResult.findFirst({
-    where: { sessionId: input.sessionId, status: "completed" },
-    orderBy: { roundNumber: "desc" },
-    select: { id: true, roundNumber: true },
-  });
-  const roundNumber = (previousRound?.roundNumber ?? 0) + 1;
-
-  const result = await prisma.analysisResult.create({
-    data: {
-      sessionId: input.sessionId,
-      roundNumber,
-      parentSessionOrRoundId: previousRound?.id ?? null,
-      pipelineRunId,
-      analysisVersion: input.analysisVersion,
-      promptTemplateVersion: input.promptTemplateVersion,
-      promptTemplateHash: pipelineOutput.promptTemplateHash,
-      inputHash,
-      steelmans: pipelineOutput.steelmans,
-      conflictMap: pipelineOutput.conflictMap,
-      sharedFoundations: pipelineOutput.sharedFoundations,
-      trueDisagreements: pipelineOutput.trueDisagreements,
-      confidenceScores: pipelineOutput.confidenceScores,
-      llmProvider: pipelineOutput.llmProvider,
-      modelVersion: pipelineOutput.modelVersion,
-      status: "completed",
-    },
-  });
-
-  await prisma.session.update({
-    where: { id: input.sessionId },
-    data: { status: "completed", analyzedAt: new Date() },
-  });
-
-  await prisma.analysisEvent.create({
-    data: {
-      sessionId: input.sessionId,
-      pipelineRunId,
-      eventType: "analysis_completed",
-      fromState: "running",
-      toState: "completed",
-      actorType: "system",
-    },
-  });
-  void notifyAnalysisCompletion(input.sessionId, session.topic);
-
-  return {
-    status: "completed" as const,
-    pipelineRunId,
-    result,
-  };
+  return { status: "queued", estimatedCompletionAt };
 }
 
-export async function completeQueuedAnalysis(
-  sessionId: string,
-  pipelineRunId: string
-): Promise<void> {
-  const session = await prisma.session.findUniqueOrThrow({
-    where: { id: sessionId },
+/** Claims the queued conversation due first, or returns null when nothing is waiting or another worker won. */
+export async function claimNextQueuedAnalysis(): Promise<string | null> {
+  const next = await prisma.session.findFirst({
+    where: { status: "queued" },
+    orderBy: { estimatedCompletionAt: "asc" },
+    select: { id: true },
   });
+  if (!next) return null;
 
-  const participants = await prisma.sessionParticipant.findMany({
-    where: { sessionId },
-    include: { user: { select: { displayName: true } } },
+  const claim = await prisma.session.updateMany({
+    where: { id: next.id, status: "queued" },
+    data: { status: "running" },
   });
+  return claim.count === 1 ? next.id : null;
+}
 
-  const positions: ParticipantPosition[] = participants
-    .filter((p) => p.positionText)
-    .map((p, idx) => ({
-      participantLabel: `Participant ${String.fromCharCode(65 + idx)}`,
-      positionText: redactPII(p.positionText!).redactedText,
-    }));
-
-  const combined = positions.map((p) => p.positionText).join("\n\n");
-  const inputHash = createHash("sha256").update(combined).digest("hex");
-
-  // CG-FR68: Snapshot per-round positions for queued analysis
-  const prevRoundForSnapshot = await prisma.analysisResult.findFirst({
-    where: { sessionId, status: "completed" },
-    orderBy: { roundNumber: "desc" },
-    select: { roundNumber: true },
+/**
+ * Puts runs whose worker apparently died back in the queue: still "running" long after their
+ * estimated finish (or with no estimate at all). Live runs on other workers are left alone.
+ */
+export async function requeueStaleAnalyses(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - STALE_RUN_GRACE_MS);
+  const { count } = await prisma.session.updateMany({
+    where: {
+      status: "running",
+      OR: [{ estimatedCompletionAt: { lt: cutoff } }, { estimatedCompletionAt: null }],
+    },
+    data: { status: "queued" },
   });
-  const queuedSnapshotRound = (prevRoundForSnapshot?.roundNumber ?? 0) + 1;
-  for (const p of participants) {
-    if (p.positionText) {
-      await prisma.positionSnapshot.upsert({
-        where: {
-          sessionId_userId_roundNumber: {
-            sessionId,
-            userId: p.userId,
-            roundNumber: queuedSnapshotRound,
-          },
-        },
-        update: { positionText: p.positionText },
-        create: {
-          sessionId,
-          userId: p.userId,
-          roundNumber: queuedSnapshotRound,
-          positionText: p.positionText,
-        },
-      });
-    }
-  }
+  return count;
+}
 
-  await prisma.session.update({ where: { id: sessionId }, data: { status: "running" } });
+/**
+ * Runs an analysis this worker has claimed, through to a completed result or a failed status.
+ * Never throws: any error marks the conversation failed so it is never left "running".
+ */
+export async function runClaimedAnalysis(sessionId: string): Promise<void> {
+  const pipelineRunId = randomUUID();
 
-  let pipelineOutput;
   try {
-    pipelineOutput = await runPipeline(session.topic, positions, sessionId, pipelineRunId);
-  } catch (err) {
-    await prisma.session.update({ where: { id: sessionId }, data: { status: "failed" } });
+    const { session, participants, positions } = await loadPositions(sessionId);
+    if (positions.length < 2) {
+      throw new Error("At least 2 participant positions are required for analysis");
+    }
+
+    const redactedPositions = positions.map((p) => ({
+      ...p,
+      positionText: redactPII(p.positionText).redactedText,
+    }));
+    const inputHash = createHash("sha256")
+      .update(redactedPositions.map((p) => p.positionText).join("\n\n"))
+      .digest("hex");
+
+    // Restart the estimate now that work begins; it also serves as this run's lease (see requeueStaleAnalyses).
+    const totalChars = positions.reduce((sum, p) => sum + p.positionText.length, 0);
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: { estimatedCompletionAt: new Date(Date.now() + estimateCompletionSeconds(totalChars) * 1000) },
+    });
+
     await prisma.analysisEvent.create({
       data: {
         sessionId,
         pipelineRunId,
-        eventType: "analysis_failed",
-        fromState: "running",
-        toState: "failed",
-        reasonCode: err instanceof Error ? err.message.slice(0, 200) : "unknown",
+        eventType: "analysis_started",
+        fromState: "queued",
+        toState: "running",
         actorType: "worker",
       },
     });
-    return;
+
+    // CG-FR68: Snapshot this round's positions before running the pipeline.
+    const previousRound = await prisma.analysisResult.findFirst({
+      where: { sessionId, status: "completed" },
+      orderBy: { roundNumber: "desc" },
+      select: { id: true, roundNumber: true },
+    });
+    const roundNumber = (previousRound?.roundNumber ?? 0) + 1;
+    for (const p of participants) {
+      if (!p.positionText) continue;
+      await prisma.positionSnapshot.upsert({
+        where: { sessionId_userId_roundNumber: { sessionId, userId: p.userId, roundNumber } },
+        update: { positionText: p.positionText },
+        create: { sessionId, userId: p.userId, roundNumber, positionText: p.positionText },
+      });
+    }
+
+    const pipelineOutput = await runPipeline(session.topic, redactedPositions, sessionId, pipelineRunId);
+
+    await prisma.analysisResult.create({
+      data: {
+        sessionId,
+        roundNumber,
+        parentSessionOrRoundId: previousRound?.id ?? null,
+        pipelineRunId,
+        analysisVersion: ANALYSIS_VERSION,
+        promptTemplateVersion: PROMPT_TEMPLATE_VERSION,
+        promptTemplateHash: pipelineOutput.promptTemplateHash,
+        inputHash,
+        steelmans: pipelineOutput.steelmans,
+        conflictMap: pipelineOutput.conflictMap,
+        sharedFoundations: pipelineOutput.sharedFoundations,
+        trueDisagreements: pipelineOutput.trueDisagreements,
+        confidenceScores: pipelineOutput.confidenceScores,
+        llmProvider: pipelineOutput.llmProvider,
+        modelVersion: pipelineOutput.modelVersion,
+        status: "completed",
+      },
+    });
+
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: { status: "completed", analyzedAt: new Date() },
+    });
+
+    await prisma.analysisEvent.create({
+      data: {
+        sessionId,
+        pipelineRunId,
+        eventType: "analysis_completed",
+        fromState: "running",
+        toState: "completed",
+        actorType: "worker",
+      },
+    });
+    void notifyAnalysisCompletion(sessionId, session.topic);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(`[Analysis] Run ${pipelineRunId} for ${sessionId} failed:`, reason);
+    try {
+      await prisma.session.updateMany({ where: { id: sessionId, status: "running" }, data: { status: "failed" } });
+      await prisma.analysisEvent.create({
+        data: {
+          sessionId,
+          pipelineRunId,
+          eventType: "analysis_failed",
+          fromState: "running",
+          toState: "failed",
+          reasonCode: reason.slice(0, 200),
+          actorType: "worker",
+        },
+      });
+    } catch (recordError) {
+      console.error(
+        `[Analysis] Could not record the failure of ${sessionId}:`,
+        recordError instanceof Error ? recordError.message : recordError,
+      );
+    }
   }
-
-  // Determine round number and lineage (CG-FR68)
-  const previousRound = await prisma.analysisResult.findFirst({
-    where: { sessionId, status: "completed" },
-    orderBy: { roundNumber: "desc" },
-    select: { id: true, roundNumber: true },
-  });
-  const roundNumber = (previousRound?.roundNumber ?? 0) + 1;
-
-  await prisma.analysisResult.create({
-    data: {
-      sessionId,
-      roundNumber,
-      parentSessionOrRoundId: previousRound?.id ?? null,
-      pipelineRunId,
-      analysisVersion: "v1",
-      promptTemplateVersion: "tpl-v1",
-      promptTemplateHash: pipelineOutput.promptTemplateHash,
-      inputHash,
-      steelmans: pipelineOutput.steelmans,
-      conflictMap: pipelineOutput.conflictMap,
-      sharedFoundations: pipelineOutput.sharedFoundations,
-      trueDisagreements: pipelineOutput.trueDisagreements,
-      confidenceScores: pipelineOutput.confidenceScores,
-      llmProvider: pipelineOutput.llmProvider,
-      modelVersion: pipelineOutput.modelVersion,
-      status: "completed",
-    },
-  });
-
-  await prisma.session.update({
-    where: { id: sessionId },
-    data: { status: "completed", analyzedAt: new Date() },
-  });
-
-  await prisma.analysisEvent.create({
-    data: {
-      sessionId,
-      pipelineRunId,
-      eventType: "analysis_completed",
-      fromState: "queued",
-      toState: "completed",
-      actorType: "worker",
-    },
-  });
-  void notifyAnalysisCompletion(sessionId, session.topic);
 }

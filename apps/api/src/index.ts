@@ -16,7 +16,7 @@ if (featureEnabled(process.env.ENABLE_DATADOG) && process.env.DD_API_KEY) {
 const { createApp } = await import("./app.js");
 const app = createApp();
 
-import { shutdownQueue, startAnalysisWorker } from "./services/queueService.js";
+import { startAnalysisWorker, type AnalysisWorker } from "./services/analysisWorker.js";
 import { processNotificationEmailOutbox } from "./services/emailOutbox.js";
 
 const port = Number(process.env.PORT ?? 4100);
@@ -36,9 +36,12 @@ const server = runsApi
     })
   : null;
 
+// Analyses queue in Postgres. Run at least one process with API_PROCESS_ROLE "all" or "worker",
+// or queued analyses never start.
 let emailOutboxTimer: NodeJS.Timeout | null = null;
+let analysisWorker: AnalysisWorker | null = null;
 if (runsWorker) {
-  startAnalysisWorker({ requireRedis: processRole === "worker" });
+  analysisWorker = startAnalysisWorker();
   emailOutboxTimer = setInterval(() => {
     void processNotificationEmailOutbox(20).catch((err) => {
       console.error("[EmailOutbox] Polling failed:", err instanceof Error ? err.message : err);
@@ -49,14 +52,12 @@ if (runsWorker) {
   });
 }
 
-// Graceful shutdown
-process.on("SIGTERM", async () => {
+// Graceful shutdown. A run cut short by the container's stop timeout is requeued by
+// the next worker once its estimated finish has long passed.
+async function shutdown(): Promise<void> {
   if (emailOutboxTimer) clearInterval(emailOutboxTimer);
-  await shutdownQueue();
   server?.close();
-});
-process.on("SIGINT", async () => {
-  if (emailOutboxTimer) clearInterval(emailOutboxTimer);
-  await shutdownQueue();
-  server?.close();
-});
+  await analysisWorker?.stop();
+}
+process.on("SIGTERM", () => void shutdown());
+process.on("SIGINT", () => void shutdown());
