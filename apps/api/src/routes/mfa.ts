@@ -8,7 +8,7 @@ import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import {
   signAccessToken,
   generateRefreshToken,
-  hashMfaTicket,
+  hashToken,
   LOGIN_LOCKOUT_DURATION_MS,
   MAX_FAILED_LOGIN_ATTEMPTS,
 } from "../lib/auth.js";
@@ -228,7 +228,7 @@ publicMfaRouter.post("/verify-login", async (req, res) => {
     return;
   }
 
-  const ticketHash = hashMfaTicket(parse.data.mfaTicket);
+  const ticketHash = hashToken(parse.data.mfaTicket);
   const user = await prisma.user.findUnique({ where: { mfaTicketHash: ticketHash } });
   if (!user || !user.mfaTicketExpiresAt || user.mfaTicketExpiresAt < new Date()) {
     res.status(401).json(createErrorResponse("auth_error", MFA_TICKET_EXPIRED));
@@ -305,7 +305,7 @@ publicMfaRouter.post("/verify-login", async (req, res) => {
   const refresh = generateRefreshToken();
 
   await prisma.refreshToken.create({
-    data: { token: refresh.token, userId: user.id, expiresAt: refresh.expiresAt },
+    data: { tokenHash: hashToken(refresh.token), userId: user.id, expiresAt: refresh.expiresAt },
   });
 
   await prisma.auditLog.create({

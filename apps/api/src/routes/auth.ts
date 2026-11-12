@@ -14,6 +14,7 @@ import {
   signAccessToken,
   generateMfaTicket,
   generateRefreshToken,
+  hashToken,
   LOGIN_LOCKOUT_DURATION_MS,
   MAX_FAILED_LOGIN_ATTEMPTS
 } from "../lib/auth.js";
@@ -64,7 +65,7 @@ authRouter.post("/register", async (req, res) => {
 
   await prisma.emailVerificationToken.create({
     data: {
-      token: verifyToken,
+      tokenHash: hashToken(verifyToken),
       userId: user.id,
       expiresAt,
     }
@@ -220,7 +221,7 @@ authRouter.post("/login", async (req, res) => {
 
   await prisma.refreshToken.create({
     data: {
-      token: refresh.token,
+      tokenHash: hashToken(refresh.token),
       userId: user.id,
       expiresAt: refresh.expiresAt
     }
@@ -256,7 +257,7 @@ authRouter.post("/refresh", async (req, res) => {
   }
 
   const stored = await prisma.refreshToken.findUnique({
-    where: { token: parse.data.refreshToken },
+    where: { tokenHash: hashToken(parse.data.refreshToken) },
     include: { user: true }
   });
 
@@ -290,7 +291,7 @@ authRouter.post("/refresh", async (req, res) => {
 
   await prisma.refreshToken.create({
     data: {
-      token: newRefresh.token,
+      tokenHash: hashToken(newRefresh.token),
       userId: stored.user.id,
       expiresAt: newRefresh.expiresAt
     }
@@ -347,7 +348,7 @@ authRouter.post("/oauth-exchange", async (req, res) => {
 
   await prisma.refreshToken.create({
     data: {
-      token: refresh.token,
+      tokenHash: hashToken(refresh.token),
       userId: user.id,
       expiresAt: refresh.expiresAt
     }
@@ -382,12 +383,12 @@ authRouter.post("/logout", async (req, res) => {
   }
 
   const storedToken = await prisma.refreshToken.findUnique({
-    where: { token: parse.data.refreshToken },
+    where: { tokenHash: hashToken(parse.data.refreshToken) },
     select: { userId: true, user: { select: { email: true } } },
   });
 
   await prisma.refreshToken.deleteMany({
-    where: { token: parse.data.refreshToken }
+    where: { tokenHash: hashToken(parse.data.refreshToken) }
   });
 
   // CG-NFR14: Log logout event
@@ -407,7 +408,7 @@ authRouter.post("/logout", async (req, res) => {
 
 async function verifyEmailToken(token: string): Promise<{ ok: true } | { ok: false; message: string }> {
   const record = await prisma.emailVerificationToken.findUnique({
-    where: { token },
+    where: { tokenHash: hashToken(token) },
     include: { user: true },
   });
   if (!record) return { ok: false, message: "Invalid verification token" };

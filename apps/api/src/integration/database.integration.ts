@@ -4,6 +4,8 @@ import type { Express } from "express";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { hashToken } from "../lib/auth.js";
+
 function requireSafeTestDatabaseUrl(): string {
   const value = process.env.TEST_DATABASE_URL;
   if (!value) {
@@ -224,7 +226,7 @@ describe("authenticated HTTP journey", () => {
       .expect(200);
 
     await expect(prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
+      where: { tokenHash: hashToken(refreshToken) },
     })).resolves.toBeNull();
   });
 });

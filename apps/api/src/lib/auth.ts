@@ -36,8 +36,13 @@ export function verifyAccessToken(token: string): JwtPayload {
   return jwt.verify(token, getJwtSecret()) as JwtPayload;
 }
 
-export function hashMfaTicket(ticket: string): string {
-  return createHash("sha256").update(ticket).digest("hex");
+/**
+ * Hash of a random secret token (refresh token, verification token, MFA ticket) for storage and
+ * lookup. The tokens are long and random, so plain SHA-256 is enough; a database leak then yields
+ * nothing usable. Migration 0017 computes the same value in SQL, so keep the two in step.
+ */
+export function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 /** One-time proof that the password step passed. The caller stores only `ticketHash`. */
@@ -45,7 +50,7 @@ export function generateMfaTicket(): { ticket: string; ticketHash: string; expir
   const ticket = randomBytes(32).toString("base64url");
   return {
     ticket,
-    ticketHash: hashMfaTicket(ticket),
+    ticketHash: hashToken(ticket),
     expiresAt: new Date(Date.now() + MFA_TICKET_TTL_MS),
   };
 }

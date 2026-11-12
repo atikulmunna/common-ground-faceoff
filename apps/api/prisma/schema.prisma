@@ -83,7 +83,7 @@ model User {
 
 model RefreshToken {
   id        String   @id @default(cuid())
-  token     String   @unique
+  tokenHash String   @unique // SHA-256 of the token handed to the client
   userId    String
   expiresAt DateTime
   createdAt DateTime @default(now())
@@ -383,7 +383,7 @@ model WebhookEvent {
 
 model EmailVerificationToken {
   id        String   @id @default(cuid())
-  token     String   @unique
+  tokenHash String   @unique // SHA-256 of the token sent in the verification link
   userId    String
   expiresAt DateTime
   createdAt DateTime @default(now())

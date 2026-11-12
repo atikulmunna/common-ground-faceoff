@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
-import { signAccessToken, generateRefreshToken } from "../lib/auth.js";
+import { signAccessToken, generateRefreshToken, hashToken } from "../lib/auth.js";
 
 export const samlRouter = Router();
 
@@ -153,7 +153,7 @@ samlRouter.post("/acs/:orgSlug", async (req, res) => {
   const refresh = generateRefreshToken();
 
   await prisma.refreshToken.create({
-    data: { token: refresh.token, userId: user.id, expiresAt: refresh.expiresAt },
+    data: { tokenHash: hashToken(refresh.token), userId: user.id, expiresAt: refresh.expiresAt },
   });
 
   await prisma.auditLog.create({
