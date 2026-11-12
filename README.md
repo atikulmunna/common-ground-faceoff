@@ -70,7 +70,7 @@ flowchart LR
     Caddy --> API[Express API container]
     Web -->|Internal OAuth exchange| API
     API --> DB[(PostgreSQL)]
-    API --> LLM[LLM providers]
+    API --> LLM[OpenRouter]
     API -. optional .-> Redis[(Redis / BullMQ)]
     API -. optional .-> Stripe[Stripe]
     API -. optional .-> Email[Resend]
@@ -94,7 +94,7 @@ The beta deployment uses one AWS Lightsail instance with Caddy, the web and API 
 - Express 4 and Prisma
 - PostgreSQL 16
 - NextAuth and JWT refresh-token rotation
-- Mistral, Groq, and OpenRouter provider adapters
+- OpenRouter for LLM access
 - BullMQ with optional Redis
 - Stripe, Resend, Twilio, Sentry, and S3-compatible integrations
 - Docker Compose, Caddy, AWS Lightsail, ECR, S3, and CloudWatch
@@ -121,7 +121,7 @@ SAML exists only as an experimental path and is rejected in production. It requi
 - npm 10 or newer
 - PostgreSQL
 - Docker for browser and disposable-database tests
-- At least one supported LLM provider key for real analysis
+- An OpenRouter API key for real analysis
 
 ### Install
 
@@ -178,7 +178,7 @@ API_BASE_URL=http://localhost:4100
 NEXT_PUBLIC_API_BASE_URL=http://localhost:4100
 ```
 
-Configure at least one analysis provider with `MISTRAL_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY`.
+Analysis runs through OpenRouter. Set `OPENROUTER_API_KEY`, and optionally `OPENROUTER_MODEL` (default `openai/gpt-oss-120b`).
 
 Optional integrations include:
 

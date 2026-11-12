@@ -30,7 +30,7 @@ Run one named case:
 npm run quality:analysis -- --live --case prompt-injection-ignore
 ```
 
-Reports are written to the ignored `.codex-local/quality/` directory. Live execution requires at least one configured LLM provider in `apps/api/.env`; keys are never written to reports. Explicit `--limit` or `--case` is required to prevent accidental full-suite provider usage.
+Reports are written to the ignored `.codex-local/quality/` directory. Live execution requires `OPENROUTER_API_KEY` in `apps/api/.env`; keys are never written to reports. Explicit `--limit` or `--case` is required to prevent accidental full-suite provider usage.
 
 ## Human review gate
 

@@ -1,4 +1,3 @@
-import { Mistral } from "@mistralai/mistralai";
 import OpenAI from "openai";
 
 export interface LlmResponse {
@@ -9,118 +8,24 @@ export interface LlmResponse {
   completionTokens: number;
 }
 
-interface ProviderConfig {
-  name: string;
-  model: string;
-  call: (systemPrompt: string, userPrompt: string) => Promise<LlmResponse>;
-}
-
-function buildProviders(): ProviderConfig[] {
-  const providers: ProviderConfig[] = [];
-
-  if (process.env.MISTRAL_API_KEY) {
-    const client = new Mistral({ apiKey: process.env.MISTRAL_API_KEY });
-    const model = "mistral-large-latest";
-    providers.push({
-      name: "mistral",
-      model,
-      call: async (systemPrompt, userPrompt) => {
-        const res = await client.chat.complete({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          temperature: 0.3,
-          maxTokens: 4096,
-        });
-        const choice = res.choices?.[0];
-        return {
-          content: (typeof choice?.message?.content === "string" ? choice.message.content : "") || "",
-          provider: "mistral",
-          model,
-          promptTokens: res.usage?.promptTokens ?? 0,
-          completionTokens: res.usage?.completionTokens ?? 0,
-        };
-      },
-    });
-  }
-
-  if (process.env.GROQ_API_KEY) {
-    const client = new OpenAI({
-      apiKey: process.env.GROQ_API_KEY,
-      baseURL: "https://api.groq.com/openai/v1",
-    });
-    const model = "llama-3.3-70b-versatile";
-    providers.push({
-      name: "groq",
-      model,
-      call: async (systemPrompt, userPrompt) => {
-        const res = await client.chat.completions.create({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          temperature: 0.3,
-          max_tokens: 4096,
-        });
-        const choice = res.choices[0];
-        return {
-          content: choice?.message?.content ?? "",
-          provider: "groq",
-          model,
-          promptTokens: res.usage?.prompt_tokens ?? 0,
-          completionTokens: res.usage?.completion_tokens ?? 0,
-        };
-      },
-    });
-  }
-
-  if (process.env.OPENROUTER_API_KEY) {
-    const client = new OpenAI({
-      apiKey: process.env.OPENROUTER_API_KEY,
-      baseURL: "https://openrouter.ai/api/v1",
-    });
-    const model = process.env.OPENROUTER_MODEL ?? "openai/gpt-oss-120b";
-    providers.push({
-      name: "openrouter",
-      model,
-      call: async (systemPrompt, userPrompt) => {
-        const res = await client.chat.completions.create({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          temperature: 0.3,
-          max_tokens: 4096,
-          response_format: { type: "json_object" },
-        });
-        const choice = res.choices[0];
-        return {
-          content: choice?.message?.content ?? "",
-          provider: "openrouter",
-          model,
-          promptTokens: res.usage?.prompt_tokens ?? 0,
-          completionTokens: res.usage?.completion_tokens ?? 0,
-        };
-      },
-    });
-  }
-
-  return providers;
-}
-
-const MAX_RETRIES = 2;
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const DEFAULT_OPENROUTER_MODEL = "openai/gpt-oss-120b";
+/** The SDK aborts the HTTP request when this elapses. */
 const LLM_CALL_TIMEOUT_MS = 60_000;
+/** The SDK retries 408/409/429/5xx, timeouts, and connection errors with backoff; other 4xx fail fast. */
+const LLM_TRANSPORT_RETRIES = 2;
+/** Fresh completions to request when the model's output fails validation. */
+const LLM_INVALID_OUTPUT_RETRIES = 2;
+
+/** Default retry count for withRetryBudget (email and storage calls). */
+const MAX_RETRIES = 2;
 
 /** CG-NFR39: Per-call timeout wrapper */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
     new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`LLM call timed out after ${ms}ms`)), ms)
+      setTimeout(() => reject(new Error(`Call timed out after ${ms}ms`)), ms)
     ),
   ]);
 }
@@ -160,40 +65,61 @@ export async function withRetryBudget<T>(
 }
 
 /**
- * Call an LLM with automatic failover across configured providers.
- * Tries each provider in order (Mistral → Groq → OpenRouter), retrying up to
- * MAX_RETRIES times per provider with capped exponential backoff.
+ * Call the configured OpenRouter model. Transport failures are retried by the
+ * SDK, so a thrown request error is final. Output rejected by `validate` is
+ * requested again, because malformed JSON from a model is usually transient.
  */
 export async function callLlm(
   systemPrompt: string,
   userPrompt: string,
   validate?: (content: string) => void,
 ): Promise<LlmResponse> {
-  const providers = buildProviders();
-  if (providers.length === 0) {
-    throw new Error("No LLM provider configured. Set at least one of MISTRAL_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.");
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("No LLM provider configured. Set OPENROUTER_API_KEY.");
   }
 
+  const model = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
+  const client = new OpenAI({
+    apiKey,
+    baseURL: OPENROUTER_BASE_URL,
+    timeout: LLM_CALL_TIMEOUT_MS,
+    maxRetries: LLM_TRANSPORT_RETRIES,
+  });
+
+  const maxAttempts = LLM_INVALID_OUTPUT_RETRIES + 1;
   const errors: string[] = [];
 
-  for (const provider of providers) {
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        const response = await withTimeout(provider.call(systemPrompt, userPrompt), LLM_CALL_TIMEOUT_MS);
-        validate?.(response.content);
-        return response;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        errors.push(`${provider.name} attempt ${attempt + 1}: ${msg}`);
-        if (attempt < MAX_RETRIES) {
-          const delay = Math.min(1000 * 2 ** attempt, 8000);
-          await new Promise((r) => setTimeout(r, delay));
-        }
-      }
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.3,
+      max_tokens: 4096,
+      response_format: { type: "json_object" },
+    });
+
+    const response: LlmResponse = {
+      content: res.choices[0]?.message?.content ?? "",
+      provider: "openrouter",
+      // OpenRouter reports the model that served the request, which is what lineage should record.
+      model: res.model || model,
+      promptTokens: res.usage?.prompt_tokens ?? 0,
+      completionTokens: res.usage?.completion_tokens ?? 0,
+    };
+
+    try {
+      validate?.(response.content);
+      return response;
+    } catch (err) {
+      errors.push(`attempt ${attempt}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  throw new Error(`All LLM providers failed:\n${errors.join("\n")}`);
+  throw new Error(`OpenRouter returned invalid output after ${maxAttempts} attempts:\n${errors.join("\n")}`);
 }
 
 /**

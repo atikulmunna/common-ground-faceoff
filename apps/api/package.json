@@ -20,7 +20,6 @@
     "@aws-sdk/client-s3": "^3.1003.0",
     "@common-ground/config": "0.1.0",
     "@common-ground/shared": "0.1.0",
-    "@mistralai/mistralai": "^1.14.1",
     "@prisma/client": "^5.20.0",
     "@sentry/node": "^10.42.0",
     "bcrypt": "^6.0.0",

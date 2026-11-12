@@ -1,5 +1,106 @@
-import { describe, it, expect } from "vitest";
-import { parseJsonResponse, withRetryBudget } from "./llmProvider.js";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+
+const { create, clientOptions } = vi.hoisted(() => ({
+  create: vi.fn(),
+  clientOptions: [] as Array<Record<string, unknown>>,
+}));
+
+vi.mock("openai", () => ({
+  default: class {
+    chat = { completions: { create } };
+    constructor(options: Record<string, unknown>) {
+      clientOptions.push(options);
+    }
+  },
+}));
+
+import { callLlm, parseJsonResponse, withRetryBudget } from "./llmProvider.js";
+
+function completion(content: string, model = "openai/gpt-oss-120b") {
+  return {
+    model,
+    choices: [{ message: { content } }],
+    usage: { prompt_tokens: 12, completion_tokens: 34 },
+  };
+}
+
+function rejectUnlessJson(content: string): void {
+  JSON.parse(content);
+}
+
+describe("callLlm (OpenRouter)", () => {
+  beforeEach(() => {
+    create.mockReset();
+    clientOptions.length = 0;
+    vi.stubEnv("OPENROUTER_API_KEY", "test-openrouter-key");
+    vi.stubEnv("OPENROUTER_MODEL", "");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("fails clearly without making a request when the API key is missing", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "");
+    await expect(callLlm("system", "user")).rejects.toThrow("OPENROUTER_API_KEY");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("delegates timeouts and transport retries to the OpenRouter client", async () => {
+    create.mockResolvedValueOnce(completion('{"ok":true}'));
+    await callLlm("system", "user");
+    expect(clientOptions[0]).toMatchObject({
+      apiKey: "test-openrouter-key",
+      baseURL: "https://openrouter.ai/api/v1",
+      timeout: 60_000,
+      maxRetries: 2,
+    });
+  });
+
+  it("returns content, token usage, and the model OpenRouter actually routed to", async () => {
+    vi.stubEnv("OPENROUTER_MODEL", "openai/gpt-oss-120b");
+    create.mockResolvedValueOnce(completion('{"ok":true}', "openai/gpt-oss-120b:nitro"));
+
+    const response = await callLlm("system", "user", rejectUnlessJson);
+
+    expect(response).toEqual({
+      content: '{"ok":true}',
+      provider: "openrouter",
+      model: "openai/gpt-oss-120b:nitro",
+      promptTokens: 12,
+      completionTokens: 34,
+    });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      model: "openai/gpt-oss-120b",
+      response_format: { type: "json_object" },
+    }));
+  });
+
+  it("asks again when the output fails validation", async () => {
+    create
+      .mockResolvedValueOnce(completion("not json"))
+      .mockResolvedValueOnce(completion('{"ok":true}'));
+
+    const response = await callLlm("system", "user", rejectUnlessJson);
+
+    expect(response.content).toBe('{"ok":true}');
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up after three invalid responses", async () => {
+    create.mockResolvedValue(completion("not json"));
+
+    await expect(callLlm("system", "user", rejectUnlessJson)).rejects.toThrow(/invalid output after 3 attempts/);
+    expect(create).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not repeat a request the client already retried", async () => {
+    create.mockRejectedValueOnce(new Error("401 Unauthorized"));
+
+    await expect(callLlm("system", "user", rejectUnlessJson)).rejects.toThrow("401 Unauthorized");
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("parseJsonResponse", () => {
   it("parses clean JSON directly", () => {
