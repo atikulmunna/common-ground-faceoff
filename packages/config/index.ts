@@ -16,7 +16,12 @@ export const envSchema = z.object({
   // Reverse proxies in front of the API (Caddy = 1). Use 0 only if the API is reached directly.
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
   OPENROUTER_API_KEY: z.string().min(1).optional(),
+  // Defaults to the Auto Router ("openrouter/auto"); set a model id to pin one model instead.
   OPENROUTER_MODEL: z.string().min(1).optional(),
+  // Auto Router only: cost percentile band (low 0-20, medium 20-40, high 40-60, ...). Default medium.
+  OPENROUTER_COST_TIER: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+  // Auto Router only: comma-separated model patterns it may choose from, e.g. "openai/*,google/*".
+  OPENROUTER_ALLOWED_MODELS: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
   RESEND_FROM_EMAIL: z.string().min(1).optional(),
   TWILIO_ACCOUNT_SID: z.string().min(1).optional(),

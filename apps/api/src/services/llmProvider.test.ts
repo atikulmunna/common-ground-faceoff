@@ -34,6 +34,51 @@ describe("callLlm (OpenRouter)", () => {
     clientOptions.length = 0;
     vi.stubEnv("OPENROUTER_API_KEY", "test-openrouter-key");
     vi.stubEnv("OPENROUTER_MODEL", "");
+    vi.stubEnv("OPENROUTER_COST_TIER", "");
+    vi.stubEnv("OPENROUTER_ALLOWED_MODELS", "");
+  });
+
+  it("uses the Auto Router at the balanced cost tier by default", async () => {
+    create.mockResolvedValueOnce(completion('{"ok":true}'));
+
+    await callLlm("system", "user");
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      model: "openrouter/auto",
+      plugins: [{ id: "auto-router", cost_tier: "medium" }],
+    }));
+  });
+
+  it("applies a configured cost tier and model allow-list to the Auto Router", async () => {
+    vi.stubEnv("OPENROUTER_COST_TIER", "low");
+    vi.stubEnv("OPENROUTER_ALLOWED_MODELS", "openai/*, anthropic/claude-*");
+    create.mockResolvedValueOnce(completion('{"ok":true}'));
+
+    await callLlm("system", "user");
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      plugins: [{ id: "auto-router", cost_tier: "low", allowed_models: ["openai/*", "anthropic/claude-*"] }],
+    }));
+  });
+
+  it("sends a fixed model without the router plugin", async () => {
+    vi.stubEnv("OPENROUTER_MODEL", "openai/gpt-oss-120b");
+    create.mockResolvedValueOnce(completion('{"ok":true}'));
+
+    await callLlm("system", "user");
+
+    expect(create.mock.calls[0][0]).not.toHaveProperty("plugins");
+  });
+
+  it("keeps one analysis run together and away from providers that collect data", async () => {
+    create.mockResolvedValueOnce(completion('{"ok":true}'));
+
+    await callLlm("system", "user", undefined, { sessionId: "run-1" });
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      session_id: "run-1",
+      provider: { data_collection: "deny" },
+    }));
   });
 
   afterEach(() => {

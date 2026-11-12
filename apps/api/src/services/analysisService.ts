@@ -396,11 +396,12 @@ async function logPrompt(
 async function callStructuredLlm<T>(
   userPrompt: string,
   schema: z.ZodType<T>,
+  pipelineRunId: string,
 ): Promise<{ response: LlmResponse; data: T }> {
   let data: T | undefined;
   const response = await callLlm(SYSTEM_PROMPT, userPrompt, (content) => {
     data = schema.parse(parseJsonResponse<unknown>(content));
-  });
+  }, { sessionId: pipelineRunId });
   if (data === undefined) throw new Error("LLM response validation did not produce data");
   return { response, data };
 }
@@ -418,6 +419,7 @@ async function runPipeline(
   const { response: normRes, data: normData } = await callStructuredLlm<NormalizationResult>(
     normPrompt,
     normalizationSchema,
+    pipelineRunId,
   );
   if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "normalization", normPrompt, normRes, Date.now() - normStart);
   normData.positions = normData.positions.map((position, index) => ({
@@ -431,6 +433,7 @@ async function runPipeline(
   const { response: steelRes, data: steelData } = await callStructuredLlm<SteelmanResult>(
     steelPrompt_,
     steelmanSchema,
+    pipelineRunId,
   );
   if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "steelman", steelPrompt_, steelRes, Date.now() - steelStart);
   steelData.steelmans = steelData.steelmans.map((steelman, index) => ({
@@ -444,6 +447,7 @@ async function runPipeline(
   const { response: valRes, data: valData } = await callStructuredLlm<ValueExtractionResult>(
     valPrompt,
     valueExtractionSchema,
+    pipelineRunId,
   );
   if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "value_extraction", valPrompt, valRes, Date.now() - valStart);
 
@@ -453,6 +457,7 @@ async function runPipeline(
   const { response: confRes, data: confData } = await callStructuredLlm<ConflictClassificationResult>(
     confPrompt,
     conflictClassificationSchema,
+    pipelineRunId,
   );
   if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "conflict_classification", confPrompt, confRes, Date.now() - confStart);
 
@@ -462,6 +467,7 @@ async function runPipeline(
   const { response: synthRes, data: synthData } = await callStructuredLlm<SynthesisResult>(
     synthPrompt,
     synthesisSchema,
+    pipelineRunId,
   );
   if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "synthesis", synthPrompt, synthRes, Date.now() - synthStart);
 
@@ -486,7 +492,8 @@ async function runPipeline(
     trueDisagreements: groundedSynthesis.trueDisagreements,
     confidenceScores: synthData.confidenceScores,
     llmProvider: synthRes.provider,
-    modelVersion: synthRes.model,
+    // The Auto Router may answer stages with different models; record each one, in stage order.
+    modelVersion: [...new Set([normRes, steelRes, valRes, confRes, synthRes].map((res) => res.model))].join(", "),
     promptTemplateHash: computePromptTemplateHash(),
   };
 }

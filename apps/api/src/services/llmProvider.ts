@@ -9,7 +9,10 @@ export interface LlmResponse {
 }
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-const DEFAULT_OPENROUTER_MODEL = "openai/gpt-oss-120b";
+/** OpenRouter's Auto Router picks a model per request within the configured cost tier. */
+const AUTO_ROUTER_MODEL = "openrouter/auto";
+/** "medium" routes within the 20th to 40th cost percentile of models ranked for the task. */
+const DEFAULT_COST_TIER = "medium";
 /** The SDK aborts the HTTP request when this elapses. */
 const LLM_CALL_TIMEOUT_MS = 60_000;
 /** The SDK retries 408/409/429/5xx, timeouts, and connection errors with backoff; other 4xx fail fast. */
@@ -64,22 +67,61 @@ export async function withRetryBudget<T>(
   throw new Error(`${label} failed (budget ${budget}ms):\n${errors.join("\n")}`);
 }
 
+/** OpenRouter request fields the OpenAI SDK types do not know about; the SDK sends them as-is. */
+type OpenRouterChatRequest = OpenAI.Chat.ChatCompletionCreateParamsNonStreaming & {
+  plugins?: Array<Record<string, unknown>>;
+  provider?: { data_collection: "deny" };
+  session_id?: string;
+};
+
+function autoRouterPlugin(): Record<string, unknown> {
+  const allowedModels = (process.env.OPENROUTER_ALLOWED_MODELS ?? "")
+    .split(",")
+    .map((pattern) => pattern.trim())
+    .filter(Boolean);
+
+  return {
+    id: "auto-router",
+    cost_tier: process.env.OPENROUTER_COST_TIER || DEFAULT_COST_TIER,
+    ...(allowedModels.length > 0 ? { allowed_models: allowedModels } : {}),
+  };
+}
+
 /**
  * Call the configured OpenRouter model. Transport failures are retried by the
  * SDK, so a thrown request error is final. Output rejected by `validate` is
  * requested again, because malformed JSON from a model is usually transient.
+ *
+ * Pass the same `sessionId` for every call of one analysis run: the Auto Router
+ * uses it to keep a run on one model where it can.
  */
 export async function callLlm(
   systemPrompt: string,
   userPrompt: string,
   validate?: (content: string) => void,
+  options: { sessionId?: string } = {},
 ): Promise<LlmResponse> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error("No LLM provider configured. Set OPENROUTER_API_KEY.");
   }
 
-  const model = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
+  const model = process.env.OPENROUTER_MODEL || AUTO_ROUTER_MODEL;
+  const request: OpenRouterChatRequest = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.3,
+    max_tokens: 4096,
+    response_format: { type: "json_object" },
+    // Participant perspectives are in these prompts: never route to providers that store or train on them.
+    provider: { data_collection: "deny" },
+    ...(model === AUTO_ROUTER_MODEL ? { plugins: [autoRouterPlugin()] } : {}),
+    ...(options.sessionId ? { session_id: options.sessionId } : {}),
+  };
+
   const client = new OpenAI({
     apiKey,
     baseURL: OPENROUTER_BASE_URL,
@@ -91,16 +133,7 @@ export async function callLlm(
   const errors: string[] = [];
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const res = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.3,
-      max_tokens: 4096,
-      response_format: { type: "json_object" },
-    });
+    const res = await client.chat.completions.create(request);
 
     const response: LlmResponse = {
       content: res.choices[0]?.message?.content ?? "",

@@ -39,6 +39,11 @@ describe("parseEnv", () => {
     expect(() => parseEnv({ ...requiredEnv, TRUST_PROXY_HOPS: "-1" })).toThrow();
   });
 
+  it("accepts only OpenRouter's cost tiers", () => {
+    expect(parseEnv({ ...requiredEnv, OPENROUTER_COST_TIER: "medium" }).OPENROUTER_COST_TIER).toBe("medium");
+    expect(() => parseEnv({ ...requiredEnv, OPENROUTER_COST_TIER: "balanced" })).toThrow();
+  });
+
   it("refuses to enable experimental SAML in production", () => {
     expect(() => parseEnv({
       ...requiredEnv,

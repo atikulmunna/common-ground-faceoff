@@ -178,7 +178,13 @@ API_BASE_URL=http://localhost:4100
 NEXT_PUBLIC_API_BASE_URL=http://localhost:4100
 ```
 
-Analysis runs through OpenRouter. Set `OPENROUTER_API_KEY`, and optionally `OPENROUTER_MODEL` (default `openai/gpt-oss-120b`).
+Analysis runs through OpenRouter. Put `OPENROUTER_API_KEY` in `apps/api/.env` (never commit it). By default the API uses OpenRouter's Auto Router (`openrouter/auto`), which picks a model for each request:
+
+- `OPENROUTER_COST_TIER` (default `medium`) sets the cost band the router chooses within, from `low` through `max`; `medium` balances cost and capability.
+- `OPENROUTER_ALLOWED_MODELS` optionally restricts the router to model patterns, for example `openai/*,google/*`.
+- `OPENROUTER_MODEL` pins a single model (for example `openai/gpt-oss-120b`) instead of routing.
+
+All five stages of one analysis share a routing session, requests avoid providers that store or train on prompt data, and every model that answered is recorded with the result.
 
 `TRUST_PROXY_HOPS` (default `1`) is the number of reverse proxies in front of the API, so rate limits and audit logs see the real client address. With the default, keep the API port unreachable from the internet; a client talking to the API directly could otherwise choose its own address. Set it to `0` if the API is ever served without a proxy.
 

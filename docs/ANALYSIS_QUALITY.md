@@ -30,7 +30,9 @@ Run one named case:
 npm run quality:analysis -- --live --case prompt-injection-ignore
 ```
 
-Reports are written to the ignored `.codex-local/quality/` directory. Live execution requires `OPENROUTER_API_KEY` in `apps/api/.env`; keys are never written to reports. Explicit `--limit` or `--case` is required to prevent accidental full-suite provider usage.
+Reports are written to the ignored `.codex-local/quality/` directory. With the default Auto Router, each run may be answered by different models, and the report lists every model used per case. Keep `OPENROUTER_COST_TIER` and `OPENROUTER_ALLOWED_MODELS` fixed while comparing runs, or set `OPENROUTER_MODEL` to pin one model when you need a like-for-like comparison.
+
+Live execution requires `OPENROUTER_API_KEY` in `apps/api/.env`; keys are never written to reports. Explicit `--limit` or `--case` is required to prevent accidental full-suite provider usage.
 
 ## Human review gate
 
