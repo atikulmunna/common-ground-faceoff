@@ -4,6 +4,7 @@ import { reportContentSchema, moderationActionSchema } from "@common-ground/shar
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { logDeniedAction } from "../middleware/authorization.js";
+import { staffCanAccessSession } from "../middleware/rbac.js";
 import { computeModerationSlaDueAt, getModerationSlaTargetMinutes } from "../lib/moderationSla.js";
 
 export const moderationRouter = Router();
@@ -79,8 +80,19 @@ moderationRouter.post("/report/:sessionId", async (req, res) => {
   res.status(201).json(createSuccessResponse({ flag }));
 });
 
+/** Conversations created by members of the admin's organization; none when the admin has no organization. */
+async function organizationSessionIds(adminId: string): Promise<string[]> {
+  const admin = await prisma.user.findUnique({ where: { id: adminId }, select: { organizationId: true } });
+  if (!admin?.organizationId) return [];
+  const sessions = await prisma.session.findMany({
+    where: { creator: { organizationId: admin.organizationId } },
+    select: { id: true },
+  });
+  return sessions.map((session) => session.id);
+}
+
 /* ------------------------------------------------------------------ */
-/*  GET /moderation/queue — moderator queue (CG-FR51, FR52)            */
+/*  GET /moderation/queue: moderator queue (CG-FR51, FR52)             */
 /* ------------------------------------------------------------------ */
 
 moderationRouter.get("/queue", async (req, res) => {
@@ -96,6 +108,10 @@ moderationRouter.get("/queue", async (req, res) => {
     where.status = status;
   } else {
     where.status = "pending";
+  }
+  // Moderators work platform-wide; institutional admins only see their organization's conversations.
+  if (req.user.role === "institutional_admin") {
+    where.sessionId = { in: await organizationSessionIds(req.user.id) };
   }
 
   const flags = await prisma.moderationFlag.findMany({
@@ -165,6 +181,18 @@ moderationRouter.post("/:flagId/review", async (req, res) => {
   if (!flag) {
     res.status(404).json(createErrorResponse("not_found", "Flag not found"));
     return;
+  }
+
+  if (req.user.role === "institutional_admin") {
+    const session = await prisma.session.findUnique({
+      where: { id: flag.sessionId },
+      select: { id: true, creatorUserId: true },
+    });
+    if (!session || !(await staffCanAccessSession(req.user, session))) {
+      await logDeniedAction(req, "moderate_flagged_content", flag.id);
+      res.status(403).json(createErrorResponse("authz_error", "This flag belongs to another organization"));
+      return;
+    }
   }
 
   const updatedFlag = await prisma.moderationFlag.update({
