@@ -33,6 +33,12 @@ describe("parseEnv", () => {
     expect(featureEnabled("true")).toBe(true);
   });
 
+  it("trusts one reverse proxy by default and accepts an explicit hop count", () => {
+    expect(parseEnv(requiredEnv).TRUST_PROXY_HOPS).toBe(1);
+    expect(parseEnv({ ...requiredEnv, TRUST_PROXY_HOPS: "0" }).TRUST_PROXY_HOPS).toBe(0);
+    expect(() => parseEnv({ ...requiredEnv, TRUST_PROXY_HOPS: "-1" })).toThrow();
+  });
+
   it("refuses to enable experimental SAML in production", () => {
     expect(() => parseEnv({
       ...requiredEnv,

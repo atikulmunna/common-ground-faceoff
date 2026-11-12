@@ -186,16 +186,12 @@ export async function logDeniedAction(
   action: AuthzAction,
   resourceId?: string,
 ): Promise<void> {
-  const ip = req.headers["x-forwarded-for"]
-    ? String(req.headers["x-forwarded-for"]).split(",")[0].trim()
-    : req.ip ?? "unknown";
-
   await prisma.auditLog.create({
     data: {
       eventType: "authz_denied",
       actorId: req.user?.id ?? null,
       actorEmail: req.user?.email ?? null,
-      ip,
+      ip: req.ip ?? "unknown",
       detail: JSON.stringify({
         action,
         resource: resourceId ?? req.params.id ?? null,

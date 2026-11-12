@@ -180,6 +180,8 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:4100
 
 Analysis runs through OpenRouter. Set `OPENROUTER_API_KEY`, and optionally `OPENROUTER_MODEL` (default `openai/gpt-oss-120b`).
 
+`TRUST_PROXY_HOPS` (default `1`) is the number of reverse proxies in front of the API, so rate limits and audit logs see the real client address. With the default, keep the API port unreachable from the internet; a client talking to the API directly could otherwise choose its own address. Set it to `0` if the API is ever served without a proxy.
+
 Optional integrations include:
 
 - Billing: Stripe secret, webhook secret, price IDs, and `ENABLE_BILLING=true`.

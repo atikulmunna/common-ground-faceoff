@@ -30,7 +30,12 @@ export function createApp(): express.Express {
   }
 
   const app = express();
-  parseEnv(process.env);
+  const env = parseEnv(process.env);
+
+  // Behind Caddy, the socket address is the proxy. Trusting exactly the configured number of hops
+  // makes req.ip the real client (for rate limits and audit logs) without believing addresses a
+  // client prepends to X-Forwarded-For itself.
+  app.set("trust proxy", env.TRUST_PROXY_HOPS);
 
   // --- Security headers (CG-NFR09, CG-NFR12) ---
   app.use(helmet({

@@ -24,7 +24,7 @@ privacyRouter.post("/consent", async (req, res) => {
     return res.status(400).json(createErrorResponse("validation_error", "purpose, lawfulBasis, and granted are required"));
   }
 
-  const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.ip ?? "";
+  const ip = req.ip ?? "";
   const userAgent = req.headers["user-agent"] ?? "";
 
   // Find latest consent for this user+purpose to determine version

@@ -13,6 +13,8 @@ export const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
   API_BASE_URL: z.string().url().optional(),
   CORS_ORIGIN: z.string().optional(),
+  // Reverse proxies in front of the API (Caddy = 1). Use 0 only if the API is reached directly.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
   OPENROUTER_API_KEY: z.string().min(1).optional(),
   OPENROUTER_MODEL: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),

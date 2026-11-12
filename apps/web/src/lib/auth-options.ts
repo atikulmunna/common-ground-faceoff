@@ -12,6 +12,16 @@ type ApiSignInData = {
   refreshToken: string;
 };
 
+/**
+ * Sign-in calls reach the API from this server, not the browser. Passing the visitor's
+ * X-Forwarded-For lets the API rate-limit and audit them per visitor; the API trusts only
+ * the entry added by the last proxy, so a client cannot pick its own address.
+ */
+function forwardedForHeader(req: { headers?: Record<string, unknown> } | undefined): Record<string, string> {
+  const forwarded = req?.headers?.["x-forwarded-for"];
+  return typeof forwarded === "string" && forwarded ? { "X-Forwarded-For": forwarded } : {};
+}
+
 function toSessionUser(data: ApiSignInData) {
   return {
     id: data.user.id,
@@ -36,12 +46,14 @@ export const authOptions: NextAuthOptions = {
         mfaCode: { label: "Verification code", type: "text" },
         mfaType: { label: "MFA type", type: "text" }
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
+        const headers = { "Content-Type": "application/json", ...forwardedForHeader(req) };
+
         // Second step: exchange the ticket from the password step plus the user's code for tokens.
         if (credentials?.mfaTicket && credentials.mfaCode) {
           const res = await fetch(`${getServerApiBaseUrl()}/mfa/verify-login`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({
               mfaTicket: credentials.mfaTicket,
               token: credentials.mfaCode,
@@ -65,7 +77,7 @@ export const authOptions: NextAuthOptions = {
 
         const res = await fetch(`${getServerApiBaseUrl()}${endpoint}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify(body)
         });
 
