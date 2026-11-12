@@ -28,6 +28,7 @@ function participant(userId: string, role: string, displayName: string) {
     role,
     positionText: null,
     positionSubmittedAt: null,
+    positionRemovedAt: null as Date | null,
     user: { id: userId, email: `${userId}@example.test`, displayName },
   };
 }
@@ -71,6 +72,17 @@ describe("participant identity in GET /sessions/:id", () => {
     const response = await viewAs("creator");
 
     expect(entryFor(response.body, "other").user).toMatchObject({ email: "other@example.test" });
+  });
+
+  it("tells only the author that a moderator removed their perspective", async () => {
+    const participants = db.state.session?.participants as Array<{ userId: string; positionRemovedAt: Date | null }>;
+    participants.find((row) => row.userId === "other")!.positionRemovedAt = new Date("2026-11-12T12:00:00Z");
+
+    const asViewer = await viewAs("viewer");
+    expect(entryFor(asViewer.body, "other").positionRemovedAt).toBeNull();
+
+    const asAuthor = await viewAs("other");
+    expect(entryFor(asAuthor.body, "other").positionRemovedAt).toBe("2026-11-12T12:00:00.000Z");
   });
 
   it("keeps anonymous participants' account ids out of the response until results exist", async () => {

@@ -122,8 +122,10 @@ model SessionParticipant {
   canExport             Boolean           @default(false)
   positionText          String?
   positionSubmittedAt   DateTime?
+  positionRemovedAt     DateTime?         // set when a moderator deletes the position; cleared when the author resubmits
   session               Session           @relation(fields: [sessionId], references: [id])
   user                  User              @relation(fields: [userId], references: [id])
+  moderationFlags       ModerationFlag[]
 
   @@unique([sessionId, userId])
 }
@@ -295,6 +297,8 @@ model RedactionLog {
 model ModerationFlag {
   id            String             @id @default(cuid())
   sessionId     String
+  participantId String?            // whose position the flag is about, when known (automatic flags)
+  participant   SessionParticipant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
   reportedBy    String
   reason        String
   section       String?
@@ -313,6 +317,7 @@ model ModerationFlag {
 
   @@index([sessionId])
   @@index([status])
+  @@index([participantId])
 }
 
 model Subscription {

@@ -98,6 +98,13 @@ describe("runAnalysis claim", () => {
     expect(db.state.session.status).toBe("completed");
   });
 
+  it("waits while a participant rewrites a perspective a moderator removed", async () => {
+    db.state.participants.push({ userId: "user-3", positionText: null, positionRemovedAt: new Date(), user: { displayName: "C" } });
+
+    await expect(runAnalysis(input)).rejects.toThrow(/rewrite/i);
+    expect(db.state.session.status).toBe("collecting_positions");
+  });
+
   it("allows a retry after a failed run", async () => {
     db.state.session.status = "failed";
 

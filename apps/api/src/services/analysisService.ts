@@ -558,6 +558,11 @@ export async function runAnalysis(input: BuildAnalysisInput) {
     include: { user: { select: { displayName: true } } },
   });
 
+  // A conversation analyzed without one side would misrepresent it, so wait for the rewrite.
+  if (participants.some((p) => p.positionRemovedAt)) {
+    throw new AnalysisConflictError("Waiting for a participant to rewrite a perspective that a moderator removed.");
+  }
+
   const positions: ParticipantPosition[] = participants
     .filter((p) => p.positionText)
     .map((p, idx) => ({

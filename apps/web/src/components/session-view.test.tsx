@@ -22,6 +22,7 @@ const RESULT = {
 
 let status = "collecting_positions";
 let result: typeof RESULT | null = null;
+let removedByModeratorAt: string | null = null;
 
 function serveApi() {
   api.get.mockImplementation(async (path: string) => {
@@ -37,7 +38,14 @@ function serveApi() {
             anonymousMode: false,
             deadline: null,
             participants: [
-              { id: "p1", userId: "user-1", role: "session_creator", positionText: SAVED_POSITION, positionSubmittedAt: "2026-11-12T10:00:00Z" },
+              {
+                id: "p1",
+                userId: "user-1",
+                role: "session_creator",
+                positionText: removedByModeratorAt ? null : SAVED_POSITION,
+                positionSubmittedAt: removedByModeratorAt ? null : "2026-11-12T10:00:00Z",
+                positionRemovedAt: removedByModeratorAt,
+              },
               { id: "p2", userId: "user-2", role: "session_participant", positionText: null, positionSubmittedAt: "2026-11-12T11:00:00Z" },
             ],
           },
@@ -76,6 +84,7 @@ describe("SessionView live updates", () => {
     localStorage.clear();
     status = "collecting_positions";
     result = null;
+    removedByModeratorAt = null;
     serveApi();
   });
 
@@ -145,5 +154,13 @@ describe("SessionView live updates", () => {
     await advance(30_000);
 
     expect(editor.value).toBe(`${SAVED_POSITION} I have since changed my mind on one point.`);
+  });
+
+  it("tells the author when a moderator removed their perspective, and offers the editor", async () => {
+    removedByModeratorAt = "2026-11-12T12:00:00Z";
+    await renderConversation();
+
+    expect(screen.queryByText(/A moderator removed your perspective/)).not.toBeNull();
+    expect(screen.queryByPlaceholderText(/Share your perspective/)).not.toBeNull();
   });
 });

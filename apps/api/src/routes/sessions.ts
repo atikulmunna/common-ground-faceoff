@@ -309,7 +309,9 @@ sessionsRouter.post("/:id/positions", requireSessionAccess, async (req, res) => 
     where: { id: participant.id },
     data: {
       positionText: parse.data.positionText,
-      positionSubmittedAt: new Date()
+      positionSubmittedAt: new Date(),
+      // A rewrite answers a moderator's removal, so analysis no longer waits on it.
+      positionRemovedAt: null
     }
   });
 
@@ -320,6 +322,7 @@ sessionsRouter.post("/:id/positions", requireSessionAccess, async (req, res) => 
       data: {
         sessionId: req.params.id,
         reportedBy: "system",
+        participantId: participant.id,
         reason: `Auto-detected ${check.severity} content`,
         severity: check.severity,
         autoDetected: true,
@@ -421,7 +424,7 @@ sessionsRouter.get("/:id", requireSessionAccess, async (req, res) => {
   const viewerIsCreator = session.creatorUserId === req.user.id;
   const sessionWithPrivacy = {
     ...session,
-    participants: session.participants.map((participant: { userId: string; positionText: string | null; user: { id: string; email: string; displayName: string } }) => {
+    participants: session.participants.map((participant: { userId: string; positionText: string | null; positionRemovedAt: Date | null; user: { id: string; email: string; displayName: string } }) => {
       const isViewer = participant.userId === req.user.id;
       const canSeeRaw = isViewer || session.status === "completed";
       // CG-FR14: In anonymous mode, hide other participant identities until analysis is complete
@@ -431,6 +434,8 @@ sessionsRouter.get("/:id", requireSessionAccess, async (req, res) => {
       return {
         ...participant,
         positionText: canSeeRaw ? participant.positionText : null,
+        // Only the author learns that a moderator removed their perspective.
+        positionRemovedAt: isViewer ? participant.positionRemovedAt : null,
         // An account id is the same in every conversation, so it would identify an anonymous participant.
         userId: hideIdentity ? null : participant.userId,
         user: hideIdentity

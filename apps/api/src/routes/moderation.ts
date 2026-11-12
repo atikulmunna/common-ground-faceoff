@@ -105,6 +105,7 @@ moderationRouter.get("/queue", async (req, res) => {
       { createdAt: "asc" },
     ],
     take: 50,
+    include: { participant: { select: { positionText: true } } },
   });
 
   const now = new Date();
@@ -118,7 +119,7 @@ moderationRouter.get("/queue", async (req, res) => {
     );
   if (updates.length > 0) await prisma.$transaction(updates);
 
-  const enrichedFlags = flags.map((f) => {
+  const enrichedFlags = flags.map(({ participant, ...f }) => {
     const targetMinutes = getModerationSlaTargetMinutes(f.severity);
     const isBreached = f.status === "pending" && !!f.slaDueAt && f.slaDueAt < now;
     const remainingSeconds =
@@ -128,6 +129,8 @@ moderationRouter.get("/queue", async (req, res) => {
 
     return {
       ...f,
+      // The text under review, so moderators can judge it. Null when the flag names no position.
+      flaggedText: participant?.positionText ?? null,
       sla: {
         targetMinutes,
         dueAt: f.slaDueAt,
@@ -186,16 +189,41 @@ moderationRouter.post("/:flagId/review", async (req, res) => {
     },
   });
 
-  // CG-FR51: If deleted, suspend the session
+  // CG-FR51: Deleting suspends the conversation and, when the flag names a position, removes it.
   if (parse.data.action === "delete") {
     await prisma.session.update({
       where: { id: flag.sessionId },
       data: { status: "needs_input" },
     });
+    if (flag.participantId) {
+      await removeFlaggedPosition(flag.sessionId, flag.participantId);
+    }
   }
 
   res.json(createSuccessResponse({ flag: updatedFlag }));
 });
+
+/**
+ * Clears a position a moderator deleted, so it never reaches the analysis, and marks it removed so its
+ * author is asked to rewrite it (analysis waits until they do).
+ */
+async function removeFlaggedPosition(sessionId: string, participantId: string): Promise<void> {
+  const participant = await prisma.sessionParticipant.update({
+    where: { id: participantId },
+    data: { positionText: null, positionSubmittedAt: null, positionRemovedAt: new Date() },
+  });
+
+  // Copies saved when an analysis started become readable once that round completes,
+  // so drop the author's copies from rounds that have no results yet.
+  const latestCompleted = await prisma.analysisResult.findFirst({
+    where: { sessionId, status: "completed" },
+    orderBy: { roundNumber: "desc" },
+    select: { roundNumber: true },
+  });
+  await prisma.positionSnapshot.deleteMany({
+    where: { sessionId, userId: participant.userId, roundNumber: { gt: latestCompleted?.roundNumber ?? 0 } },
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /*  POST /moderation/:flagId/appeal — appeal a moderation action       */

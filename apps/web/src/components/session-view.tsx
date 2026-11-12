@@ -63,6 +63,8 @@ type SessionData = {
     role: string;
     positionText: string | null;
     positionSubmittedAt: string | null;
+    /** Set on the viewer's own entry when a moderator removed their perspective. */
+    positionRemovedAt?: string | null;
   }>;
 };
 
@@ -388,6 +390,9 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const showEditor = !hasSubmitted || editing;
   const policyWarnings = useMemo(() => checkContentPolicy(positionText), [positionText]);
   const deadlinePassed = session?.deadline ? new Date(session.deadline) < new Date() : false;
+  const removedByModerator = Boolean(
+    session?.participants.find((participant) => participant.userId === currentUserId)?.positionRemovedAt,
+  );
   // Others' text stays hidden until results exist, so count submissions by timestamp.
   const submittedCount = session?.participants.filter((participant) => Boolean(participant.positionSubmittedAt)).length ?? 0;
   const isAnalyzing = status === "queued" || status === "running";
@@ -481,6 +486,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 
       <article className="card grid">
         <div className="section-heading"><span className="eyebrow">Your contribution</span><h2>Share your perspective</h2><p>Explain what you believe, why it matters, and what might change your view.</p></div>
+        {removedByModerator && (
+          <p className="cgm-policy-warning" role="alert">
+            A moderator removed your perspective. Please write it again; the analysis will wait until you do.
+          </p>
+        )}
         {showEditor ? (
           <>
             {!hasSubmitted && (
