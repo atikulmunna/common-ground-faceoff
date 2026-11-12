@@ -183,7 +183,7 @@ export function checkPermission(
  */
 export async function logDeniedAction(
   req: Request,
-  action: AuthzAction,
+  action: AuthzAction | "appeal_moderation_decision",
   resourceId?: string,
 ): Promise<void> {
   await prisma.auditLog.create({

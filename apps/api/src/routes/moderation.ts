@@ -237,9 +237,26 @@ moderationRouter.post("/:flagId/appeal", async (req, res) => {
     return;
   }
 
-  const flag = await prisma.moderationFlag.findUnique({ where: { id: req.params.flagId } });
+  const flag = await prisma.moderationFlag.findUnique({
+    where: { id: req.params.flagId },
+    include: { participant: { select: { userId: true } } },
+  });
   if (!flag) {
     res.status(404).json(createErrorResponse("not_found", "Flag not found"));
+    return;
+  }
+
+  // A flag about someone's perspective can be appealed only by its author. Report flags name no
+  // perspective, so any participant of that conversation may appeal those.
+  const mayAppeal = flag.participant
+    ? flag.participant.userId === req.user.id
+    : (await prisma.sessionParticipant.findUnique({
+        where: { sessionId_userId: { sessionId: flag.sessionId, userId: req.user.id } },
+        select: { id: true },
+      })) !== null;
+  if (!mayAppeal) {
+    await logDeniedAction(req, "appeal_moderation_decision", flag.id);
+    res.status(403).json(createErrorResponse("authz_error", "Only the author of the flagged content can appeal"));
     return;
   }
 
