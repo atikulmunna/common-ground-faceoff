@@ -568,19 +568,23 @@ export function estimateCompletionSeconds(totalChars: number): number {
   return Math.min(600, 30 + Math.ceil(totalChars / 100));
 }
 
-/** Loads a conversation and its submitted positions, labelled Participant A, B, ... */
+/**
+ * Loads a conversation and its submitted positions. Each participant's label comes from their place
+ * among everyone who joined (ids are cuids, which sort by creation time), so "Participant B" is the
+ * same person in every round, even when someone else has not submitted this round.
+ */
 async function loadPositions(sessionId: string) {
   const session = await prisma.session.findUniqueOrThrow({ where: { id: sessionId } });
   const participants = await prisma.sessionParticipant.findMany({
     where: { sessionId },
+    orderBy: { id: "asc" },
     include: { user: { select: { displayName: true } } },
   });
-  const positions: ParticipantPosition[] = participants
-    .filter((p) => p.positionText)
-    .map((p, idx) => ({
-      participantLabel: `Participant ${String.fromCharCode(65 + idx)}`,
-      positionText: p.positionText!,
-    }));
+  const positions: ParticipantPosition[] = participants.flatMap((p, idx) =>
+    p.positionText
+      ? [{ participantLabel: `Participant ${String.fromCharCode(65 + idx)}`, positionText: p.positionText }]
+      : [],
+  );
   return { session, participants, positions };
 }
 

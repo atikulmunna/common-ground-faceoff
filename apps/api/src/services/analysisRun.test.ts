@@ -39,7 +39,11 @@ const db = vi.hoisted(() => {
         Object.assign(state.sessions.find((row) => row.id === where.id) ?? {}, data),
     },
     sessionParticipant: {
-      findMany: async ({ where }: { where: Row }) => state.participants.filter((row) => row.sessionId === where.sessionId),
+      // Like Postgres, returns rows in no particular order unless asked to sort.
+      findMany: async ({ where, orderBy }: { where: Row; orderBy?: { id: "asc" } }) => {
+        const rows = state.participants.filter((row) => row.sessionId === where.sessionId);
+        return orderBy?.id === "asc" ? [...rows].sort((a, b) => String(a.id).localeCompare(String(b.id))) : rows;
+      },
     },
     analysisResult: {
       findFirst: async ({ where }: { where: Row }) =>
@@ -148,6 +152,47 @@ describe("analysis worker steps", () => {
     expect(db.state.sessions[0].status).toBe("failed");
     expect(db.state.results).toHaveLength(0);
     expect(db.state.events.at(-1)).toMatchObject({ eventType: "analysis_failed", reasonCode: expect.stringContaining("unavailable") });
+  });
+
+  it("labels participants by when they joined, whatever order the database returns them in", async () => {
+    answerEveryStage();
+    db.state.participants = [
+      { id: "c2-joined-second", sessionId: "session-1", userId: "user-b", positionText: "Remote days protect time for focused work." },
+      { id: "c1-joined-first", sessionId: "session-1", userId: "user-a", positionText: "Office days help new hires learn quickly." },
+    ];
+
+    await runClaimedAnalysis("session-1");
+
+    const normalizationPrompt = String(callLlm.mock.calls[0][1]);
+    expect(normalizationPrompt).toContain("### Participant A\nOffice days help new hires learn quickly.");
+    expect(normalizationPrompt).toContain("### Participant B\nRemote days protect time for focused work.");
+  });
+
+  it("keeps everyone's label when a participant has not submitted this round", async () => {
+    answerEveryStage();
+    db.state.participants = [
+      { id: "c1", sessionId: "session-1", userId: "user-a", positionText: "Office days help new hires learn quickly." },
+      { id: "c2", sessionId: "session-1", userId: "user-skip", positionText: null },
+      { id: "c3", sessionId: "session-1", userId: "user-c", positionText: "Remote days protect time for focused work." },
+    ];
+    callLlm.mockImplementation(async (_system: string, user: string, validate?: (content: string) => void) => {
+      // Answer with whatever labels the prompt used, so this test only checks the labelling.
+      const labels = [...user.matchAll(/### (Participant [A-Z])/g)].map((match) => match[1]);
+      const stage = Number(/# Stage (\d)/.exec(user)?.[1]);
+      const content = JSON.stringify(
+        stage === 1 ? { positions: labels.map((label) => ({ label, normalized: "View." })) }
+        : stage === 2 ? { steelmans: labels.map((label) => ({ label, steelman: "View." })) }
+        : stage === 3 ? { participants: labels.map((label) => ({ label, values: [] })) }
+        : stage === 4 ? { conflicts: [] }
+        : { sharedFoundations: [], trueDisagreements: [], confidenceScores: { sharedFoundations: 0.5, disagreements: 0.5 } },
+      );
+      validate?.(content);
+      return { content, provider: "openrouter", model: "openai/model-a", promptTokens: 1, completionTokens: 1 };
+    });
+
+    await runClaimedAnalysis("session-1");
+
+    expect(Object.keys(db.state.results[0].steelmans as Record<string, string>)).toEqual(["Participant A", "Participant C"]);
   });
 
   it("lets only one worker claim a queued conversation", async () => {
