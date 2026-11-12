@@ -15,8 +15,15 @@ const db = vi.hoisted(() => {
 
 vi.mock("../lib/prisma.js", () => ({ prisma: db.prisma }));
 
+const runAnalysis = vi.hoisted(() => vi.fn());
+vi.mock("../services/analysisService.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/analysisService.js")>()),
+  runAnalysis,
+}));
+
 import { createApp } from "../app.js";
 import { signAccessToken } from "../lib/auth.js";
+import { AnalysisConflictError } from "../services/analysisService.js";
 
 const authorization = `Bearer ${signAccessToken({ sub: "user-1", email: "user@example.test", role: "individual_user" })}`;
 
@@ -61,5 +68,41 @@ describe("GET /sessions/:id/analysis", () => {
       .expect(200);
 
     expect(response.body.data).toMatchObject({ status: "running", result: null });
+  });
+});
+
+describe("POST /sessions/:id/analyze", () => {
+  beforeEach(() => {
+    db.state.session = {
+      id: "session-1",
+      creatorUserId: "user-1",
+      participants: [{ userId: "user-1", canExport: true }],
+      status: "collecting_positions",
+    };
+    runAnalysis.mockReset();
+  });
+
+  function analyze() {
+    return request(createApp())
+      .post("/sessions/session-1/analyze")
+      .set("Authorization", authorization)
+      .send({ analysisVersion: "v1", promptTemplateVersion: "tpl-v1" });
+  }
+
+  it("answers 409 when the conversation cannot start an analysis right now", async () => {
+    runAnalysis.mockRejectedValueOnce(new AnalysisConflictError("An analysis is already in progress for this conversation."));
+
+    const response = await analyze().expect(409);
+
+    expect(response.body.error).toMatchObject({
+      code: "async_state_error",
+      message: "An analysis is already in progress for this conversation.",
+    });
+  });
+
+  it("still answers 422 when the input cannot be analyzed", async () => {
+    runAnalysis.mockRejectedValueOnce(new Error("At least 2 participant positions are required for analysis"));
+
+    await analyze().expect(422);
   });
 });

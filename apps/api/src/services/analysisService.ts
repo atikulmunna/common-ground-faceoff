@@ -514,6 +514,21 @@ function estimateStatus(totalChars: number): "queued" | "running" {
   return totalChars > 4000 ? "queued" : "running";
 }
 
+/** Statuses an analysis may start from. A completed conversation must start a new round first. */
+const ANALYZABLE_STATUSES = ["draft", "collecting_positions", "failed", "needs_input"] as const;
+
+/** The conversation is not in a state that allows starting an analysis; the route answers 409. */
+export class AnalysisConflictError extends Error {}
+
+async function explainRefusedClaim(sessionId: string): Promise<AnalysisConflictError> {
+  const current = await prisma.session.findUnique({ where: { id: sessionId }, select: { status: true } });
+  return new AnalysisConflictError(
+    current?.status === "completed"
+      ? "This conversation already has results. Start a new round to analyze it again."
+      : "An analysis is already in progress for this conversation.",
+  );
+}
+
 async function notifyAnalysisCompletion(sessionId: string, topic: string): Promise<void> {
   try {
     await enqueueAnalysisCompletionEmails(sessionId, topic);
@@ -561,8 +576,33 @@ export async function runAnalysis(input: BuildAnalysisInput) {
     throw new Error("Combined payload exceeds asynchronous max threshold");
   }
 
+  // CG-FR51: critical content suspends the conversation until a moderator has reviewed it.
+  const moderationHold = await prisma.moderationFlag.findFirst({
+    where: { sessionId: input.sessionId, severity: "critical", status: { in: ["pending", "appealed"] } },
+    select: { id: true },
+  });
+  if (moderationHold) {
+    throw new AnalysisConflictError("This conversation is on hold while a moderator reviews flagged content.");
+  }
+
   // PII redaction (CG-FR59: 4-stage pipeline with audit logging)
   const redaction = redactPII(combined);
+
+  const pipelineRunId = randomUUID();
+  const targetStatus = estimateStatus(totalChars);
+  const etaSeconds = estimateCompletionSeconds(totalChars);
+  const estimatedCompletionAt = new Date(Date.now() + etaSeconds * 1000);
+
+  // Claim the conversation in one conditional update, so concurrent requests cannot start two runs.
+  const claim = await prisma.session.updateMany({
+    where: { id: input.sessionId, status: { in: [...ANALYZABLE_STATUSES] } },
+    data: redaction.blocked
+      ? { status: "needs_input" }
+      : { status: targetStatus, estimatedCompletionAt },
+  });
+  if (claim.count !== 1) {
+    throw await explainRefusedClaim(input.sessionId);
+  }
 
   // Log each redaction stage to RedactionLog
   for (const stage of redaction.stages) {
@@ -580,17 +620,12 @@ export async function runAnalysis(input: BuildAnalysisInput) {
   }
 
   if (redaction.blocked) {
-    await prisma.session.update({
-      where: { id: input.sessionId },
-      data: { status: "needs_input" },
-    });
-
     await prisma.analysisEvent.create({
       data: {
         sessionId: input.sessionId,
         pipelineRunId: "redaction",
         eventType: "redaction_blocked",
-        fromState: "collecting_positions",
+        fromState: session.status,
         toState: "needs_input",
         reasonCode: "low_redaction_confidence",
         actorType: "system",
@@ -606,22 +641,12 @@ export async function runAnalysis(input: BuildAnalysisInput) {
     positionText: redactPII(p.positionText).redactedText,
   }));
 
-  const pipelineRunId = randomUUID();
-  const targetStatus = estimateStatus(totalChars);
-  const etaSeconds = estimateCompletionSeconds(totalChars);
-  const estimatedCompletionAt = new Date(Date.now() + etaSeconds * 1000);
-
-  await prisma.session.update({
-    where: { id: input.sessionId },
-    data: { status: targetStatus, estimatedCompletionAt },
-  });
-
   await prisma.analysisEvent.create({
     data: {
       sessionId: input.sessionId,
       pipelineRunId,
       eventType: "analysis_started",
-      fromState: "collecting_positions",
+      fromState: session.status,
       toState: targetStatus,
       actorType: "system",
     },

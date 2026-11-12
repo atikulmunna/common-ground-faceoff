@@ -12,7 +12,7 @@ import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { requireSessionAccess } from "../middleware/rbac.js";
 import { requirePermission } from "../middleware/authorization.js";
 import { enqueueAnalysis } from "../services/queueService.js";
-import { runAnalysis } from "../services/analysisService.js";
+import { AnalysisConflictError, runAnalysis } from "../services/analysisService.js";
 import { detectSeverity } from "./moderation.js";
 import { computeModerationSlaDueAt } from "../lib/moderationSla.js";
 import { sendSessionInvitation } from "../services/emailService.js";
@@ -399,6 +399,10 @@ sessionsRouter.post("/:id/analyze", requireSessionAccess, requirePermission("tri
       })
     );
   } catch (error) {
+    if (error instanceof AnalysisConflictError) {
+      res.status(409).json(createErrorResponse("async_state_error", error.message));
+      return;
+    }
     console.error("[Analyze] Error:", error instanceof Error ? error.message : error);
     if (error instanceof Error && error.stack) console.error(error.stack);
     res.status(422).json(
