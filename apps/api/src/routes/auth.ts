@@ -12,14 +12,15 @@ import {
   hashPassword,
   verifyPassword,
   signAccessToken,
-  generateRefreshToken
+  generateMfaTicket,
+  generateRefreshToken,
+  LOGIN_LOCKOUT_DURATION_MS,
+  MAX_FAILED_LOGIN_ATTEMPTS
 } from "../lib/auth.js";
 import { OAUTH_EXCHANGE_SECRET_HEADER, verifyOAuthExchangeSecret } from "../lib/internalAuth.js";
 
 export const authRouter = Router();
 
-const MAX_FAILED_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
 // POST /auth/register
@@ -124,8 +125,8 @@ authRouter.post("/login", async (req, res) => {
   const valid = await verifyPassword(parse.data.password, user.passwordHash);
   if (!valid) {
     const newCount = user.failedLoginCount + 1;
-    const lockout = newCount >= MAX_FAILED_ATTEMPTS
-      ? new Date(Date.now() + LOCKOUT_DURATION_MS)
+    const lockout = newCount >= MAX_FAILED_LOGIN_ATTEMPTS
+      ? new Date(Date.now() + LOGIN_LOCKOUT_DURATION_MS)
       : null;
 
     await prisma.user.update({
@@ -151,7 +152,60 @@ authRouter.post("/login", async (req, res) => {
     return;
   }
 
-  // Reset failed attempts on success
+  // CG-FR06: When a second factor is enabled, the password step only earns a one-time ticket.
+  // The failure counter is left alone until the second factor succeeds, so wrong codes stay limited.
+  const requiresSms = user.smsMfaEnabled && featureEnabled(process.env.ENABLE_SMS_MFA);
+  if (requiresSms || user.mfaEnabled) {
+    const mfaType = requiresSms ? "sms" : "totp";
+    let smsChallenge = {};
+
+    if (requiresSms) {
+      if (!user.smsPhone) {
+        res.status(500).json(createErrorResponse("auth_error", "SMS MFA is enabled but phone is not configured"));
+        return;
+      }
+
+      const code = generateSmsCode();
+      const smsSent = await sendSms({
+        to: user.smsPhone,
+        body: `Your Common Ground verification code is ${code}. It expires in 10 minutes.`,
+      });
+      if (!smsSent) {
+        res.status(503).json(createErrorResponse("provider_error", "Could not send SMS verification code"));
+        return;
+      }
+
+      smsChallenge = {
+        smsCodeHash: hashSmsCode(code),
+        smsCodeExpiresAt: new Date(Date.now() + SMS_CODE_TTL_MS),
+        smsCodePurpose: "login",
+      };
+    }
+
+    const challenge = generateMfaTicket();
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        mfaTicketHash: challenge.ticketHash,
+        mfaTicketExpiresAt: challenge.expiresAt,
+        ...smsChallenge,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        eventType: "mfa_challenge_issued",
+        actorId: user.id,
+        actorEmail: user.email,
+        ip: req.ip,
+        detail: `type:${mfaType}`,
+      },
+    });
+
+    res.json(createSuccessResponse({ mfaRequired: true, mfaType, mfaTicket: challenge.ticket }));
+    return;
+  }
+
   await prisma.user.update({
     where: { id: user.id },
     data: {
@@ -160,76 +214,6 @@ authRouter.post("/login", async (req, res) => {
       lastLoginAt: new Date()
     }
   });
-
-  // CG-FR06: If SMS MFA is enabled, send OTP and require verification.
-  if (user.smsMfaEnabled && featureEnabled(process.env.ENABLE_SMS_MFA)) {
-    if (!user.smsPhone) {
-      res.status(500).json(createErrorResponse("auth_error", "SMS MFA is enabled but phone is not configured"));
-      return;
-    }
-
-    const code = generateSmsCode();
-    const smsSent = await sendSms({
-      to: user.smsPhone,
-      body: `Your Common Ground verification code is ${code}. It expires in 10 minutes.`,
-    });
-    if (!smsSent) {
-      res.status(503).json(createErrorResponse("provider_error", "Could not send SMS verification code"));
-      return;
-    }
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        smsCodeHash: hashSmsCode(code),
-        smsCodeExpiresAt: new Date(Date.now() + SMS_CODE_TTL_MS),
-        smsCodePurpose: "login",
-      },
-    });
-
-    await prisma.auditLog.create({
-      data: {
-        eventType: "mfa_challenge_issued",
-        actorId: user.id,
-        actorEmail: user.email,
-        ip: req.ip,
-        detail: "type:sms",
-      },
-    });
-
-    res.json(
-      createSuccessResponse({
-        mfaRequired: true,
-        mfaType: "sms",
-        tempTicket: user.id,
-        email: user.email,
-      })
-    );
-    return;
-  }
-
-  // CG-FR06: If TOTP MFA is enabled, require second factor before issuing tokens
-  if (user.mfaEnabled) {
-    await prisma.auditLog.create({
-      data: {
-        eventType: "mfa_challenge_issued",
-        actorId: user.id,
-        actorEmail: user.email,
-        ip: req.ip,
-        detail: "type:totp",
-      },
-    });
-
-    res.json(
-      createSuccessResponse({
-        mfaRequired: true,
-        mfaType: "totp",
-        tempTicket: user.id,
-        email: user.email,
-      })
-    );
-    return;
-  }
 
   const accessToken = signAccessToken({ sub: user.id, email: user.email, role: user.role });
   const refresh = generateRefreshToken();

@@ -60,6 +60,8 @@ model User {
   smsCodeHash      String?
   smsCodeExpiresAt DateTime?
   smsCodePurpose   String?
+  mfaTicketHash    String?              @unique
+  mfaTicketExpiresAt DateTime?
   organizationId   String?
   samlNameId       String?
   stripeCustomerId String?              @unique

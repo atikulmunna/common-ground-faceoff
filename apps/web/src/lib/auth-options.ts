@@ -4,7 +4,24 @@ import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import GitHubProvider from "next-auth/providers/github";
 import { getServerApiBaseUrl } from "./api-base";
+import { encodeMfaChallenge } from "./mfa-challenge";
 
+type ApiSignInData = {
+  user: { id: string; email: string; displayName: string; role: string };
+  accessToken: string;
+  refreshToken: string;
+};
+
+function toSessionUser(data: ApiSignInData) {
+  return {
+    id: data.user.id,
+    email: data.user.email,
+    name: data.user.displayName,
+    role: data.user.role,
+    accessToken: data.accessToken,
+    refreshToken: data.refreshToken
+  };
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -14,9 +31,30 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
         action: { label: "Action", type: "text" },
-        displayName: { label: "Display Name", type: "text" }
+        displayName: { label: "Display Name", type: "text" },
+        mfaTicket: { label: "MFA ticket", type: "text" },
+        mfaCode: { label: "Verification code", type: "text" },
+        mfaType: { label: "MFA type", type: "text" }
       },
       async authorize(credentials) {
+        // Second step: exchange the ticket from the password step plus the user's code for tokens.
+        if (credentials?.mfaTicket && credentials.mfaCode) {
+          const res = await fetch(`${getServerApiBaseUrl()}/mfa/verify-login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mfaTicket: credentials.mfaTicket,
+              token: credentials.mfaCode,
+              mfaType: credentials.mfaType === "sms" ? "sms" : "totp"
+            })
+          });
+          const json = await res.json();
+          if (!res.ok || !json.success) {
+            throw new Error(json.error?.message ?? "Verification failed");
+          }
+          return toSessionUser(json.data);
+        }
+
         if (!credentials?.email || !credentials?.password) return null;
 
         const isRegister = credentials.action === "register";
@@ -38,15 +76,11 @@ export const authOptions: NextAuthOptions = {
         if (isRegister) {
           throw new Error(json.data?.message ?? "Registration successful. Please verify your email.");
         }
+        if (json.data?.mfaRequired) {
+          throw new Error(encodeMfaChallenge({ mfaType: json.data.mfaType, mfaTicket: json.data.mfaTicket }));
+        }
 
-        return {
-          id: json.data.user.id,
-          email: json.data.user.email,
-          name: json.data.user.displayName,
-          role: json.data.user.role,
-          accessToken: json.data.accessToken,
-          refreshToken: json.data.refreshToken
-        };
+        return toSessionUser(json.data);
       }
     }),
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET

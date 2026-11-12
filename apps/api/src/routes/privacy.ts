@@ -241,6 +241,8 @@ privacyRouter.delete("/account", async (req, res) => {
         smsCodeHash: null,
         smsCodeExpiresAt: null,
         smsCodePurpose: null,
+        mfaTicketHash: null,
+        mfaTicketExpiresAt: null,
         organizationId: null,
         samlNameId: null,
         stripeCustomerId: null,

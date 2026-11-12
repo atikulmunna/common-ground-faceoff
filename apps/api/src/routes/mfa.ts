@@ -5,7 +5,13 @@ import { mfaSetupVerifySchema, mfaLoginVerifySchema, smsMfaSetupSchema, smsMfaCo
 
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
-import { signAccessToken, generateRefreshToken } from "../lib/auth.js";
+import {
+  signAccessToken,
+  generateRefreshToken,
+  hashMfaTicket,
+  LOGIN_LOCKOUT_DURATION_MS,
+  MAX_FAILED_LOGIN_ATTEMPTS,
+} from "../lib/auth.js";
 import { generateSmsCode, hashSmsCode, normalizePhone, SMS_CODE_TTL_MS } from "../lib/mfaSms.js";
 import { sendSms } from "../services/smsService.js";
 import { featureEnabled } from "@common-ground/config";
@@ -177,8 +183,43 @@ mfaRouter.post("/disable", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  POST /mfa/verify-login — verify TOTP during login (unauthenticated)*/
+/*  POST /mfa/verify-login: second login step (unauthenticated)        */
 /* ------------------------------------------------------------------ */
+
+const MFA_TICKET_EXPIRED = "Your sign-in attempt has expired. Please sign in again.";
+
+/** Counts a wrong code toward the shared login lockout. Returns true when the account is now locked. */
+async function recordFailedMfaCode(user: { id: string; email: string }, ip: string | undefined): Promise<boolean> {
+  const { failedLoginCount } = await prisma.user.update({
+    where: { id: user.id },
+    data: { failedLoginCount: { increment: 1 } },
+    select: { failedLoginCount: true },
+  });
+
+  const locked = failedLoginCount >= MAX_FAILED_LOGIN_ATTEMPTS;
+  if (locked) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lockedUntil: new Date(Date.now() + LOGIN_LOCKOUT_DURATION_MS),
+        mfaTicketHash: null,
+        mfaTicketExpiresAt: null,
+      },
+    });
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      eventType: "mfa_login_failed",
+      actorId: user.id,
+      actorEmail: user.email,
+      ip,
+      detail: `failed_attempt_${failedLoginCount}`,
+    },
+  });
+
+  return locked;
+}
 
 publicMfaRouter.post("/verify-login", async (req, res) => {
   const parse = mfaLoginVerifySchema.safeParse(req.body);
@@ -187,18 +228,19 @@ publicMfaRouter.post("/verify-login", async (req, res) => {
     return;
   }
 
-  const user = await prisma.user.findUnique({ where: { email: parse.data.email } });
-  if (!user) {
-    res.status(401).json(createErrorResponse("auth_error", "Invalid MFA request"));
+  const ticketHash = hashMfaTicket(parse.data.mfaTicket);
+  const user = await prisma.user.findUnique({ where: { mfaTicketHash: ticketHash } });
+  if (!user || !user.mfaTicketExpiresAt || user.mfaTicketExpiresAt < new Date()) {
+    res.status(401).json(createErrorResponse("auth_error", MFA_TICKET_EXPIRED));
     return;
   }
 
-  // Verify the temp ticket matches user id (simple approach)
-  if (parse.data.tempTicket !== user.id) {
-    res.status(401).json(createErrorResponse("auth_error", "Invalid MFA ticket"));
+  if (user.lockedUntil && user.lockedUntil > new Date()) {
+    res.status(423).json(createErrorResponse("auth_error", "Account temporarily locked. Try again later."));
     return;
   }
 
+  let codeValid: boolean;
   if (parse.data.mfaType === "sms") {
     if (!featureEnabled(process.env.ENABLE_SMS_MFA)) {
       res.status(404).json(createErrorResponse("not_found", "SMS MFA is not enabled"));
@@ -209,17 +251,10 @@ publicMfaRouter.post("/verify-login", async (req, res) => {
       return;
     }
     if (new Date(user.smsCodeExpiresAt) < new Date()) {
-      res.status(401).json(createErrorResponse("auth_error", "SMS code expired"));
+      res.status(401).json(createErrorResponse("auth_error", "SMS code expired. Please sign in again."));
       return;
     }
-    if (hashSmsCode(parse.data.token) !== user.smsCodeHash) {
-      res.status(401).json(createErrorResponse("auth_error", "Invalid SMS code"));
-      return;
-    }
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { smsCodeHash: null, smsCodeExpiresAt: null, smsCodePurpose: null },
-    });
+    codeValid = hashSmsCode(parse.data.token) === user.smsCodeHash;
   } else {
     if (!user.mfaEnabled || !user.mfaSecret) {
       res.status(401).json(createErrorResponse("auth_error", "Invalid MFA request"));
@@ -234,25 +269,43 @@ publicMfaRouter.post("/verify-login", async (req, res) => {
       period: 30,
       secret: OTPAuth.Secret.fromBase32(user.mfaSecret),
     });
-
-    const delta = totp.validate({ token: parse.data.token, window: 1 });
-    if (delta === null) {
-      res.status(401).json(createErrorResponse("auth_error", "Invalid TOTP code"));
-      return;
-    }
+    codeValid = totp.validate({ token: parse.data.token, window: 1 }) !== null;
   }
 
-  // Issue tokens
+  if (!codeValid) {
+    if (await recordFailedMfaCode(user, req.ip)) {
+      const minutes = Math.round(LOGIN_LOCKOUT_DURATION_MS / 60_000);
+      res.status(423).json(createErrorResponse("auth_error", `Too many incorrect codes. Try again in ${minutes} minutes.`));
+      return;
+    }
+    res.status(401).json(createErrorResponse("auth_error", "Incorrect verification code"));
+    return;
+  }
+
+  // Consume the ticket atomically, so one ticket and code can sign in only once.
+  const consumed = await prisma.user.updateMany({
+    where: { id: user.id, mfaTicketHash: ticketHash },
+    data: {
+      mfaTicketHash: null,
+      mfaTicketExpiresAt: null,
+      failedLoginCount: 0,
+      lockedUntil: null,
+      lastLoginAt: new Date(),
+      ...(parse.data.mfaType === "sms"
+        ? { smsCodeHash: null, smsCodeExpiresAt: null, smsCodePurpose: null }
+        : {}),
+    },
+  });
+  if (consumed.count !== 1) {
+    res.status(401).json(createErrorResponse("auth_error", MFA_TICKET_EXPIRED));
+    return;
+  }
+
   const accessToken = signAccessToken({ sub: user.id, email: user.email, role: user.role });
   const refresh = generateRefreshToken();
 
   await prisma.refreshToken.create({
     data: { token: refresh.token, userId: user.id, expiresAt: refresh.expiresAt },
-  });
-
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
   });
 
   await prisma.auditLog.create({

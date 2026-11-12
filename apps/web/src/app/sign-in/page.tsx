@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getPublicApiBaseUrl } from "../../lib/api-base";
+import { parseMfaChallenge, type MfaChallenge } from "../../lib/mfa-challenge";
 
 const REGISTRATION_ENABLED = process.env.NEXT_PUBLIC_ENABLE_REGISTRATION === "true";
 
@@ -56,6 +57,8 @@ function SignInPageContent() {
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [mfa, setMfa] = useState<MfaChallenge | null>(null);
+  const [code, setCode] = useState("");
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -92,12 +95,85 @@ function SignInPageContent() {
 
     setBusy(false);
 
-    if (result?.error) {
+    const challenge = parseMfaChallenge(result?.error);
+    if (challenge) {
+      setMfa(challenge);
+      setPassword("");
+    } else if (result?.error) {
       setError(result.error);
     } else {
       router.push("/");
       router.refresh();
     }
+  }
+
+  async function handleVerify(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!mfa) return;
+    setBusy(true);
+    setError(null);
+
+    const result = await signIn("credentials", {
+      redirect: false,
+      mfaTicket: mfa.mfaTicket,
+      mfaCode: code,
+      mfaType: mfa.mfaType
+    });
+
+    setBusy(false);
+
+    if (result?.error) {
+      setError(result.error);
+      setCode("");
+    } else {
+      router.push("/");
+      router.refresh();
+    }
+  }
+
+  function leaveVerification() {
+    setMfa(null);
+    setCode("");
+    setError(null);
+  }
+
+  if (mfa) {
+    return (
+      <section className="card grid" style={{ maxWidth: "28rem", margin: "0 auto" }}>
+        <h1>Enter your verification code</h1>
+        <p className="form-helper">
+          {mfa.mfaType === "sms"
+            ? "We sent a 6-digit code to your phone."
+            : "Open your authenticator app and enter the 6-digit code for Common Ground."}
+        </p>
+
+        <form onSubmit={handleVerify} className="grid">
+          <label htmlFor="mfa-code">Verification code</label>
+          <input
+            id="mfa-code"
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            required
+            autoFocus
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+          />
+
+          {error && <p role="alert" style={{ color: "#b91c1c" }}>{error}</p>}
+
+          <button type="submit" disabled={busy || code.length !== 6}>
+            {busy ? "Verifying..." : "Verify"}
+          </button>
+        </form>
+
+        <button type="button" className="secondary" onClick={leaveVerification}>
+          Back to sign in
+        </button>
+      </section>
+    );
   }
 
   return (

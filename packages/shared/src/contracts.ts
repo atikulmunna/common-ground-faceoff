@@ -106,9 +106,8 @@ export const mfaSetupVerifySchema = z.object({
 });
 
 export const mfaLoginVerifySchema = z.object({
-  email: z.string().email(),
-  token: z.string().length(6),
-  tempTicket: z.string().min(1),
+  mfaTicket: z.string().min(32).max(128),
+  token: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
   mfaType: z.enum(["totp", "sms"]).default("totp")
 });
 
