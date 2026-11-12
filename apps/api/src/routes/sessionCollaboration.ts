@@ -176,6 +176,17 @@ sessionCollaborationRouter.get("/:id/rounds/:roundNumber/positions", requireSess
     return;
   }
 
+  // Positions are snapshotted when an analysis starts, so running and failed rounds have snapshots
+  // too. Everyone's text may only be revealed once that round has completed results.
+  const completedRound = await prisma.analysisResult.findFirst({
+    where: { sessionId: req.params.id, roundNumber, status: "completed" },
+    select: { id: true },
+  });
+  if (!completedRound) {
+    res.status(404).json(createErrorResponse("not_found", "This round has no completed analysis"));
+    return;
+  }
+
   const snapshots = await prisma.positionSnapshot.findMany({
     where: {
       sessionId: req.params.id,

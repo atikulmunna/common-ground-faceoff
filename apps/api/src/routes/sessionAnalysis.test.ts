@@ -12,7 +12,20 @@ const db = vi.hoisted(() => {
         state.session && where.id === state.session.id ? state.session : null,
       findMany: vi.fn(async () => []),
     },
-    analysisResult: { findFirst: async () => state.latestResult },
+    analysisResult: {
+      findFirst: async ({ where }: { where: Row }) => {
+        const result = state.latestResult;
+        if (!result) return null;
+        if (where.roundNumber !== undefined && where.roundNumber !== result.roundNumber) return null;
+        if (where.status !== undefined && where.status !== result.status) return null;
+        return result;
+      },
+    },
+    positionSnapshot: {
+      findMany: vi.fn(async () => [
+        { userId: "user-1", roundNumber: 1, positionText: "Office days help new hires learn.", snapshotAt: new Date(0) },
+      ]),
+    },
   };
   return { state, prisma };
 });
@@ -122,5 +135,39 @@ describe("GET /sessions/demo-list", () => {
       .expect(404);
 
     expect(db.prisma.session.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /sessions/:id/rounds/:roundNumber/positions", () => {
+  beforeEach(() => {
+    db.state.session = {
+      id: "session-1",
+      creatorUserId: "user-1",
+      participants: [{ userId: "user-1" }],
+      status: "failed",
+    };
+    db.state.latestResult = null;
+    db.prisma.positionSnapshot.findMany.mockClear();
+  });
+
+  function roundPositions(roundNumber: number) {
+    return request(createApp())
+      .get(`/sessions/session-1/rounds/${roundNumber}/positions`)
+      .set("Authorization", authorization);
+  }
+
+  it("keeps everyone's text hidden for a round whose analysis did not complete", async () => {
+    await roundPositions(1).expect(404);
+
+    expect(db.prisma.positionSnapshot.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns the positions of a round with completed results", async () => {
+    db.state.session = { ...db.state.session, status: "completed" };
+    db.state.latestResult = { id: "result-1", roundNumber: 1, status: "completed" };
+
+    const response = await roundPositions(1).expect(200);
+
+    expect(response.body.data.snapshots).toHaveLength(1);
   });
 });
