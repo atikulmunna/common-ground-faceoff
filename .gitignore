@@ -15,3 +15,17 @@ npm-debug.log*
 Common_Ground_SRS_v1.1.md
 SRS_COMPLIANCE_MATRIX.md
 desktop.ini
+
+# Local-only working documents: requirements, plans, specs, task tracking, agent instructions
+*[Ss][Rr][Ss]*
+tasks.md
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+docs/plans/
+docs/specs/
+docs/design/
+docs/superpowers/
+*-plan.md
+*-spec.md
+*.plan.md
