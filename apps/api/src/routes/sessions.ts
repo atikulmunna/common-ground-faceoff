@@ -91,21 +91,6 @@ sessionsRouter.get("/", async (req, res) => {
   res.json(createSuccessResponse({ sessions: rows, total, page: pageNum, pageSize }));
 });
 
-sessionsRouter.get("/demo-list", async (_req, res) => {
-  const sessions = await prisma.session.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 20,
-    select: {
-      id: true,
-      topic: true,
-      status: true,
-      createdAt: true
-    }
-  });
-
-  res.json(createSuccessResponse({ sessions }));
-});
-
 sessionsRouter.post("/", requirePermission("create_session"), async (req, res) => {
   const parse = createSessionSchema.safeParse(req.body);
   if (!parse.success) {

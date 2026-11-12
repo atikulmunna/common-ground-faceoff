@@ -7,7 +7,11 @@ const db = vi.hoisted(() => {
   const state: { session: Row | null; latestResult: Row | null } = { session: null, latestResult: null };
   const prisma = {
     user: { findUnique: async () => ({ accountDeletedAt: null }) },
-    session: { findUnique: async () => state.session },
+    session: {
+      findUnique: async ({ where }: { where: Row }) =>
+        state.session && where.id === state.session.id ? state.session : null,
+      findMany: vi.fn(async () => []),
+    },
     analysisResult: { findFirst: async () => state.latestResult },
   };
   return { state, prisma };
@@ -104,5 +108,19 @@ describe("POST /sessions/:id/analyze", () => {
     runAnalysis.mockRejectedValueOnce(new Error("At least 2 participant positions are required for analysis"));
 
     await analyze().expect(422);
+  });
+});
+
+describe("GET /sessions/demo-list", () => {
+  it("no longer lists conversations from other users", async () => {
+    db.state.session = null;
+    db.prisma.session.findMany.mockClear();
+
+    await request(createApp())
+      .get("/sessions/demo-list")
+      .set("Authorization", authorization)
+      .expect(404);
+
+    expect(db.prisma.session.findMany).not.toHaveBeenCalled();
   });
 });
