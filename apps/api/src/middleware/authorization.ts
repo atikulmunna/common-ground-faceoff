@@ -155,7 +155,7 @@ export function checkPermission(
       allowed = true;
       break;
     case "org_scope":
-      // For org_scope, we allow it — the route handler should verify org membership
+      // Allowed here; requireSessionAccess (staffCanAccessSession) limits admins to their organization.
       allowed = true;
       break;
     case "if_granted":
@@ -166,7 +166,7 @@ export function checkPermission(
       }
       break;
     case "flagged_only":
-      // Limited access — allow through, route handler enforces flagged-only scope
+      // Allowed here; requireSessionAccess (staffCanAccessSession) limits moderators to flagged conversations.
       allowed = effectiveRole === "moderator";
       break;
     case "no":

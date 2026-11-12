@@ -3,6 +3,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { logDeniedAction } from "../middleware/authorization.js";
+import { staffCanAccessSession } from "../middleware/rbac.js";
 
 export const shareLinksRouter = Router();
 export const publicShareLinksRouter = Router();
@@ -97,7 +98,11 @@ shareLinksRouter.delete("/:id", async (req, res) => {
     return;
   }
 
-  if (session.creatorUserId !== req.user.id && req.user.role !== "institutional_admin") {
+  const isCreator = session.creatorUserId === req.user.id;
+  const isOrganizationAdmin =
+    req.user.role === "institutional_admin" && (await staffCanAccessSession(req.user, session));
+
+  if (!isCreator && !isOrganizationAdmin) {
     await logDeniedAction(req, "revoke_share_links", link.sessionId);
 
     res.status(403).json(createErrorResponse("authz_error", "Only creator/admin can revoke share links"));
