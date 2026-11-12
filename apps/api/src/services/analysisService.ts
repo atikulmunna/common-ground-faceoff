@@ -387,17 +387,39 @@ async function logPrompt(
   }
 }
 
+/**
+ * Calls the model and validates its JSON against `schema`, plus an optional `check`. A failed check
+ * counts as invalid output, so callLlm asks the model again.
+ */
 async function callStructuredLlm<T>(
   userPrompt: string,
   schema: z.ZodType<T>,
   pipelineRunId: string,
+  check?: (data: T) => void,
 ): Promise<{ response: LlmResponse; data: T }> {
   let data: T | undefined;
   const response = await callLlm(SYSTEM_PROMPT, userPrompt, (content) => {
-    data = schema.parse(parseJsonResponse<unknown>(content));
+    const parsed = schema.parse(parseJsonResponse<unknown>(content));
+    check?.(parsed);
+    data = parsed;
   }, { sessionId: pipelineRunId });
   if (data === undefined) throw new Error("LLM response validation did not produce data");
   return { response, data };
+}
+
+/** Rejects output that drops, renames, duplicates or adds a participant. */
+function expectParticipants(stage: string, expected: string[], returned: string[]): void {
+  const matches =
+    returned.length === expected.length &&
+    expected.every((label) => returned.filter((candidate) => candidate === label).length === 1);
+  if (!matches) {
+    throw new Error(`${stage} returned participants [${returned.join(", ")}], expected [${expected.join(", ")}]`);
+  }
+}
+
+/** Puts items back in the input's participant order (labels already validated). */
+function inParticipantOrder<T extends { label: string }>(items: T[], labels: string[]): T[] {
+  return labels.map((label) => items.find((item) => item.label === label)!);
 }
 
 async function runPipeline(
@@ -407,41 +429,42 @@ async function runPipeline(
   pipelineRunId: string,
   persistPromptLogs = true,
 ): Promise<AnalysisPipelineOutput> {
-  // Stage 1 – Normalization
+  // Every participant must come back exactly once under their own label. Mapping by array
+  // position instead would attribute one person's view to another if the model reordered them.
+  const labels = positions.map((position) => position.participantLabel);
+
+  // Stage 1: Normalization
   const normPrompt = normalizationPrompt(topic, positions);
   const normStart = Date.now();
   const { response: normRes, data: normData } = await callStructuredLlm<NormalizationResult>(
     normPrompt,
     normalizationSchema,
     pipelineRunId,
+    (data) => expectParticipants("Normalization", labels, data.positions.map((position) => position.label)),
   );
   if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "normalization", normPrompt, normRes, Date.now() - normStart);
-  normData.positions = normData.positions.map((position, index) => ({
-    ...position,
-    label: positions[index]?.participantLabel ?? position.label,
-  }));
+  normData.positions = inParticipantOrder(normData.positions, labels);
 
-  // Stage 2 – Steelman
+  // Stage 2: Steelman
   const steelPrompt_ = steelmanPrompt(topic, normData);
   const steelStart = Date.now();
   const { response: steelRes, data: steelData } = await callStructuredLlm<SteelmanResult>(
     steelPrompt_,
     steelmanSchema,
     pipelineRunId,
+    (data) => expectParticipants("Steelman", labels, data.steelmans.map((steelman) => steelman.label)),
   );
   if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "steelman", steelPrompt_, steelRes, Date.now() - steelStart);
-  steelData.steelmans = steelData.steelmans.map((steelman, index) => ({
-    ...steelman,
-    label: positions[index]?.participantLabel ?? steelman.label,
-  }));
+  steelData.steelmans = inParticipantOrder(steelData.steelmans, labels);
 
-  // Stage 3 – Value Extraction
+  // Stage 3: Value Extraction
   const valPrompt = valueExtractionPrompt(topic, steelData);
   const valStart = Date.now();
   const { response: valRes, data: valData } = await callStructuredLlm<ValueExtractionResult>(
     valPrompt,
     valueExtractionSchema,
     pipelineRunId,
+    (data) => expectParticipants("Value extraction", labels, data.participants.map((participant) => participant.label)),
   );
   if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "value_extraction", valPrompt, valRes, Date.now() - valStart);
 
