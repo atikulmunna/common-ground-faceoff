@@ -112,6 +112,12 @@ model Session {
   emailInvitations  EmailInvitation[]
   positionSnapshots PositionSnapshot[]
   promptLogs        PromptLog[]
+  feedbackRatings   FeedbackRating[]
+  sectionReactions  SectionReaction[]
+  sectionComments   SectionComment[]
+  redactionLogs     RedactionLog[]
+  moderationFlags   ModerationFlag[]
+  notificationEmails NotificationEmail[]
 }
 
 model SessionParticipant {
@@ -123,7 +129,7 @@ model SessionParticipant {
   positionText          String?
   positionSubmittedAt   DateTime?
   positionRemovedAt     DateTime?         // set when a moderator deletes the position; cleared when the author resubmits
-  session               Session           @relation(fields: [sessionId], references: [id])
+  session               Session           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   user                  User              @relation(fields: [userId], references: [id])
   moderationFlags       ModerationFlag[]
 
@@ -138,7 +144,7 @@ model PositionSnapshot {
   roundNumber   Int
   positionText  String
   snapshotAt    DateTime @default(now())
-  session       Session  @relation(fields: [sessionId], references: [id])
+  session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, userId, roundNumber])
   @@index([sessionId, roundNumber])
@@ -163,9 +169,9 @@ model AnalysisResult {
   modelVersion               String
   status                     SessionStatus
   createdAt                  DateTime @default(now())
-  session                    Session  @relation(fields: [sessionId], references: [id])
+  session                    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  @@index([sessionId, roundNumber])
+  @@unique([sessionId, roundNumber])
 }
 
 model AnalysisEvent {
@@ -178,7 +184,7 @@ model AnalysisEvent {
   reasonCode     String?
   actorType      String
   createdAt      DateTime @default(now())
-  session        Session  @relation(fields: [sessionId], references: [id])
+  session        Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 model ShareLink {
@@ -191,7 +197,7 @@ model ShareLink {
   revocationReason   String?
   expiresAt          DateTime?
   createdAt          DateTime @default(now())
-  session            Session  @relation(fields: [sessionId], references: [id])
+  session            Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 model FeedbackRating {
@@ -203,6 +209,7 @@ model FeedbackRating {
   comment        String?
   createdAt      DateTime @default(now())
   user           User     @relation(fields: [userId], references: [id])
+  session        Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
 }
@@ -215,6 +222,7 @@ model SectionReaction {
   reaction       String   // "represents", "misrepresents", "neutral"
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  session        Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, userId, section])
   @@index([sessionId])
@@ -240,6 +248,7 @@ model SectionComment {
   section   String
   text      String
   createdAt DateTime @default(now())
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
 }
@@ -290,6 +299,7 @@ model RedactionLog {
   blocked        Boolean         @default(false)
   metadata       Json?
   createdAt      DateTime        @default(now())
+  session        Session         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
 }
@@ -297,6 +307,7 @@ model RedactionLog {
 model ModerationFlag {
   id            String             @id @default(cuid())
   sessionId     String
+  session       Session            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   participantId String?            // whose position the flag is about, when known (automatic flags)
   participant   SessionParticipant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
   reportedBy    String
@@ -359,6 +370,8 @@ model NotificationEmail {
   kind              String
   recipientEmail    String
   sessionId         String?
+  // Emails about a conversation that is deleted are no longer worth sending.
+  session           Session? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   payload           Json?
   status            String   @default("pending") // pending, retrying, sent, failed
   attempts          Int      @default(0)

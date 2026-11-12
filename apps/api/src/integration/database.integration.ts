@@ -289,11 +289,40 @@ describe("retention and account erasure", () => {
         sessionId: session.id,
       },
     });
+    // Tables that only gained a foreign key in migration 0020.
+    await prisma.sectionComment.create({
+      data: { sessionId: session.id, userId: user.id, section: "sharedFoundations", text: "fixture" },
+    });
+    await prisma.sectionReaction.create({
+      data: { sessionId: session.id, userId: user.id, section: "sharedFoundations", reaction: "represents" },
+    });
+    await prisma.feedbackRating.create({
+      data: { sessionId: session.id, userId: user.id, faithfulness: 4, neutrality: 4 },
+    });
+    await prisma.redactionLog.create({
+      data: { sessionId: session.id, participantId: "combined", stage: "mask", findingsCount: 0 },
+    });
+    await prisma.moderationFlag.create({
+      data: { sessionId: session.id, reportedBy: user.id, reason: "fixture" },
+    });
 
     const { runRetentionCleanup } = await import("../jobs/retentionJob.js");
     await expect(runRetentionCleanup(prisma)).resolves.toEqual({ deleted: 1 });
     await expect(prisma.session.findUnique({ where: { id: session.id } })).resolves.toBeNull();
-    await expect(prisma.notificationEmail.count({ where: { sessionId: session.id } })).resolves.toBe(0);
+    // Deleting the conversation cascades to everything that belongs to it.
+    const where = { sessionId: session.id };
+    await expect(Promise.all([
+      prisma.sessionParticipant.count({ where }),
+      prisma.positionSnapshot.count({ where }),
+      prisma.promptLog.count({ where }),
+      prisma.emailInvitation.count({ where }),
+      prisma.notificationEmail.count({ where }),
+      prisma.sectionComment.count({ where }),
+      prisma.sectionReaction.count({ where }),
+      prisma.feedbackRating.count({ where }),
+      prisma.redactionLog.count({ where }),
+      prisma.moderationFlag.count({ where }),
+    ])).resolves.toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
     await prisma.user.delete({ where: { id: user.id } });
   });

@@ -39,22 +39,9 @@ export async function runRetentionCleanup(db: PrismaClient = prisma) {
     return { deleted: 0 };
   }
 
-  await db.$transaction([
-    db.sectionComment.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.sectionReaction.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.feedbackRating.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.analysisEvent.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.analysisResult.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.shareLink.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.moderationFlag.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.redactionLog.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.positionSnapshot.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.promptLog.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.emailInvitation.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.notificationEmail.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.sessionParticipant.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    db.session.deleteMany({ where: { id: { in: sessionIds } } }),
-  ]);
+  // Everything that belongs to a conversation has a cascading foreign key (migration 0020), so
+  // deleting the conversations removes their participants, results, comments, logs and so on.
+  await db.session.deleteMany({ where: { id: { in: sessionIds } } });
 
   console.log(`Retention cleanup: deleted ${sessionIds.length} expired free-tier sessions.`);
   return { deleted: sessionIds.length };
