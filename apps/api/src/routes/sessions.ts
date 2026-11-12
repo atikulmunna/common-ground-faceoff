@@ -480,7 +480,9 @@ sessionsRouter.get("/:id/analysis", requireSessionAccess, async (req, res) => {
 
   res.json(
     createSuccessResponse({
-      status: result.status,
+      // The conversation's status, not the result's: after re-entry the latest result belongs
+      // to the previous round while the session is collecting perspectives again.
+      status: session.status,
       pipelineRunId: result.pipelineRunId,
       analysisVersion: result.analysisVersion,
       promptTemplateVersion: result.promptTemplateVersion,

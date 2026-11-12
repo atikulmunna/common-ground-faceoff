@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 
 import { ReadabilityMeter } from "./readability-meter";
@@ -9,6 +9,11 @@ import { GuidedPrompt } from "./guided-prompt";
 import { apiGet, apiPost } from "../lib-api";
 import { checkContentPolicy } from "../lib/content-policy";
 import { getPublicApiBaseUrl } from "../lib/api-base";
+import { useLiveRefresh } from "../lib/use-live-refresh";
+
+/** Check a running analysis often; check a conversation that is still gathering perspectives rarely. */
+const ANALYSIS_POLL_MS = 3_000;
+const GATHERING_POLL_MS = 30_000;
 
 /** Lightweight inline-markdown renderer: **bold**, *italic*, \n → <br/> */
 function renderMarkdown(text: string): React.ReactNode[] {
@@ -56,13 +61,15 @@ type SessionData = {
     userId: string;
     role: string;
     positionText: string | null;
+    positionSubmittedAt: string | null;
   }>;
 };
 
 type AnalysisResponse = {
   success: boolean;
   data: {
-    status: "queued" | "running" | "completed" | "failed" | "needs_input";
+    /** The conversation's current status; `result` may belong to an earlier round. */
+    status: string;
     estimatedCompletionAt: string | null;
     result: {
       sharedFoundations: string;
@@ -173,17 +180,22 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       const response = await apiGet<SessionResponse>(`/sessions/${sessionId}`);
       setSession(response.data?.session ?? null);
       setError(null);
-      if (currentUserId) {
-        const self = response.data?.session.participants.find((p) => p.userId === currentUserId);
-        if (self?.positionText) {
-          setPositionText(self.positionText);
-          setHasSubmitted(true);
-        }
-      }
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "Failed to load session");
     }
-  }, [sessionId, currentUserId]);
+  }, [sessionId]);
+
+  // Show the viewer's saved perspective once; later refreshes must not overwrite an edit in progress.
+  const positionHydrated = useRef(false);
+  useEffect(() => {
+    if (positionHydrated.current || !session || !currentUserId) return;
+    positionHydrated.current = true;
+    const self = session.participants.find((p) => p.userId === currentUserId);
+    if (self?.positionText) {
+      setPositionText(self.positionText);
+      setHasSubmitted(true);
+    }
+  }, [session, currentUserId]);
 
   const refreshAnalysis = useCallback(async () => {
     try {
@@ -267,18 +279,16 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     }
   }
 
+  // Initial load. Rounds, reactions and comments follow once results exist (see below).
   useEffect(() => {
     if (authStatus === "loading") return;
-
     void refreshSession();
-    void fetchRounds();
-    void fetchComments();
+    void refreshAnalysis();
     void fetchModerationSla();
-    const timer = setInterval(() => {
-      void refreshAnalysis();
-      void refreshReactions();
-      void fetchModerationSla();
-    }, 3000);
+  }, [authStatus, refreshSession, refreshAnalysis, fetchModerationSla]);
+
+  useEffect(() => {
+    if (authStatus === "loading") return;
 
     // CG-FR07: Session inactivity should reflect real user activity.
     // Send heartbeat only on user activity, throttled to once per minute.
@@ -298,12 +308,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     }
 
     return () => {
-      clearInterval(timer);
       for (const event of activityEvents) {
         window.removeEventListener(event, sendHeartbeat);
       }
     };
-  }, [authStatus, sessionId, refreshAnalysis, refreshSession, refreshReactions, fetchRounds, fetchComments, fetchModerationSla]);
+  }, [authStatus, sessionId]);
 
   async function submitPosition() {
     setBusy(true);
@@ -362,7 +371,6 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     try {
       await apiPost(`/sessions/${sessionId}/reenter`, {});
       setEditing(true);
-      setHasSubmitted(false);
       setFeedbackSaved(false);
       setAnalysis(null);
       setShowComparison(false);
@@ -379,7 +387,41 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const showEditor = !hasSubmitted || editing;
   const policyWarnings = useMemo(() => checkContentPolicy(positionText), [positionText]);
   const deadlinePassed = session?.deadline ? new Date(session.deadline) < new Date() : false;
-  const submittedCount = session?.participants.filter((participant) => Boolean(participant.positionText)).length ?? 0;
+  // Others' text stays hidden until results exist, so count submissions by timestamp.
+  const submittedCount = session?.participants.filter((participant) => Boolean(participant.positionSubmittedAt)).length ?? 0;
+  const isAnalyzing = status === "queued" || status === "running";
+  const showResults = status === "completed" && Boolean(analysis?.result);
+
+  // When results appear (on load, or when an analysis finishes while the page is open),
+  // load what goes with them. Others' perspectives also become visible at that point.
+  const loadedStatus = analysis?.status ?? session?.status ?? null;
+  const previousStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const previous = previousStatus.current;
+    previousStatus.current = loadedStatus;
+    if (loadedStatus !== "completed" || previous === "completed") return;
+    void fetchRounds();
+    void refreshReactions();
+    void fetchComments();
+    if (previous !== null) void refreshSession();
+  }, [loadedStatus, fetchRounds, refreshReactions, fetchComments, refreshSession]);
+
+  // Poll often only while an analysis runs, rarely while perspectives are gathered, and not at
+  // all once results exist; then refresh reactions and comments when the viewer returns to the tab.
+  const refreshLive = useCallback(async () => {
+    if (status === "completed") {
+      await Promise.all([refreshReactions(), fetchComments()]);
+    } else if (isAnalyzing) {
+      await refreshAnalysis();
+    } else {
+      await Promise.all([refreshSession(), refreshAnalysis()]);
+    }
+  }, [status, isAnalyzing, refreshReactions, fetchComments, refreshAnalysis, refreshSession]);
+
+  useLiveRefresh(
+    refreshLive,
+    authStatus === "loading" || status === "completed" ? null : isAnalyzing ? ANALYSIS_POLL_MS : GATHERING_POLL_MS,
+  );
 
   async function handleReport() {
     const reason = prompt("Describe the issue (at least 10 characters):");
@@ -508,8 +550,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         )}
       </article>
 
-      {(analysis?.result || isLocked) && <article className="card grid results-card">
-        {analysis?.result ? (
+      {(showResults || isAnalyzing) && <article className="card grid results-card">
+        {showResults && analysis?.result ? (
           <>
             <CommonGroundMap
               result={analysis.result}
