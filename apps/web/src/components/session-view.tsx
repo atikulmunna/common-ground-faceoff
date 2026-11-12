@@ -58,7 +58,8 @@ type SessionData = {
   deadline: string | null;
   participants: Array<{
     id: string;
-    userId: string;
+    /** Null for other participants while anonymous mode hides identities. */
+    userId: string | null;
     role: string;
     positionText: string | null;
     positionSubmittedAt: string | null;

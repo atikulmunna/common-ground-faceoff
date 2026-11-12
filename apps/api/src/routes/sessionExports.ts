@@ -25,7 +25,7 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
     include: {
       participants: {
         include: {
-          user: { select: { displayName: true, email: true } }
+          user: { select: { displayName: true } }
         }
       }
     }

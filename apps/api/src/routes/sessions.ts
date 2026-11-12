@@ -418,18 +418,28 @@ sessionsRouter.get("/:id", requireSessionAccess, async (req, res) => {
     return;
   }
 
+  const viewerIsCreator = session.creatorUserId === req.user.id;
   const sessionWithPrivacy = {
     ...session,
     participants: session.participants.map((participant: { userId: string; positionText: string | null; user: { id: string; email: string; displayName: string } }) => {
-      const canSeeRaw = participant.userId === req.user.id || session.status === "completed";
+      const isViewer = participant.userId === req.user.id;
+      const canSeeRaw = isViewer || session.status === "completed";
       // CG-FR14: In anonymous mode, hide other participant identities until analysis is complete
-      const hideIdentity = session.anonymousMode && session.status !== "completed" && participant.userId !== req.user.id;
+      const hideIdentity = session.anonymousMode && session.status !== "completed" && !isViewer;
+      // Emails go only to the creator, who invited people by email, and to the viewer about themselves.
+      const showEmail = viewerIsCreator || isViewer;
       return {
         ...participant,
         positionText: canSeeRaw ? participant.positionText : null,
+        // An account id is the same in every conversation, so it would identify an anonymous participant.
+        userId: hideIdentity ? null : participant.userId,
         user: hideIdentity
-          ? { id: participant.user.id, email: "anonymous", displayName: "Anonymous Participant" }
-          : participant.user,
+          ? { id: null, displayName: "Anonymous Participant" }
+          : {
+              id: participant.user.id,
+              displayName: participant.user.displayName,
+              ...(showEmail ? { email: participant.user.email } : {}),
+            },
       };
     })
   };
