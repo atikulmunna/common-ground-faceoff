@@ -1,0 +1,2 @@
+# Shell scripts run on Linux (CI, the deploy server); keep Unix line endings on every checkout.
+*.sh text eol=lf

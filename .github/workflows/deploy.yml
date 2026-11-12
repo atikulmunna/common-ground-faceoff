@@ -1,0 +1,114 @@
+name: Deploy
+
+# Builds both images from the selected commit, pushes them to ECR and switches the Lightsail
+# server to them. Started by hand; setup steps are in the README under "Deploying".
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # lets the job assume the AWS role through GitHub OIDC; no stored AWS keys
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+jobs:
+  build:
+    name: Build and push images
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      registry: ${{ steps.ecr.outputs.registry }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Name the release after the commit
+        id: tag
+        run: echo "tag=release-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Assume the deploy role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          # The registry address (job output) contains the account id; masking it would drop the output.
+          mask-aws-account-id: false
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push the API image
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/common-ground-api:${{ steps.tag.outputs.tag }}
+        run: |
+          docker build -f docker/api.Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Build and push the web image
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/common-ground-web:${{ steps.tag.outputs.tag }}
+        run: |
+          docker build -f docker/web.Dockerfile \
+            --build-arg NEXT_PUBLIC_API_BASE_URL="${{ vars.PUBLIC_API_URL }}" \
+            --build-arg NEXT_PUBLIC_ENABLE_REGISTRATION="${{ vars.NEXT_PUBLIC_ENABLE_REGISTRATION || 'false' }}" \
+            --build-arg NEXT_PUBLIC_ENABLE_SMS_MFA="${{ vars.NEXT_PUBLIC_ENABLE_SMS_MFA || 'false' }}" \
+            --build-arg NEXT_PUBLIC_GOOGLE_AUTH_ENABLED="${{ vars.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED || 'false' }}" \
+            --build-arg NEXT_PUBLIC_MICROSOFT_AUTH_ENABLED="${{ vars.NEXT_PUBLIC_MICROSOFT_AUTH_ENABLED || 'false' }}" \
+            -t "$IMAGE" .
+          docker push "$IMAGE"
+
+  deploy:
+    name: Back up, migrate and switch the server
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assume the deploy role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          # The registry address (job output) contains the account id; masking it would drop the output.
+          mask-aws-account-id: false
+
+      - name: Configure SSH
+        env:
+          LIGHTSAIL_SSH_KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          LIGHTSAIL_HOST: ${{ vars.LIGHTSAIL_HOST }}
+          LIGHTSAIL_HOST_KEY: ${{ vars.LIGHTSAIL_HOST_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$LIGHTSAIL_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s %s\n' "$LIGHTSAIL_HOST" "$LIGHTSAIL_HOST_KEY" > ~/.ssh/known_hosts
+
+      # A fresh ECR password for the server on every deploy (they expire after 12 hours).
+      - name: Log the server in to ECR
+        env:
+          LIGHTSAIL_HOST: ${{ vars.LIGHTSAIL_HOST }}
+          REGISTRY: ${{ needs.build.outputs.registry }}
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | ssh -i ~/.ssh/deploy_key -o BatchMode=yes "ubuntu@$LIGHTSAIL_HOST" \
+                "sudo docker login --username AWS --password-stdin $REGISTRY"
+
+      - name: Deploy
+        env:
+          LIGHTSAIL_HOST: ${{ vars.LIGHTSAIL_HOST }}
+          TAG: ${{ needs.build.outputs.tag }}
+          REGISTRY: ${{ needs.build.outputs.registry }}
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
+          PUBLIC_WEB_URL: ${{ vars.PUBLIC_WEB_URL }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "ubuntu@$LIGHTSAIL_HOST" \
+            "bash -s -- '$TAG' '$REGISTRY' '$PUBLIC_API_URL' '$PUBLIC_WEB_URL'" < scripts/deploy/remote-deploy.sh
