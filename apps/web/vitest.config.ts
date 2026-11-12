@@ -8,7 +8,7 @@ export default defineConfig({
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./vitest.setup.ts"],
-    // See apps/api/vitest.config.ts: a small fixed pool avoids worker crashes on many-core machines.
+    // See apps/api/vitest.config.ts: a small fixed pool runs faster than one process per core.
     maxWorkers: 4,
   },
 });
