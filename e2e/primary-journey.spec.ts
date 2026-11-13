@@ -94,7 +94,8 @@ test("signs in, starts a conversation, shares a perspective, reviews common grou
   await page.getByRole("button", { name: "Send report" }).click();
   await expect(page.getByText("Report sent. A moderator will review it.")).toBeVisible();
 
-  await page.getByLabel("Your perspective", { exact: true }).fill(position);
+  await page.getByLabel("What do you believe?").fill("Browser-level checks should cover the release-critical journey.");
+  await page.getByLabel("Why do you believe it?").fill(position);
   await page.getByRole("button", { name: "Submit your perspective" }).click();
   await expect(page.getByRole("button", { name: "Find common ground" })).toBeVisible();
 

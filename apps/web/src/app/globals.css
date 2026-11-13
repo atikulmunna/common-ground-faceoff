@@ -767,22 +767,41 @@ label, legend { font-weight: 700; }
 }
 .invite-form__fields { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
 
-.guided-prompt {
+/* Three questions in order; each number prints in one of the inks, the last in the shared green. */
+.guided-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px 22px;
-  background: var(--sun-tint);
-  border-radius: var(--radius);
+  gap: 24px;
+  counter-reset: step;
 }
-.guided-prompt__header {
+.guided-steps > li {
+  position: relative;
+  padding-left: 48px;
+  counter-increment: step;
+}
+.guided-steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-family: var(--display);
+  font-weight: 800;
+  background: var(--teal);
+  color: #fff;
 }
-.guided-prompt label { color: var(--sun-ink); }
+.guided-steps > li:nth-child(2)::before { background: var(--sun); color: var(--ink); }
+.guided-steps > li:nth-child(3)::before { background: var(--leaf); }
+.guided-steps label { font-size: 1.125rem; }
+.editor-mode { align-self: flex-start; }
 
 .text-meter {
   display: flex;

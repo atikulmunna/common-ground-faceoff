@@ -3,9 +3,13 @@
 import { useMemo, useState } from "react";
 
 import { checkContentPolicy } from "../../lib/content-policy";
-import { GuidedPrompt } from "../guided-prompt";
-import { ReadabilityMeter } from "../readability-meter";
+import { TextMeter } from "../text-meter";
 
+/**
+ * The perspective editor. A new perspective starts as three questions (what you believe, why, and
+ * what could change your mind); the first two make up the perspective. "Write freely instead"
+ * switches to one box, which is also how an existing perspective is edited.
+ */
 export function PerspectiveEditor({
   text,
   onChange,
@@ -40,9 +44,14 @@ export function PerspectiveEditor({
   carryNote?: { round: number; text: string } | null;
 }) {
   const [confirmingWarnings, setConfirmingWarnings] = useState(false);
-  const warnings = useMemo(() => checkContentPolicy(text), [text]);
+  const [mode, setMode] = useState<"guided" | "free" | null>(null);
+  const [belief, setBelief] = useState("");
+  const [reasons, setReasons] = useState("");
+  const warnings = useMemo(() => checkContentPolicy(`${text}\n\n${changeMind}`), [text, changeMind]);
   const showEditor = !hasSubmitted || editing;
-  const tooShort = text.length < 100;
+  const tooShort = text.trim().length < 100;
+  // A saved perspective or a restored draft cannot be split back into answers, so it opens as free text.
+  const guided = (mode ?? (hasSubmitted || text.trim() ? "free" : "guided")) === "guided";
 
   if (!showEditor) {
     return (
@@ -61,6 +70,14 @@ export function PerspectiveEditor({
     );
   }
 
+  function updateGuided(nextBelief: string, nextReasons: string) {
+    setMode("guided");
+    setBelief(nextBelief);
+    setReasons(nextReasons);
+    setConfirmingWarnings(false);
+    onChange([nextBelief.trim(), nextReasons.trim()].filter(Boolean).join("\n\n"));
+  }
+
   function handleSubmit() {
     // CG-FR19: content warnings need an explicit second step before submitting.
     if (warnings.length > 0 && !confirmingWarnings) {
@@ -71,11 +88,31 @@ export function PerspectiveEditor({
     onSubmit();
   }
 
+  const changeMindField = (
+    <>
+      <label htmlFor="change-mind">What could change your mind? (optional)</label>
+      <textarea
+        id="change-mind"
+        rows={3}
+        maxLength={1000}
+        placeholder="For example, a fact or a result that would make you think again."
+        value={changeMind}
+        onChange={(event) => { onChangeMindChange(event.target.value); setConfirmingWarnings(false); }}
+        aria-describedby="change-mind-help"
+      />
+      <p id="change-mind-help" className="field__help">
+        This helps the results say what would settle a difference about facts.{" "}
+        {anonymous
+          ? "Like your perspective, nobody else sees these words."
+          : "Like your perspective, others can read it once the results are ready."}
+      </p>
+    </>
+  );
+
   return (
     <section className="panel" aria-labelledby="write-heading">
       <h2 id="write-heading">Share your perspective</h2>
       <p className="section-help">
-        Say what you believe, why it matters to you, and what could change your mind.{" "}
         {anonymous
           ? "Nobody else sees your own words; they see the restated version in the results."
           : "Nobody else sees it until the results are ready."}
@@ -91,7 +128,11 @@ export function PerspectiveEditor({
         <div className="notice carry-note">
           <p>In round {carryNote.round} you said your restated view missed: &ldquo;{carryNote.text}&rdquo;</p>
           {!text.includes(carryNote.text) && (
-            <button type="button" className="link-button" onClick={() => onChange(text ? `${text}\n\n${carryNote.text}` : carryNote.text)}>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => { setMode("free"); onChange(text ? `${text}\n\n${carryNote.text}` : carryNote.text); }}
+            >
               Add it to my perspective
             </button>
           )}
@@ -102,39 +143,65 @@ export function PerspectiveEditor({
         <p className="notice notice--warn">The deadline has passed, so perspectives can no longer be added or changed.</p>
       ) : (
         <>
-          {!hasSubmitted && <GuidedPrompt onApply={(addition) => onChange(text ? `${text}\n\n${addition}` : addition)} />}
-          <div className="field">
-            <label htmlFor="perspective">Your perspective</label>
-            <textarea
-              id="perspective"
-              rows={9}
-              minLength={100}
-              maxLength={5000}
-              placeholder="What do you think, and why?"
-              value={text}
-              onChange={(event) => { onChange(event.target.value); setConfirmingWarnings(false); }}
-            />
-            <ReadabilityMeter text={text} />
-          </div>
+          {guided ? (
+            <ol className="guided-steps">
+              <li className="field">
+                <label htmlFor="belief">What do you believe?</label>
+                <p id="belief-help" className="field__help">Your view in a sentence or two.</p>
+                <textarea
+                  id="belief"
+                  rows={3}
+                  maxLength={1500}
+                  value={belief}
+                  aria-describedby="belief-help"
+                  onChange={(event) => updateGuided(event.target.value, reasons)}
+                />
+              </li>
+              <li className="field">
+                <label htmlFor="reasons">Why do you believe it?</label>
+                <p id="reasons-help" className="field__help">Your reasons, and what you have seen or experienced that supports them.</p>
+                <textarea
+                  id="reasons"
+                  rows={6}
+                  maxLength={3500}
+                  value={reasons}
+                  aria-describedby="reasons-help"
+                  onChange={(event) => updateGuided(belief, event.target.value)}
+                />
+                <TextMeter text={text} />
+              </li>
+              <li className="field">{changeMindField}</li>
+            </ol>
+          ) : (
+            <>
+              <div className="field">
+                <label htmlFor="perspective">Your perspective</label>
+                <textarea
+                  id="perspective"
+                  rows={9}
+                  minLength={100}
+                  maxLength={5000}
+                  placeholder="What do you believe, and why?"
+                  value={text}
+                  onChange={(event) => { onChange(event.target.value); setConfirmingWarnings(false); }}
+                />
+                <TextMeter text={text} />
+              </div>
+              <div className="field">{changeMindField}</div>
+            </>
+          )}
 
-          <div className="field">
-            <label htmlFor="change-mind">What could change your mind? (optional)</label>
-            <textarea
-              id="change-mind"
-              rows={3}
-              maxLength={1000}
-              placeholder="For example, a fact or a result that would make you think again."
-              value={changeMind}
-              onChange={(event) => onChangeMindChange(event.target.value)}
-              aria-describedby="change-mind-help"
-            />
-            <p id="change-mind-help" className="field__help">
-              This helps the results say what would settle a difference about facts.{" "}
-              {anonymous
-                ? "Like your perspective, nobody else sees these words."
-                : "Like your perspective, others can read it once the results are ready."}
-            </p>
-          </div>
+          {guided ? (
+            <button type="button" className="link-button editor-mode" onClick={() => setMode("free")}>
+              Write freely instead
+            </button>
+          ) : (
+            !hasSubmitted && !text.trim() && (
+              <button type="button" className="link-button editor-mode" onClick={() => setMode("guided")}>
+                Answer three questions instead
+              </button>
+            )
+          )}
 
           {warnings.length > 0 && (
             <ul className="warnings" role="alert" aria-label="Before you submit">
@@ -164,7 +231,7 @@ export function PerspectiveEditor({
                 {confirmingWarnings ? "Keep editing" : "Cancel"}
               </button>
             )}
-            {tooShort && <span className="field__help">At least 100 characters.</span>}
+            {tooShort && <span className="field__help">At least 100 characters{guided ? " across your first two answers" : ""}.</span>}
           </div>
         </>
       )}

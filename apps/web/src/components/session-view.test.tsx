@@ -211,7 +211,7 @@ describe("SessionView live updates", () => {
     await renderConversation();
 
     expect(screen.queryByText(/A moderator removed your perspective/)).not.toBeNull();
-    expect(screen.queryByLabelText("Your perspective")).not.toBeNull();
+    expect(screen.queryByLabelText("What do you believe?")).not.toBeNull();
   });
 });
 
