@@ -111,6 +111,18 @@ describe("GET /sessions/:id details for the conversation page", () => {
     expect(participantView.body.data.session.viewer).toEqual({ isCreator: false, isParticipant: true, canShare: false });
   });
 
+  it("gives each participant the label the analysis uses, whatever order the database returns", async () => {
+    const participants = db.state.session?.participants as Row[];
+    db.state.session = { ...db.state.session, participants: [...participants].reverse() };
+
+    const listed = (await getConversation("creator")).body.data.session.participants as Row[];
+
+    expect(listed.map((row) => [row.id, row.label])).toEqual([
+      ["participant-creator", "Participant A"],
+      ["participant-other", "Participant B"],
+    ]);
+  });
+
   it("shows the creator who was invited, and nobody else", async () => {
     expect((await getConversation("creator")).body.data.session.invitations).toEqual([
       { email: "other@example.test", status: "sent" },

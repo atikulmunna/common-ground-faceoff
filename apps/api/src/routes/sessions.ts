@@ -18,7 +18,7 @@ import {
   startAnalysis,
 } from "../services/analysisService.js";
 import { wakeAnalysisWorker } from "../services/analysisWorker.js";
-import { anonymousOrderKey, participantLimit } from "../lib/conversationPrivacy.js";
+import { labelOrder, participantLabel, participantLimit } from "../lib/conversationPrivacy.js";
 import { detectSeverity } from "./moderation.js";
 import { computeModerationSlaDueAt } from "../lib/moderationSla.js";
 import { sendSessionInvitation } from "../services/emailService.js";
@@ -411,11 +411,9 @@ sessionsRouter.get("/:id", requireSessionAccess, async (req, res) => {
   const self = session.participants.find((participant) => participant.userId === req.user.id);
 
   // CG-FR14 / D1: in an anonymous conversation nobody learns who wrote what, before or after results.
-  // Listing others in a stable shuffled order keeps the list from following the order people joined.
-  const participants = session.anonymousMode
-    ? [...session.participants].sort((a, b) =>
-        anonymousOrderKey(session.id, a.id).localeCompare(anonymousOrderKey(session.id, b.id)))
-    : session.participants;
+  // Participants are listed in label order, which for anonymous conversations is a stable shuffle,
+  // so the list does not follow the order people joined.
+  const participants = labelOrder(session.id, session.participants, session.anonymousMode);
 
   const [creator, moderationHold, invitations] = await Promise.all([
     prisma.user.findUnique({ where: { id: session.creatorUserId }, select: { tier: true } }),
@@ -450,7 +448,7 @@ sessionsRouter.get("/:id", requireSessionAccess, async (req, res) => {
     pause,
     // The creator invited people by email, so they may see who was invited (but, when anonymous, not who wrote what).
     ...(invitations ? { invitations } : {}),
-    participants: participants.map((participant: { userId: string; positionText: string | null; positionRemovedAt: Date | null; user: { id: string; email: string; displayName: string } }) => {
+    participants: participants.map((participant: { userId: string; positionText: string | null; positionRemovedAt: Date | null; user: { id: string; email: string; displayName: string } }, index: number) => {
       const isViewer = participant.userId === req.user.id;
       const hideIdentity = session.anonymousMode && !isViewer;
       const canSeeRaw = isViewer || (session.status === "completed" && !session.anonymousMode);
@@ -458,6 +456,8 @@ sessionsRouter.get("/:id", requireSessionAccess, async (req, res) => {
       const showEmail = viewerIsCreator || isViewer;
       return {
         ...participant,
+        // The label the analysis uses for this person, so the page can match restated views to people.
+        label: participantLabel(index),
         positionText: canSeeRaw ? participant.positionText : null,
         // Only the author learns that a moderator removed their perspective.
         positionRemovedAt: isViewer ? participant.positionRemovedAt : null,

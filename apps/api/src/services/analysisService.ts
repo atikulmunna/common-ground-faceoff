@@ -2,7 +2,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 
 import { prisma } from "../lib/prisma.js";
-import { anonymousOrderKey } from "../lib/conversationPrivacy.js";
+import { labelOrder, participantLabel } from "../lib/conversationPrivacy.js";
 import { redactPII } from "./redactionService.js";
 import { callLlm, parseJsonResponse, type LlmResponse } from "./llmProvider.js";
 import { enqueueAnalysisCompletionEmails, processNotificationEmailOutbox } from "./emailOutbox.js";
@@ -625,13 +625,9 @@ async function loadPositions(sessionId: string) {
   });
   // Anonymous conversations use a stable shuffled order instead, so labels do not follow the
   // order people were invited in (the creator knows that order).
-  const participants = session.anonymousMode
-    ? [...joined].sort((a, b) => anonymousOrderKey(sessionId, a.id).localeCompare(anonymousOrderKey(sessionId, b.id)))
-    : joined;
+  const participants = labelOrder(sessionId, joined, session.anonymousMode);
   const positions: ParticipantPosition[] = participants.flatMap((p, idx) =>
-    p.positionText
-      ? [{ participantLabel: `Participant ${String.fromCharCode(65 + idx)}`, positionText: p.positionText }]
-      : [],
+    p.positionText ? [{ participantLabel: participantLabel(idx), positionText: p.positionText }] : [],
   );
   return { session, participants, positions };
 }

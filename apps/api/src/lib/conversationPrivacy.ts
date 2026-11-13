@@ -27,3 +27,19 @@ export function attributeToViewer<T extends { userId: string }>(
 export function anonymousOrderKey(sessionId: string, id: string): string {
   return createHash("sha256").update(`${sessionId}:${id}`).digest("hex");
 }
+
+const byKey = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * The order participants are labelled in: by when they joined (ids sort by creation time), or a
+ * stable shuffle when anonymous. The analysis and the conversation page both use it, so
+ * "Participant B" on the page is the person the analysis called Participant B.
+ */
+export function labelOrder<T extends { id: string }>(sessionId: string, rows: T[], anonymous: boolean): T[] {
+  return [...rows].sort((a, b) =>
+    anonymous ? byKey(anonymousOrderKey(sessionId, a.id), anonymousOrderKey(sessionId, b.id)) : byKey(a.id, b.id));
+}
+
+export function participantLabel(index: number): string {
+  return `Participant ${String.fromCharCode(65 + index)}`;
+}
