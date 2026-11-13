@@ -113,7 +113,25 @@ export function NextStep({
   );
 }
 
-export function AnalysisProgress({ estimatedCompletionAt }: { estimatedCompletionAt: string | null }) {
+/** What each of the five analysis stages does, in the words people see. */
+const STAGE_LABELS = [
+  "Reading each perspective",
+  "Restating each perspective",
+  "Finding what matters to each person",
+  "Sorting out the differences",
+  "Finding common ground",
+];
+
+export function AnalysisProgress({
+  status,
+  progress,
+  estimatedCompletionAt,
+}: {
+  status: string;
+  /** The stage a running analysis has reached; null while queued or before the first stage. */
+  progress: { stage: number; total: number } | null;
+  estimatedCompletionAt: string | null;
+}) {
   const [remainingLabel, setRemainingLabel] = useState<string | null>(null);
 
   // CG-FR57: a rough time left, updated every few seconds.
@@ -143,8 +161,24 @@ export function AnalysisProgress({ estimatedCompletionAt }: { estimatedCompletio
       </div>
       <div>
         <h2 id="progress-heading">Finding common ground</h2>
-        <p>Each perspective is being restated and compared. You can close this page; the analysis keeps going.</p>
+        <p className="progress__stage">
+          {progress
+            ? `${STAGE_LABELS[progress.stage - 1] ?? "Working"} (${progress.stage} of ${progress.total})`
+            : status === "queued" ? "Waiting to start" : "Starting"}
+        </p>
+        <ol className="progress__steps" aria-hidden="true">
+          {STAGE_LABELS.map((label, index) => (
+            <li
+              key={label}
+              className={progress && index + 1 < progress.stage ? "is-done" : progress && index + 1 === progress.stage ? "is-current" : undefined}
+            />
+          ))}
+        </ol>
         {remainingLabel && <p className="field__help">{remainingLabel}</p>}
+        <p>
+          You can close this page; the analysis keeps going. We will email you when the results are ready, unless you
+          turned those emails off in your profile.
+        </p>
       </div>
     </section>
   );

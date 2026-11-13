@@ -15,6 +15,7 @@ import {
   ANALYSIS_VERSION,
   AnalysisConflictError,
   PROMPT_TEMPLATE_VERSION,
+  readAnalysisProgress,
   startAnalysis,
 } from "../services/analysisService.js";
 import { wakeAnalysisWorker } from "../services/analysisWorker.js";
@@ -493,6 +494,9 @@ sessionsRouter.get("/:id/analysis", requireSessionAccess, async (req, res) => {
     return;
   }
 
+  // 4.8: which of the five stages a running analysis has reached.
+  const progress = session.status === "running" ? await readAnalysisProgress(req.params.id) : null;
+
   if (!result) {
     res.json(
       createSuccessResponse({
@@ -502,6 +506,7 @@ sessionsRouter.get("/:id/analysis", requireSessionAccess, async (req, res) => {
         promptTemplateVersion: null,
         result: null,
         estimatedCompletionAt: session.estimatedCompletionAt,
+        progress,
       })
     );
     return;
@@ -517,6 +522,7 @@ sessionsRouter.get("/:id/analysis", requireSessionAccess, async (req, res) => {
       promptTemplateVersion: result.promptTemplateVersion,
       result,
       estimatedCompletionAt: session.estimatedCompletionAt,
+      progress,
     })
   );
 });

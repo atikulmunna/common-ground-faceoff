@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 type Row = Record<string, unknown>;
 
 const db = vi.hoisted(() => {
-  const state: { session: Row | null; latestResult: Row | null } = { session: null, latestResult: null };
+  const state: { session: Row | null; latestResult: Row | null; events: Row[] } = { session: null, latestResult: null, events: [] };
   const prisma = {
     user: { findUnique: async () => ({ accountDeletedAt: null }) },
     session: {
@@ -20,6 +20,11 @@ const db = vi.hoisted(() => {
         if (where.status !== undefined && where.status !== result.status) return null;
         return result;
       },
+    },
+    analysisEvent: {
+      // Newest first, like the route's orderBy.
+      findFirst: async ({ where }: { where: { eventType: { in: string[] } } }) =>
+        [...state.events].reverse().find((event) => where.eventType.in.includes(event.eventType as string)) ?? null,
     },
     positionSnapshot: {
       findMany: vi.fn(async () => [
@@ -54,6 +59,7 @@ describe("GET /sessions/:id/analysis", () => {
       estimatedCompletionAt: null,
     };
     db.state.latestResult = null;
+    db.state.events = [];
   });
 
   it("reports the conversation's current status while a new round collects perspectives", async () => {
@@ -84,7 +90,34 @@ describe("GET /sessions/:id/analysis", () => {
       .set("Authorization", authorization)
       .expect(200);
 
-    expect(response.body.data).toMatchObject({ status: "running", result: null });
+    expect(response.body.data).toMatchObject({ status: "running", result: null, progress: null });
+  });
+
+  it("reports which stage a running analysis has reached (4.8)", async () => {
+    db.state.session = { ...db.state.session, status: "running" };
+    db.state.events = [
+      { eventType: "analysis_started" },
+      { eventType: "analysis_stage", reasonCode: "stage_1" },
+      { eventType: "analysis_stage", reasonCode: "stage_2" },
+    ];
+
+    const response = await request(createApp()).get("/sessions/session-1/analysis").set("Authorization", authorization).expect(200);
+
+    expect(response.body.data.progress).toEqual({ stage: 2, total: 5 });
+  });
+
+  it("does not report a stage from an earlier run once a new run starts", async () => {
+    db.state.session = { ...db.state.session, status: "running" };
+    db.state.events = [
+      { eventType: "analysis_started" },
+      { eventType: "analysis_stage", reasonCode: "stage_4" },
+      { eventType: "analysis_failed" },
+      { eventType: "analysis_started" },
+    ];
+
+    const response = await request(createApp()).get("/sessions/session-1/analysis").set("Authorization", authorization).expect(200);
+
+    expect(response.body.data.progress).toBeNull();
   });
 });
 

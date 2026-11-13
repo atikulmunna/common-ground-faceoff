@@ -51,6 +51,8 @@ export type AnalysisState = {
   status: string;
   estimatedCompletionAt: string | null;
   result: AnalysisResult | null;
+  /** The stage a running analysis has reached. */
+  progress?: { stage: number; total: number } | null;
 };
 
 export type RoundSummary = AnalysisResult & { id: string; roundNumber: number; createdAt: string };

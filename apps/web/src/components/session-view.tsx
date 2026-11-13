@@ -211,7 +211,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           )}
         </>
       ) : isAnalyzing ? (
-        <AnalysisProgress estimatedCompletionAt={analysis?.estimatedCompletionAt ?? null} />
+        <AnalysisProgress
+          status={status}
+          progress={analysis?.progress ?? null}
+          estimatedCompletionAt={analysis?.estimatedCompletionAt ?? null}
+        />
       ) : (
         <>
           <PauseNotice status={status} pause={pause} isCreator={isCreator} />

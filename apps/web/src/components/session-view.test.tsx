@@ -27,6 +27,7 @@ let result: typeof RESULT | null = null;
 let removedByModeratorAt: string | null = null;
 let otherSubmitted = true;
 let pause: { reason: string } | null = null;
+let progress: { stage: number; total: number } | null = null;
 
 function serveApi() {
   api.get.mockImplementation(async (path: string) => {
@@ -70,7 +71,7 @@ function serveApi() {
         },
       };
     }
-    if (path.endsWith("/analysis")) return { success: true, data: { status, estimatedCompletionAt: null, result } };
+    if (path.endsWith("/analysis")) return { success: true, data: { status, estimatedCompletionAt: null, result, progress } };
     if (path.endsWith("/reactions")) return { success: true, data: { reactions: [], mutualAcknowledgments: {} } };
     if (path.endsWith("/rounds")) return { success: true, data: { rounds: [] } };
     if (path.endsWith("/comments")) return { success: true, data: { comments: [] } };
@@ -106,6 +107,7 @@ beforeEach(() => {
   removedByModeratorAt = null;
   otherSubmitted = true;
   pause = null;
+  progress = null;
   serveApi();
 });
 
@@ -134,6 +136,15 @@ describe("SessionView live updates", () => {
     await advance(9_000);
 
     expect(requestsEndingWith("/analysis")).toBe(before + 3);
+  });
+
+  it("names the stage a running analysis has reached", async () => {
+    status = "running";
+    progress = { stage: 2, total: 5 };
+    await renderConversation();
+
+    expect(screen.queryByText("Restating each perspective (2 of 5)")).not.toBeNull();
+    expect(screen.queryByText(/We will email you when the results are ready/)).not.toBeNull();
   });
 
   it("checks only occasionally while perspectives are being gathered", async () => {

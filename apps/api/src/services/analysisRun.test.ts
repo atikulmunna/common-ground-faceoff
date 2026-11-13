@@ -149,7 +149,9 @@ describe("analysis worker steps", () => {
     expect(db.state.results).toHaveLength(1);
     expect(db.state.results[0]).toMatchObject({ roundNumber: 1, status: "completed", llmProvider: "openrouter" });
     expect(db.state.snapshots).toHaveLength(2);
-    expect(db.state.events.map((event) => event.eventType)).toEqual(["analysis_started", "analysis_completed"]);
+    expect(db.state.events.map((event) => event.reasonCode ?? event.eventType)).toEqual([
+      "analysis_started", "stage_1", "stage_2", "stage_3", "stage_4", "stage_5", "analysis_completed",
+    ]);
   });
 
   it("saves what matters to each participant, in participant order", async () => {

@@ -486,18 +486,23 @@ function inParticipantOrder<T extends { label: string }>(items: T[], labels: str
   return labels.map((label) => items.find((item) => item.label === label)!);
 }
 
+/** The pipeline's stages, in order. Progress events name the stage by its number (1 to 5). */
+export const ANALYSIS_STAGE_COUNT = 5;
+
 async function runPipeline(
   topic: string,
   positions: ParticipantPosition[],
   sessionId: string,
   pipelineRunId: string,
   persistPromptLogs = true,
+  onStage?: (stage: number) => Promise<void>,
 ): Promise<AnalysisPipelineOutput> {
   // Every participant must come back exactly once under their own label. Mapping by array
   // position instead would attribute one person's view to another if the model reordered them.
   const labels = positions.map((position) => position.participantLabel);
 
   // Stage 1: Normalization
+  await onStage?.(1);
   const normPrompt = normalizationPrompt(topic, positions);
   const normStart = Date.now();
   const { response: normRes, data: normData } = await callStructuredLlm<NormalizationResult>(
@@ -510,6 +515,7 @@ async function runPipeline(
   normData.positions = inParticipantOrder(normData.positions, labels);
 
   // Stage 2: Steelman
+  await onStage?.(2);
   const steelPrompt_ = steelmanPrompt(topic, normData);
   const steelStart = Date.now();
   const { response: steelRes, data: steelData } = await callStructuredLlm<SteelmanResult>(
@@ -522,6 +528,7 @@ async function runPipeline(
   steelData.steelmans = inParticipantOrder(steelData.steelmans, labels);
 
   // Stage 3: Value Extraction
+  await onStage?.(3);
   const valPrompt = valueExtractionPrompt(topic, steelData);
   const valStart = Date.now();
   const { response: valRes, data: valData } = await callStructuredLlm<ValueExtractionResult>(
@@ -534,6 +541,7 @@ async function runPipeline(
   valData.participants = inParticipantOrder(valData.participants, labels);
 
   // Stage 4: Conflict Classification
+  await onStage?.(4);
   const confPrompt = conflictClassificationPrompt(topic, steelData, valData);
   const confStart = Date.now();
   const { response: confRes, data: confData } = await callStructuredLlm<ConflictClassificationResult>(
@@ -544,6 +552,7 @@ async function runPipeline(
   if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "conflict_classification", confPrompt, confRes, Date.now() - confStart);
 
   // Stage 5: Synthesis
+  await onStage?.(5);
   const synthPrompt = synthesisPrompt(topic, steelData, valData, confData);
   const synthStart = Date.now();
   const { response: synthRes, data: synthData } = await callStructuredLlm<SynthesisResult>(
@@ -636,6 +645,31 @@ export const PROMPT_TEMPLATE_HASH = "13032280df2b0259";
 
 /** A run whose estimated finish is this far in the past is treated as abandoned by a dead worker. */
 const STALE_RUN_GRACE_MS = 15 * 60 * 1000;
+
+/** Saves one event as each stage starts, so the page can show real progress. Never fails the run. */
+async function recordStage(sessionId: string, pipelineRunId: string, stage: number): Promise<void> {
+  try {
+    await prisma.analysisEvent.create({
+      data: { sessionId, pipelineRunId, eventType: "analysis_stage", reasonCode: `stage_${stage}`, actorType: "worker" },
+    });
+  } catch (error) {
+    console.error(`[Analysis] Could not record stage ${stage} for ${sessionId}:`, error instanceof Error ? error.message : error);
+  }
+}
+
+/**
+ * The stage the latest run has reached, or null before its first stage starts. Each run begins with
+ * "analysis_started", so a stage event from an earlier run is never reported for a new one.
+ */
+export async function readAnalysisProgress(sessionId: string): Promise<{ stage: number; total: number } | null> {
+  const latest = await prisma.analysisEvent.findFirst({
+    where: { sessionId, eventType: { in: ["analysis_started", "analysis_stage"] } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { eventType: true, reasonCode: true },
+  });
+  const stage = latest?.eventType === "analysis_stage" ? Number(/^stage_(\d)$/.exec(latest.reasonCode ?? "")?.[1]) : NaN;
+  return Number.isInteger(stage) && stage >= 1 && stage <= ANALYSIS_STAGE_COUNT ? { stage, total: ANALYSIS_STAGE_COUNT } : null;
+}
 
 /** The conversation is not in a state that allows starting an analysis; the route answers 409. */
 export class AnalysisConflictError extends Error {}
@@ -844,7 +878,14 @@ export async function runClaimedAnalysis(sessionId: string): Promise<void> {
       });
     }
 
-    const pipelineOutput = await runPipeline(redacted.topic, redacted.positions, sessionId, pipelineRunId);
+    const pipelineOutput = await runPipeline(
+      redacted.topic,
+      redacted.positions,
+      sessionId,
+      pipelineRunId,
+      true,
+      (stage) => recordStage(sessionId, pipelineRunId, stage),
+    );
 
     await prisma.analysisResult.create({
       data: {
