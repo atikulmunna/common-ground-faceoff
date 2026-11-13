@@ -1,4 +1,4 @@
-import { groundedPointSchema, type GroundedPoint } from "@common-ground/shared";
+import { groundedPointSchema, participantValuesSchema, type GroundedPoint } from "@common-ground/shared";
 import { Router } from "express";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
@@ -101,6 +101,7 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
       trueDisagreements: analysis.trueDisagreements,
       sharedFoundationPoints: analysis.sharedFoundationPoints,
       disagreementPoints: analysis.disagreementPoints,
+      participantValues: analysis.participantValues,
       confidenceScores: analysis.confidenceScores,
       createdAt: analysis.createdAt,
     },
@@ -123,6 +124,8 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
   // Each point with its quotes when the result has them; older results only have the joined text.
   const sharedPoints = pointsOrNull(analysis.sharedFoundationPoints);
   const disagreementPoints = pointsOrNull(analysis.disagreementPoints);
+  const values = participantValuesSchema.safeParse(analysis.participantValues ?? null);
+  const valuesFor = (label: string) => (values.success ? (values.data[label] ?? []).map((value) => value.name) : []);
 
   if (format === "pdf") {
     res.setHeader("Content-Type", "application/pdf");
@@ -159,6 +162,7 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
     for (const [label, text] of Object.entries(steelmans)) {
       doc.fontSize(12).text(label, { underline: true });
       doc.fontSize(10).fillColor("#333").text(String(text));
+      if (valuesFor(label).length > 0) doc.fontSize(9).fillColor("#555").text(`What matters to them: ${valuesFor(label).join(", ")}`);
       doc.fillColor("#000").moveDown(0.5);
     }
 
@@ -213,6 +217,7 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
   md += `## Steelmanned Positions\n\n`;
   for (const [label, text] of Object.entries(steelmans)) {
     md += `### ${label}\n\n${text}\n\n`;
+    if (valuesFor(label).length > 0) md += `*What matters to them: ${valuesFor(label).join(", ")}*\n\n`;
   }
 
   md += `## Shared Foundations\n\n`;

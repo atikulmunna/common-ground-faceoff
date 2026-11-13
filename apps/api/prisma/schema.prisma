@@ -167,6 +167,8 @@ model AnalysisResult {
   /// Each point with its supporting quotes. Null for results saved before points were kept.
   sharedFoundationPoints     Json?
   disagreementPoints         Json?
+  /// What matters to each participant (stage 3), by label. Null for results saved before values were kept.
+  participantValues          Json?
   confidenceScores           Json
   llmProvider                String
   modelVersion               String

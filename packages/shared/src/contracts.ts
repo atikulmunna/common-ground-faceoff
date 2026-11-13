@@ -232,6 +232,10 @@ export const groundedPointSchema = z.object({
 });
 export type GroundedPoint = z.infer<typeof groundedPointSchema>;
 
+/** What matters to each participant, by participant label, as found in their restated view. */
+export const participantValuesSchema = z.record(z.array(z.object({ name: z.string().min(1), description: z.string() })));
+export type ParticipantValues = z.infer<typeof participantValuesSchema>;
+
 export interface AnalysisResultDto {
   sessionId: string;
   pipelineRunId: string;
@@ -246,6 +250,8 @@ export interface AnalysisResultDto {
   /** Null for results saved before points were kept; render the text fields instead. */
   sharedFoundationPoints: GroundedPoint[] | null;
   disagreementPoints: GroundedPoint[] | null;
+  /** Null for results saved before values were kept. */
+  participantValues: ParticipantValues | null;
   conflictMap: Record<string, unknown>;
   steelmans: Record<string, unknown>;
   confidenceScores: Record<string, number>;

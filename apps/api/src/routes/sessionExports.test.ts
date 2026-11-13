@@ -65,7 +65,15 @@ describe("exports of common points", () => {
         ],
       }],
       disagreementPoints: [],
+      participantValues: { "Participant A": [{ name: "growth", description: "New hires should learn." }] },
     };
+  });
+
+  it("names what matters to each participant under their restated view", async () => {
+    const response = await exportAs("markdown");
+
+    expect(response.text).toContain("### Participant A\n\nOffice days help new hires learn.\n\n*What matters to them: growth*");
+    expect(response.text).not.toContain("*What matters to them: *");
   });
 
   it("lists each common point with the quotes that support it", async () => {

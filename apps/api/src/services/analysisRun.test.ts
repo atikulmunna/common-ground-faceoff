@@ -152,6 +152,29 @@ describe("analysis worker steps", () => {
     expect(db.state.events.map((event) => event.eventType)).toEqual(["analysis_started", "analysis_completed"]);
   });
 
+  it("saves what matters to each participant, in participant order", async () => {
+    answerEveryStage();
+    const values = STAGE_OUTPUT.find(([marker]) => marker === "# Stage 3")!;
+    const original = values[1];
+    // The model may list participants in any order; they are saved under their own labels.
+    values[1] = { participants: [
+      { label: "Participant B", values: [{ name: " focus ", description: "Deep work needs quiet time." }] },
+      { label: "Participant A", values: [{ name: "growth", description: "New hires should learn quickly." }] },
+    ] };
+
+    try {
+      await runClaimedAnalysis("session-1");
+    } finally {
+      values[1] = original;
+    }
+
+    expect(db.state.results[0].participantValues).toEqual({
+      "Participant A": [{ name: "growth", description: "New hires should learn quickly." }],
+      "Participant B": [{ name: "focus", description: "Deep work needs quiet time." }],
+    });
+    expect(Object.keys(db.state.results[0].participantValues as object)).toEqual(["Participant A", "Participant B"]);
+  });
+
   it("saves each common point with the quotes that support it", async () => {
     answerEveryStage();
     const synthesis = STAGE_OUTPUT.find(([marker]) => marker === "# Stage 5")!;

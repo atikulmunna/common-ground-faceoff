@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from "node:crypto";
-import type { GroundedPoint } from "@common-ground/shared";
+import type { GroundedPoint, ParticipantValues } from "@common-ground/shared";
 import { z } from "zod";
 
 import { prisma } from "../lib/prisma.js";
@@ -24,6 +24,7 @@ export interface AnalysisPipelineOutput {
   trueDisagreements: string;
   sharedFoundationPoints: GroundedPoint[];
   disagreementPoints: GroundedPoint[];
+  participantValues: ParticipantValues;
   confidenceScores: { sharedFoundations: number; disagreements: number };
   llmProvider: string;
   modelVersion: string;
@@ -510,6 +511,7 @@ async function runPipeline(
     (data) => expectParticipants("Value extraction", labels, data.participants.map((participant) => participant.label)),
   );
   if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "value_extraction", valPrompt, valRes, Date.now() - valStart);
+  valData.participants = inParticipantOrder(valData.participants, labels);
 
   // Stage 4 – Conflict Classification
   const confPrompt = conflictClassificationPrompt(topic, steelData, valData);
@@ -552,6 +554,12 @@ async function runPipeline(
     trueDisagreements: groundedSynthesis.trueDisagreements,
     sharedFoundationPoints: groundedSynthesis.sharedFoundationPoints,
     disagreementPoints: groundedSynthesis.disagreementPoints,
+    participantValues: Object.fromEntries(
+      valData.participants.map((participant) => [
+        participant.label,
+        participant.values.map((value) => ({ name: value.name.trim(), description: value.description.trim() })),
+      ]),
+    ),
     confidenceScores: synthData.confidenceScores,
     llmProvider: synthRes.provider,
     // The Auto Router may answer stages with different models; record each one, in stage order.
@@ -833,6 +841,7 @@ export async function runClaimedAnalysis(sessionId: string): Promise<void> {
         trueDisagreements: pipelineOutput.trueDisagreements,
         sharedFoundationPoints: pipelineOutput.sharedFoundationPoints,
         disagreementPoints: pipelineOutput.disagreementPoints,
+        participantValues: pipelineOutput.participantValues,
         confidenceScores: pipelineOutput.confidenceScores,
         llmProvider: pipelineOutput.llmProvider,
         modelVersion: pipelineOutput.modelVersion,

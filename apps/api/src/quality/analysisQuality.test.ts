@@ -14,6 +14,7 @@ const goodOutput: AnalysisPipelineOutput = {
   trueDisagreements: "They differ on frequency: remote-first versus three days in the office.",
   sharedFoundationPoints: [],
   disagreementPoints: [],
+  participantValues: {},
   confidenceScores: { sharedFoundations: 0.9, disagreements: 0.88 },
   llmProvider: "test",
   modelVersion: "fixture",
