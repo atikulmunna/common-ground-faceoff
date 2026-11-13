@@ -225,9 +225,15 @@ export type CohortMemberInput = z.infer<typeof cohortMemberSchema>;
 export type AdminCreateSessionInput = z.infer<typeof adminCreateSessionSchema>;
 export type AnalyticsExportInput = z.infer<typeof analyticsExportSchema>;
 
+/** The kind of a difference: facts, values, definitions, or approach (policy). */
+export const differenceCategorySchema = z.enum(["empirical", "value", "semantic", "policy"]);
+export type DifferenceCategory = z.infer<typeof differenceCategorySchema>;
+
 /** One shared foundation or disagreement, with the quotes from restated views that support it. */
 export const groundedPointSchema = z.object({
   statement: z.string().min(1),
+  /** Disagreements only; absent on results saved before differences had a kind. */
+  category: differenceCategorySchema.optional(),
   evidence: z.array(z.object({ label: z.string().min(1), quote: z.string().min(1) })),
 });
 export type GroundedPoint = z.infer<typeof groundedPointSchema>;

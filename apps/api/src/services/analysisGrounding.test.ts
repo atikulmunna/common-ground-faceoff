@@ -64,6 +64,23 @@ describe("analysis synthesis grounding", () => {
     expect(result.sharedFoundations).toBe("Both support a measured pilot.");
   });
 
+  it("keeps the kind of each difference", () => {
+    const result = groundSynthesisResult({
+      sharedFoundations: [],
+      trueDisagreements: [{
+        statement: "They differ on when to expand.",
+        category: "policy",
+        evidence: [
+          { label: "Participant A", quote: "before expanding it" },
+          { label: "Participant B", quote: "expand only after improvement" },
+        ],
+      }],
+      confidenceScores: { sharedFoundations: 0.9, disagreements: 0.8 },
+    }, steelmans);
+
+    expect(result.disagreementPoints[0].category).toBe("policy");
+  });
+
   it("keeps no points when nothing is supported", () => {
     const result = groundSynthesisResult({
       sharedFoundations: [],

@@ -175,6 +175,36 @@ describe("analysis worker steps", () => {
     expect(Object.keys(db.state.results[0].participantValues as object)).toEqual(["Participant A", "Participant B"]);
   });
 
+  it("saves the kind of each difference, and drops a kind it does not know instead of failing", async () => {
+    answerEveryStage();
+    const synthesis = STAGE_OUTPUT.find(([marker]) => marker === "# Stage 5")!;
+    const original = synthesis[1];
+    const evidence = [
+      { label: "Participant A", quote: "help new hires learn quickly" },
+      { label: "Participant B", quote: "protect time for focused work" },
+    ];
+    synthesis[1] = {
+      sharedFoundations: [],
+      trueDisagreements: [
+        { statement: "They differ on how many office days.", category: "policy", evidence },
+        { statement: "They differ on what focus needs.", category: "a made-up kind", evidence },
+      ],
+      confidenceScores: { sharedFoundations: 0.5, disagreements: 0.8 },
+    };
+
+    try {
+      await runClaimedAnalysis("session-1");
+    } finally {
+      synthesis[1] = original;
+    }
+
+    expect(db.state.sessions[0].status).toBe("completed");
+    expect(db.state.results[0].disagreementPoints).toEqual([
+      { statement: "They differ on how many office days.", category: "policy", evidence },
+      { statement: "They differ on what focus needs.", evidence },
+    ]);
+  });
+
   it("saves each common point with the quotes that support it", async () => {
     answerEveryStage();
     const synthesis = STAGE_OUTPUT.find(([marker]) => marker === "# Stage 5")!;

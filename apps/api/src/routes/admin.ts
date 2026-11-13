@@ -336,16 +336,14 @@ adminRouter.get("/analytics", async (req, res) => {
     }),
   ]);
 
-  // Conflict type distribution
-  const conflictTypes: Record<string, number> = { empirical: 0, value: 0, semantic: 0, procedural: 0 };
+  // Conflict type distribution. conflictMap is saved as { category: [descriptions] };
+  // "procedural" is what older results called "policy".
+  const conflictTypes: Record<string, number> = { empirical: 0, value: 0, semantic: 0, policy: 0 };
   for (const a of allAnalyses) {
-    const cm = a.conflictMap as { conflicts?: Array<{ category?: string }> } | null;
-    if (cm?.conflicts) {
-      for (const c of cm.conflicts) {
-        if (c.category && c.category in conflictTypes) {
-          conflictTypes[c.category]++;
-        }
-      }
+    const map = a.conflictMap as Record<string, unknown> | null;
+    for (const [category, descriptions] of Object.entries(map ?? {})) {
+      const key = category === "procedural" ? "policy" : category;
+      if (key in conflictTypes) conflictTypes[key] += Array.isArray(descriptions) ? descriptions.length : 1;
     }
   }
 
