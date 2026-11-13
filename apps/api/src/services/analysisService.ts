@@ -1,9 +1,11 @@
 import { randomUUID, createHash } from "node:crypto";
 import {
   differenceCategorySchema,
+  groundedPointSchema,
   type DifferenceCategory,
   type GroundedPoint,
   type ParticipantValues,
+  type RoundChanges,
   type Verification,
 } from "@common-ground/shared";
 import { z } from "zod";
@@ -327,6 +329,104 @@ What could change each participant's mind (in their own words; missing for those
 ${changeMindBlock || "(nobody said)"}`;
 }
 
+type RoundStatements = { shared: string[]; differences: string[] };
+
+const roundComparisonSchema = z.object({
+  newCommonPoints: z.array(z.number().int().min(0)),
+  differences: z.array(z.object({
+    previous: z.number().int().min(0),
+    status: z.enum(["resolved", "narrowed", "unchanged"]),
+    current: z.number().int().min(0).optional(),
+  })),
+});
+type RoundComparison = z.infer<typeof roundComparisonSchema>;
+
+/** Stage 6, only from round 2 on: compares this round's points with the previous round's, by number. */
+function roundComparisonPrompt(topic: string, previous: RoundStatements, current: RoundStatements): string {
+  const list = (items: string[]) => (items.length > 0 ? items.map((item, index) => `${index}. ${item}`).join("\n") : "(none)");
+  return `# Stage 6: Round comparison
+
+Topic: "${topic}"
+
+The same people answered the question again after seeing the previous round's results. Compare the two rounds.
+
+1. "newCommonPoints": the numbers of this round's common points that were not already common ground in the previous round, even in other words.
+2. "differences": every previous difference, once each, by its number, with a "status":
+   - "resolved": it is no longer a difference this round;
+   - "narrowed": it is still a difference, but a smaller one; add "current", the number of this round's difference it became;
+   - "unchanged": it is still the same difference.
+
+Judge only from the statements below. Do not add new points.
+
+Return JSON:
+\`\`\`json
+{
+  "newCommonPoints": [0],
+  "differences": [
+    { "previous": 0, "status": "resolved|narrowed|unchanged", "current": 0 }
+  ]
+}
+\`\`\`
+
+Previous round, common points:
+${list(previous.shared)}
+
+Previous round, differences:
+${list(previous.differences)}
+
+This round, common points:
+${list(current.shared)}
+
+This round, differences:
+${list(current.differences)}`;
+}
+
+/** Rejects numbers that point at nothing, and requires one status for every previous difference. */
+function checkRoundComparison(data: RoundComparison, previous: RoundStatements, current: RoundStatements): void {
+  if (data.newCommonPoints.some((index) => index >= current.shared.length)) {
+    throw new Error("Round comparison named a common point that does not exist");
+  }
+  const seen = data.differences.map((item) => item.previous);
+  const everyOnce = seen.length === previous.differences.length && previous.differences.every((_, index) => seen.filter((value) => value === index).length === 1);
+  if (!everyOnce) throw new Error("Round comparison must give every previous difference exactly one status");
+  if (data.differences.some((item) => item.current !== undefined && item.current >= current.differences.length)) {
+    throw new Error("Round comparison named a difference that does not exist");
+  }
+}
+
+/** Turns the numbered comparison into the statements people read. */
+export function describeRoundChanges(
+  previousRound: number,
+  previous: RoundStatements,
+  current: RoundStatements,
+  comparison: RoundComparison,
+): RoundChanges {
+  return {
+    previousRound,
+    newCommonPoints: [...new Set(comparison.newCommonPoints)].sort((a, b) => a - b).map((index) => current.shared[index]),
+    resolved: comparison.differences.filter((item) => item.status === "resolved").map((item) => previous.differences[item.previous]),
+    narrowed: comparison.differences
+      .filter((item) => item.status === "narrowed")
+      .map((item) => ({
+        previous: previous.differences[item.previous],
+        current: item.current !== undefined ? current.differences[item.current] ?? null : null,
+      })),
+  };
+}
+
+const storedPoints = z.array(groundedPointSchema);
+
+/** Statements from saved points, or null for a round saved before points were kept. */
+function roundStatements(shared: unknown, differences: unknown): RoundStatements | null {
+  const sharedPoints = storedPoints.safeParse(shared);
+  const differencePoints = storedPoints.safeParse(differences);
+  if (!sharedPoints.success || !differencePoints.success) return null;
+  return {
+    shared: sharedPoints.data.map((point) => point.statement),
+    differences: differencePoints.data.map((point) => point.statement),
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /*  Pipeline runner                                                    */
 /* ------------------------------------------------------------------ */
@@ -356,6 +456,7 @@ export function computePromptTemplateHash(): string {
     valueExtractionPrompt("TOPIC", steelmans),
     conflictClassificationPrompt("TOPIC", steelmans, values),
     synthesisPrompt("TOPIC", steelmans, values, conflicts, positions.map((p) => ({ ...p, changeMind: `CHANGE MIND ${p.participantLabel}` }))),
+    roundComparisonPrompt("TOPIC", { shared: ["PREVIOUS SHARED"], differences: ["PREVIOUS DIFFERENCE"] }, { shared: ["SHARED"], differences: ["DIFFERENCE"] }),
   ].join("\n||\n");
   return createHash("sha256").update(rendered).digest("hex").slice(0, 16);
 }
@@ -671,11 +772,50 @@ export const ANALYSIS_VERSION = "v1";
  * Bump PROMPT_TEMPLATE_VERSION whenever a prompt changes, and set PROMPT_TEMPLATE_HASH to the new
  * computePromptTemplateHash() value; a test fails until the two agree.
  */
-export const PROMPT_TEMPLATE_VERSION = "tpl-v3";
-export const PROMPT_TEMPLATE_HASH = "8afb760ecb0c74fb";
+export const PROMPT_TEMPLATE_VERSION = "tpl-v4";
+export const PROMPT_TEMPLATE_HASH = "d10c5370088b2ed5";
 
 /** A run whose estimated finish is this far in the past is treated as abandoned by a dead worker. */
 const STALE_RUN_GRACE_MS = 15 * 60 * 1000;
+
+/**
+ * 4.10: what changed since the previous round. Runs only when both rounds have points; a failure is
+ * logged and leaves the comparison out, since the round's own results are complete without it.
+ */
+async function compareWithPreviousRound(
+  sessionId: string,
+  pipelineRunId: string,
+  topic: string,
+  previousRound: { roundNumber: number; sharedFoundationPoints: unknown; disagreementPoints: unknown } | null,
+  output: AnalysisPipelineOutput,
+): Promise<RoundChanges | null> {
+  if (!previousRound) return null;
+  const previous = roundStatements(previousRound.sharedFoundationPoints, previousRound.disagreementPoints);
+  if (!previous) return null;
+  const current: RoundStatements = {
+    shared: output.sharedFoundationPoints.map((point) => point.statement),
+    differences: output.disagreementPoints.map((point) => point.statement),
+  };
+  const empty: RoundComparison = { newCommonPoints: [], differences: [] };
+  if (current.shared.length === 0 && previous.differences.length === 0) {
+    return describeRoundChanges(previousRound.roundNumber, previous, current, empty);
+  }
+  try {
+    const prompt = roundComparisonPrompt(topic, previous, current);
+    const started = Date.now();
+    const { response, data } = await callStructuredLlm<RoundComparison>(
+      prompt,
+      roundComparisonSchema,
+      pipelineRunId,
+      (candidate) => checkRoundComparison(candidate, previous, current),
+    );
+    await logPrompt(sessionId, pipelineRunId, "round_comparison", prompt, response, Date.now() - started);
+    return describeRoundChanges(previousRound.roundNumber, previous, current, data);
+  } catch (error) {
+    console.error(`[Analysis] Round comparison for ${sessionId} failed:`, error instanceof Error ? error.message : error);
+    return null;
+  }
+}
 
 /** Saves one event as each stage starts, so the page can show real progress. Never fails the run. */
 async function recordStage(sessionId: string, pipelineRunId: string, stage: number): Promise<void> {
@@ -904,7 +1044,7 @@ export async function runClaimedAnalysis(sessionId: string): Promise<void> {
     const previousRound = await prisma.analysisResult.findFirst({
       where: { sessionId, status: "completed" },
       orderBy: { roundNumber: "desc" },
-      select: { id: true, roundNumber: true },
+      select: { id: true, roundNumber: true, sharedFoundationPoints: true, disagreementPoints: true },
     });
     const roundNumber = (previousRound?.roundNumber ?? 0) + 1;
     for (const p of participants) {
@@ -924,6 +1064,7 @@ export async function runClaimedAnalysis(sessionId: string): Promise<void> {
       true,
       (stage) => recordStage(sessionId, pipelineRunId, stage),
     );
+    const roundChanges = await compareWithPreviousRound(sessionId, pipelineRunId, redacted.topic, previousRound, pipelineOutput);
 
     await prisma.analysisResult.create({
       data: {
@@ -943,6 +1084,7 @@ export async function runClaimedAnalysis(sessionId: string): Promise<void> {
         disagreementPoints: pipelineOutput.disagreementPoints,
         participantValues: pipelineOutput.participantValues,
         verification: pipelineOutput.verification,
+        roundChanges: roundChanges ?? undefined,
         confidenceScores: pipelineOutput.confidenceScores,
         llmProvider: pipelineOutput.llmProvider,
         modelVersion: pipelineOutput.modelVersion,

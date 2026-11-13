@@ -999,6 +999,19 @@ label, legend { font-weight: 700; }
 .correction-saved { color: var(--muted); }
 .carry-note { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 
+.round-changes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 24px 32px;
+}
+.round-changes__group { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 6px solid var(--leaf); }
+.round-changes__group--resolved { border-top-color: var(--teal); }
+.round-changes__group--narrowed { border-top-color: var(--sun-rule); }
+.round-changes__group h3 { font-size: 1.125rem; }
+.round-changes__group ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.round-changes__group li > span { display: block; }
+.round-changes__was { color: var(--muted); }
+
 .values { color: var(--muted); }
 .settled-by { color: var(--muted); max-width: 48em; }
 .settled-by strong { color: var(--ink); }

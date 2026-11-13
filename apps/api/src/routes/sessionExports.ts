@@ -103,6 +103,7 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
       disagreementPoints: analysis.disagreementPoints,
       participantValues: analysis.participantValues,
       verification: analysis.verification,
+      roundChanges: analysis.roundChanges,
       createdAt: analysis.createdAt,
     },
   };

@@ -173,6 +173,8 @@ model AnalysisResult {
   participantValues          Json?
   /// Proposed and verified point counts. Null for results saved before they were counted.
   verification               Json?
+  /// What changed since the previous round. Null for a first round or when it could not be compared.
+  roundChanges               Json?
   /// The model's own confidence. Kept for the record; the measured verification is what people see.
   confidenceScores           Json
   llmProvider                String

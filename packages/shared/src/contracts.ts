@@ -257,6 +257,15 @@ export const verificationSchema = z.object({
 });
 export type Verification = z.infer<typeof verificationSchema>;
 
+/** What changed since the previous round: new common points, and differences resolved or narrowed. */
+export const roundChangesSchema = z.object({
+  previousRound: z.number().int().min(1),
+  newCommonPoints: z.array(z.string()),
+  resolved: z.array(z.string()),
+  narrowed: z.array(z.object({ previous: z.string(), current: z.string().nullable() })),
+});
+export type RoundChanges = z.infer<typeof roundChangesSchema>;
+
 /** What matters to each participant, by participant label, as found in their restated view. */
 export const participantValuesSchema = z.record(z.array(z.object({ name: z.string().min(1), description: z.string() })));
 export type ParticipantValues = z.infer<typeof participantValuesSchema>;
@@ -279,6 +288,8 @@ export interface AnalysisResultDto {
   participantValues: ParticipantValues | null;
   /** Null for results saved before verification was counted. */
   verification: Verification | null;
+  /** Null for a first round, or when the previous round has no points to compare. */
+  roundChanges: RoundChanges | null;
   conflictMap: Record<string, unknown>;
   steelmans: Record<string, unknown>;
   confidenceScores: Record<string, number>;

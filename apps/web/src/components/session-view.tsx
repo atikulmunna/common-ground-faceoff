@@ -208,7 +208,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             onStartRound={startNextRound}
           />
           {isParticipant && <FeedbackPanel onSubmit={submitFeedback} saved={feedbackSaved} />}
-          <RoundHistory rounds={conversation.rounds} />
+          {/* Results that recorded what changed show it above; older ones keep the side-by-side view. */}
+          {!result.roundChanges && <RoundHistory rounds={conversation.rounds} />}
           {positionText && (
             <details className="own-perspective">
               <summary>Your perspective, as you wrote it</summary>

@@ -370,6 +370,88 @@ describe("analysis worker steps", () => {
     expect(Object.keys(db.state.results[0].steelmans as Record<string, string>)).toEqual(["Participant A", "Participant C"]);
   });
 
+  describe("what changed since the previous round (4.10)", () => {
+    const evidence = [
+      { label: "Participant A", quote: "help new hires learn quickly" },
+      { label: "Participant B", quote: "protect time for focused work" },
+    ];
+
+    beforeEach(() => {
+      db.state.results = [{
+        id: "round-1",
+        sessionId: "session-1",
+        roundNumber: 1,
+        status: "completed",
+        sharedFoundationPoints: [{ statement: "Both want new hires supported.", evidence }],
+        disagreementPoints: [
+          { statement: "They differ on how many days.", evidence },
+          { statement: "They differ on what focus needs.", evidence },
+        ],
+      }];
+    });
+
+    function answer(comparison: unknown) {
+      callLlm.mockImplementation(async (_system: string, user: string, validate?: (content: string) => void) => {
+        const stage = Number(/# Stage (\d)/.exec(user)?.[1]);
+        const content = JSON.stringify(
+          stage === 6 ? comparison
+          : stage === 5 ? {
+            sharedFoundations: [
+              { statement: "Both want new hires supported.", evidence },
+              { statement: "Both want focus time respected.", evidence },
+            ],
+            trueDisagreements: [{ statement: "They differ on one office day.", category: "policy", evidence }],
+            confidenceScores: { sharedFoundations: 0.5, disagreements: 0.5 },
+          }
+          : STAGE_OUTPUT[stage - 1][1],
+        );
+        validate?.(content);
+        return { content, provider: "openrouter", model: "openai/model-a", promptTokens: 1, completionTokens: 1 };
+      });
+    }
+
+    it("records new common points, and differences resolved or narrowed", async () => {
+      answer({
+        newCommonPoints: [1],
+        differences: [
+          { previous: 0, status: "resolved" },
+          { previous: 1, status: "narrowed", current: 0 },
+        ],
+      });
+
+      await runClaimedAnalysis("session-1");
+
+      const round2 = db.state.results.find((row) => row.roundNumber === 2);
+      expect(round2?.roundChanges).toEqual({
+        previousRound: 1,
+        newCommonPoints: ["Both want focus time respected."],
+        resolved: ["They differ on how many days."],
+        narrowed: [{ previous: "They differ on what focus needs.", current: "They differ on one office day." }],
+      });
+    });
+
+    it("rejects a comparison that points at nothing, and still completes the round", async () => {
+      answer({ newCommonPoints: [7], differences: [{ previous: 0, status: "resolved" }] });
+
+      await runClaimedAnalysis("session-1");
+
+      expect(db.state.sessions[0].status).toBe("completed");
+      const round2 = db.state.results.find((row) => row.roundNumber === 2);
+      expect(round2).toBeDefined();
+      expect(round2?.roundChanges).toBeUndefined();
+    });
+
+    it("does not compare a first round with anything", async () => {
+      db.state.results = [];
+      answerEveryStage();
+
+      await runClaimedAnalysis("session-1");
+
+      expect(callLlm.mock.calls.some((call) => String(call[1]).includes("# Stage 6"))).toBe(false);
+      expect(db.state.results[0].roundChanges).toBeUndefined();
+    });
+  });
+
   it("lets only one worker claim a queued conversation", async () => {
     db.state.sessions[0].status = "queued";
 

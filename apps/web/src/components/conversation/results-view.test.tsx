@@ -141,6 +141,36 @@ describe("ResultsView", () => {
     expect(screen.queryByText(/Your note: .One day is fine\./)).not.toBeNull();
   });
 
+  it("shows what changed since the previous round", () => {
+    render(
+      <ResultsView
+        result={{
+          ...RESULT,
+          roundNumber: 2,
+          roundChanges: {
+            previousRound: 1,
+            newCommonPoints: ["Both want focus time respected."],
+            resolved: ["They differ on how many days."],
+            narrowed: [{ previous: "They differ on what focus needs.", current: "They differ on one office day." }],
+          },
+        }}
+        owners={owners}
+      />,
+    );
+    const changed = screen.getByRole("region", { name: "What changed since round 1" });
+
+    expect(within(changed).queryByText("Both want focus time respected.")).not.toBeNull();
+    expect(within(changed).queryByRole("heading", { name: "No longer a difference" })).not.toBeNull();
+    expect(within(changed).queryByText("Was: They differ on what focus needs.")).not.toBeNull();
+    expect(within(changed).queryByText("Now: They differ on one office day.")).not.toBeNull();
+  });
+
+  it("says so when nothing changed since the previous round", () => {
+    render(<ResultsView result={{ ...RESULT, roundChanges: { previousRound: 1, newCommonPoints: [], resolved: [], narrowed: [] } }} owners={owners} />);
+
+    expect(screen.queryByText("The common points and differences are the same as in round 1.")).not.toBeNull();
+  });
+
   it("says so when no common point held up", () => {
     render(<ResultsView result={{ ...RESULT, sharedFoundationPoints: [] }} owners={owners} />);
 

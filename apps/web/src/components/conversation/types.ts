@@ -1,4 +1,4 @@
-import type { GroundedPoint, ParticipantValues, Verification } from "@common-ground/shared";
+import type { GroundedPoint, ParticipantValues, RoundChanges, Verification } from "@common-ground/shared";
 
 export type Participant = {
   id: string;
@@ -46,6 +46,8 @@ export type AnalysisResult = {
   disagreementPoints?: GroundedPoint[] | null;
   participantValues?: ParticipantValues | null;
   verification?: Verification | null;
+  /** What changed since the previous round; absent for a first round. */
+  roundChanges?: RoundChanges | null;
 };
 
 export type AnalysisState = {

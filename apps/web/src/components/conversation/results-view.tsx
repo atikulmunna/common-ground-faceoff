@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import type { GroundedPoint } from "@common-ground/shared";
+import type { GroundedPoint, RoundChanges } from "@common-ground/shared";
 
 import { labelLetter } from "../../lib/conversation-stage";
 import { renderMarkdown } from "./markdown";
@@ -89,6 +89,8 @@ export function ResultsView({
           )}
         </div>
       )}
+
+      {result.roundChanges && <RoundChangesSection id={`${id}-changed`} changes={result.roundChanges} />}
 
       <section className="results__section" aria-labelledby={`${id}-agree`}>
         <h2 id={`${id}-agree`}>Where {whoLower} agree</h2>
@@ -199,6 +201,47 @@ export function ResultsView({
         </div>
       </section>
     </div>
+  );
+}
+
+/** 4.10: new common ground, and differences that were resolved or narrowed since the last round. */
+function RoundChangesSection({ id, changes }: { id: string; changes: RoundChanges }) {
+  const nothing = changes.newCommonPoints.length === 0 && changes.resolved.length === 0 && changes.narrowed.length === 0;
+  return (
+    <section className="results__section" aria-labelledby={id}>
+      <h2 id={id}>What changed since round {changes.previousRound}</h2>
+      {nothing ? (
+        <p className="empty-note">The common points and differences are the same as in round {changes.previousRound}.</p>
+      ) : (
+        <div className="round-changes">
+          {changes.newCommonPoints.length > 0 && (
+            <div className="round-changes__group round-changes__group--new">
+              <h3>New common ground</h3>
+              <ul>{changes.newCommonPoints.map((statement) => <li key={statement}>{statement}</li>)}</ul>
+            </div>
+          )}
+          {changes.resolved.length > 0 && (
+            <div className="round-changes__group round-changes__group--resolved">
+              <h3>No longer a difference</h3>
+              <ul>{changes.resolved.map((statement) => <li key={statement}>{statement}</li>)}</ul>
+            </div>
+          )}
+          {changes.narrowed.length > 0 && (
+            <div className="round-changes__group round-changes__group--narrowed">
+              <h3>A smaller difference now</h3>
+              <ul>
+                {changes.narrowed.map((item) => (
+                  <li key={item.previous}>
+                    <span className="round-changes__was">Was: {item.previous}</span>
+                    {item.current && <span>Now: {item.current}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
