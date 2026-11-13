@@ -95,7 +95,7 @@ function SharedViewPageContent() {
       </header>
 
       {analysis ? (
-        <ResultsView result={analysis} />
+        <ResultsView result={analysis} audience="public" />
       ) : (
         <p className="notice notice--warn">The results for this conversation are not ready yet. Try this link again later.</p>
       )}

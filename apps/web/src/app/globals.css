@@ -716,13 +716,13 @@ label, legend { font-weight: 700; }
   max-width: 44em;
 }
 
-/* People take the ink of their participant letter. */
-.ink-a { --person: var(--teal); }
-.ink-b { --person: var(--sun); --person-rule: var(--sun-rule); --person-edge: var(--ink); }
-.ink-c { --person: var(--orange); }
-.ink-d { --person: var(--violet); }
-.ink-e { --person: var(--sky); }
-.ink-f { --person: var(--slate); }
+/* People take the ink of their participant letter: a dot and rule colour, a tint, and a text colour that reads on the tint. */
+.ink-a { --person: var(--teal); --person-tint: var(--teal-tint); --person-text: var(--teal-hover); }
+.ink-b { --person: var(--sun); --person-rule: var(--sun-rule); --person-edge: var(--ink); --person-tint: var(--sun-tint); --person-text: var(--sun-ink); }
+.ink-c { --person: var(--orange); --person-tint: #fdebd7; --person-text: #7a4100; }
+.ink-d { --person: var(--violet); --person-tint: #ece7f4; --person-text: #5c4387; }
+.ink-e { --person: var(--sky); --person-tint: #dcebf6; --person-text: #005b91; }
+.ink-f { --person: var(--slate); --person-tint: #e5e9eb; --person-text: #46555c; }
 
 .ink-dot {
   display: inline-block;
@@ -923,6 +923,69 @@ label, legend { font-weight: 700; }
   font-weight: 700;
 }
 
+.results__summary { display: flex; flex-direction: column; gap: 8px; margin-top: -8px; }
+.summary-line {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: clamp(1.625rem, 3.6vw, 2.25rem);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  max-width: 24em;
+}
+.empty-note { color: var(--muted); font-style: italic; }
+
+/*
+ * A common point. With two people: [first voice's quote | the shared statement | second voice's quote],
+ * the statement printed in the green the two inks make together.
+ */
+.common-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.common-point { display: grid; grid-template-columns: minmax(0, 1fr); }
+.common-point--pair { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.common-point__statement {
+  display: flex;
+  align-items: center;
+  padding: 20px 22px;
+  background: var(--leaf);
+  color: #fff;
+  font-family: var(--display);
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.quote {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 22px;
+  background: var(--person-tint, var(--teal-tint));
+}
+.quote__source { font-size: 0.875rem; font-weight: 700; color: var(--person-text, var(--teal)); }
+.quote__text { font-style: italic; }
+.common-point__quotes { padding: 12px 22px; background: var(--leaf-tint); }
+.common-point__quotes > summary { min-height: 44px; display: flex; align-items: center; font-weight: 700; color: var(--leaf); cursor: pointer; }
+.common-point__quote-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 10px;
+  padding: 8px 0 10px;
+}
+
+/* A difference: its statement and kind, then each side in that person's ink. */
+.differences { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 28px; max-width: 60rem; }
+.difference { display: flex; flex-direction: column; gap: 12px; }
+.difference__head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; }
+.difference__head h3 { font-size: 1.25rem; max-width: 36em; }
+.difference__sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 16px;
+}
+.side { padding-top: 12px; border-top: 6px solid var(--person-rule, var(--person, var(--teal))); }
+
+.values { color: var(--muted); }
+.values__label { font-weight: 700; color: var(--ink); }
+
 .restated-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
@@ -1071,6 +1134,8 @@ button.scale__option[aria-pressed="true"] { color: #fff; background: var(--teal)
   .agree-sheet::before { inset: -12px 0 0 -12px; }
   .agree-sheet::after { inset: 0 -12px -12px 0; }
   .agree-sheet > p { padding: 20px; }
+  .common-point--pair { grid-template-columns: minmax(0, 1fr); }
+  .common-point__statement { font-size: 1.1875rem; }
   .journey { font-size: 0.8125rem; }
   .progress { flex-direction: column; align-items: flex-start; }
 }

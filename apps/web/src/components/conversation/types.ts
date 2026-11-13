@@ -1,3 +1,5 @@
+import type { GroundedPoint, ParticipantValues, Verification } from "@common-ground/shared";
+
 export type Participant = {
   id: string;
   /** Null for other participants while anonymous mode hides identities. */
@@ -32,10 +34,16 @@ export type SessionData = {
 export type AnalysisResult = {
   roundNumber?: number;
   createdAt?: string;
+  /** Joined text; the only content of results saved before points were kept. */
   sharedFoundations: string;
   trueDisagreements: string;
   steelmans: Record<string, string>;
   conflictMap: Record<string, string[] | string>;
+  /** Each point with its supporting quotes. Null or absent on older results. */
+  sharedFoundationPoints?: GroundedPoint[] | null;
+  disagreementPoints?: GroundedPoint[] | null;
+  participantValues?: ParticipantValues | null;
+  verification?: Verification | null;
 };
 
 export type AnalysisState = {

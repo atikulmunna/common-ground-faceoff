@@ -106,10 +106,29 @@ test("signs in, starts a conversation, shares a perspective, reviews common grou
       analysisVersion: "browser-e2e-v1",
       promptTemplateVersion: "browser-e2e-prompt-v1",
       inputHash: `browser-e2e-input-${runId}`,
-      steelmans: { participant: "Release-critical journeys benefit from browser-level verification." },
-      conflictMap: { scope: ["test speed versus production fidelity"] },
+      steelmans: {
+        "Participant A": "Release-critical journeys benefit from browser-level verification of reliable releases.",
+        "Participant B": "Reliable releases matter, but external provider testing should stay narrow.",
+      },
+      conflictMap: { policy: ["How much external provider testing belongs in the release check."] },
       sharedFoundations: "Everyone benefits from reliable and repeatable releases.",
       trueDisagreements: "The remaining disagreement concerns the breadth of external provider testing.",
+      sharedFoundationPoints: [{
+        statement: "Everyone benefits from reliable and repeatable releases.",
+        evidence: [
+          { label: "Participant A", quote: "verification of reliable releases" },
+          { label: "Participant B", quote: "Reliable releases matter" },
+        ],
+      }],
+      disagreementPoints: [{
+        statement: "How broad external provider testing should be.",
+        category: "policy",
+        evidence: [
+          { label: "Participant A", quote: "browser-level verification" },
+          { label: "Participant B", quote: "external provider testing should stay narrow" },
+        ],
+      }],
+      verification: { sharedProposed: 1, sharedVerified: 1, differencesProposed: 1, differencesVerified: 1 },
       confidenceScores: { sharedFoundations: 0.96, disagreements: 0.91 },
       llmProvider: "e2e-fixture",
       modelVersion: "deterministic",
@@ -131,12 +150,17 @@ test("signs in, starts a conversation, shares a perspective, reviews common grou
   });
 
   await page.reload();
+  await expect(page.getByText("You agree on 1 point and differ on 1.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Where you agree" })).toBeVisible();
   await expect(page.getByText("Everyone benefits from reliable and repeatable releases.")).toBeVisible();
+  await expect(page.getByText("From your view")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "How broad external provider testing should be." })).toBeVisible();
+  await expect(page.getByText("Approach", { exact: true })).toBeVisible();
 
   const sharedPage = await page.context().newPage();
   await sharedPage.goto(`/shared?token=${encodeURIComponent(shareToken)}`);
   await expect(sharedPage.getByRole("heading", { name: topic })).toBeVisible();
+  await expect(sharedPage.getByText("They agree on 1 point and differ on 1.")).toBeVisible();
   await expect(sharedPage.getByText("Everyone benefits from reliable and repeatable releases.")).toBeVisible();
   await expect(sharedPage.getByRole("link", { name: "Start your own conversation" })).toBeVisible();
   await expect(sharedPage.getByText("e2e-fixture")).toHaveCount(0);
