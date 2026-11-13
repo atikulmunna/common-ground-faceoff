@@ -50,4 +50,22 @@ describe("GET /admin/analytics", () => {
 
     expect(response.body.data.analytics.conflictTypeDistribution).toEqual({ empirical: 1, value: 1, semantic: 0, policy: 3 });
   });
+
+  it("counts answers to the fairness question, and averages only the older star ratings", async () => {
+    db.state.feedback = [
+      { fairness: "yes", faithfulness: null, neutrality: null },
+      { fairness: "yes", faithfulness: null, neutrality: null },
+      { fairness: "somewhat", faithfulness: null, neutrality: null },
+      { fairness: null, faithfulness: 4, neutrality: 2 },
+    ];
+
+    const response = await analytics();
+
+    expect(response.body.data.analytics.feedbackSummary).toEqual({
+      count: 4,
+      fairness: { yes: 2, somewhat: 1, no: 0 },
+      avgFaithfulness: 4,
+      avgNeutrality: 2,
+    });
+  });
 });

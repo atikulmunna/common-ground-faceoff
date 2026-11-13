@@ -12,6 +12,7 @@ const db = vi.hoisted(() => {
     invitations: [] as Row[],
     reactions: [] as Row[],
     comments: [] as Row[],
+    feedback: [] as Row[],
   };
 
   const prisma = {
@@ -34,6 +35,20 @@ const db = vi.hoisted(() => {
     emailInvitation: { findMany: async () => state.invitations },
     sectionReaction: { findMany: async () => state.reactions },
     sectionComment: { findMany: async () => state.comments },
+    feedbackRating: {
+      deleteMany: async ({ where }: { where: Row }) => {
+        const before = state.feedback.length;
+        state.feedback = state.feedback.filter((row) => !(row.sessionId === where.sessionId && row.userId === where.userId));
+        return { count: before - state.feedback.length };
+      },
+      create: async ({ data }: { data: Row }) => {
+        const row = { id: `f${state.feedback.length + 1}`, createdAt: new Date(), faithfulness: null, neutrality: null, ...data };
+        state.feedback.push(row);
+        return row;
+      },
+      findMany: async () => state.feedback,
+    },
+    $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
     shareLink: {
       findUnique: async ({ where }: { where: Row }) =>
         where.token === "share-token" ? { id: "link-1", sessionId: "session-1", token: "share-token", revoked: false, expiresAt: null } : null,
@@ -277,5 +292,46 @@ describe("public share view", () => {
     expect(response.body.data.analysis).not.toHaveProperty("llmProvider");
     expect(response.body.data.analysis).not.toHaveProperty("modelVersion");
     expect(response.body.data.analysis).not.toHaveProperty("confidenceScores");
+  });
+});
+
+describe("the fairness question (4.7)", () => {
+  beforeEach(() => {
+    db.state.users = { creator: { tier: "pro" }, other: { tier: "pro" } };
+    db.state.session = {
+      id: "session-1",
+      topic: "How many office days should our team keep?",
+      creatorUserId: "creator",
+      status: "completed",
+      anonymousMode: false,
+      participants: [participant("creator", "session_creator"), participant("other", "session_participant")],
+    };
+    db.state.feedback = [];
+  });
+
+  it("keeps one answer per person, and counts the answers", async () => {
+    const app = createApp();
+    const answer = (user: string, fairness: string) =>
+      request(app).post("/sessions/session-1/feedback").set("Authorization", asUser(user)).send({ fairness }).expect(201);
+
+    await answer("creator", "no");
+    await answer("creator", "somewhat");
+    await answer("other", "yes");
+
+    const response = await request(app).get("/sessions/session-1/feedback").set("Authorization", asUser("creator")).expect(200);
+    expect(response.body.data.summary).toEqual({
+      count: 2,
+      fairness: { yes: 1, somewhat: 1, no: 0 },
+      avgFaithfulness: null,
+      avgNeutrality: null,
+    });
+  });
+
+  it("rejects the old star ratings", async () => {
+    await request(createApp())
+      .post("/sessions/session-1/feedback")
+      .set("Authorization", asUser("creator"))
+      .send({ faithfulness: 5, neutrality: 4 })
+      .expect(400);
   });
 });

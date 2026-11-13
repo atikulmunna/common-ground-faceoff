@@ -174,11 +174,10 @@ test("signs in, starts a conversation, shares a perspective, reviews common grou
   await sharedFoundation.getByRole("button", { name: "Post comment" }).click();
   await expect(sharedFoundation.getByText("This shared foundation is accurately represented.")).toBeVisible();
 
-  await page.getByRole("group", { name: "Did the restated views say what people meant?" }).getByRole("button", { name: "5 out of 5" }).click();
-  await page.getByRole("group", { name: "Did the summary avoid taking sides?" }).getByRole("button", { name: "4 out of 5" }).click();
-  await page.getByLabel("Anything else? (optional)").fill("Clear and balanced analysis.");
-  await page.getByRole("button", { name: "Send feedback" }).click();
-  await expect(page.getByText("Thanks. Your feedback was sent.")).toBeVisible();
+  await page.getByRole("group", { name: "Did this feel fair to you?" }).getByRole("button", { name: "Yes" }).click();
+  await page.getByLabel("Anything to add? (optional)").fill("Clear and balanced analysis.");
+  await page.getByRole("button", { name: "Save my answer" }).click();
+  await expect(page.getByText("Thanks. Your answer was saved.")).toBeVisible();
 
   for (const [format, extension] of [["JSON", "json"], ["Markdown", "md"], ["PDF", "pdf"]] as const) {
     const downloadPromise = page.waitForEvent("download");

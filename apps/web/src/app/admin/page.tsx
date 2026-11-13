@@ -13,6 +13,7 @@ type Analytics = {
   steelmanAcceptanceCount: number;
   feedbackSummary: {
     count: number;
+    fairness?: { yes: number; somewhat: number; no: number };
     avgFaithfulness: number | null;
     avgNeutrality: number | null;
   };
@@ -162,6 +163,12 @@ export default function AdminDashboardPage() {
             <div><dt>With results</dt><dd>{analytics.completedSessions}</dd></div>
             <div><dt>Reach results</dt><dd>{Math.round(analytics.completionRate * 100)}%</dd></div>
             <div><dt>Restated views accepted</dt><dd>{analytics.steelmanAcceptanceCount}</dd></div>
+            {analytics.feedbackSummary.fairness && analytics.feedbackSummary.count > 0 && (
+              <div>
+                <dt>Felt fair</dt>
+                <dd>{analytics.feedbackSummary.fairness.yes} yes, {analytics.feedbackSummary.fairness.somewhat} somewhat, {analytics.feedbackSummary.fairness.no} no</dd>
+              </div>
+            )}
             {analytics.feedbackSummary.avgFaithfulness != null && (
               <div><dt>Restated views felt faithful</dt><dd>{analytics.feedbackSummary.avgFaithfulness.toFixed(1)} of 5</dd></div>
             )}

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import type { FairnessAnswer } from "@common-ground/shared";
 
 import { apiPost } from "../lib-api";
 import { ConversationHeader } from "./conversation/conversation-header";
@@ -155,8 +156,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     }
   }
 
-  async function submitFeedback(faithfulness: number, neutrality: number, comment: string) {
-    await apiPost(`/sessions/${sessionId}/feedback`, { faithfulness, neutrality, comment: comment || undefined });
+  async function submitFeedback(fairness: FairnessAnswer, comment: string) {
+    await apiPost(`/sessions/${sessionId}/feedback`, { fairness, comment: comment || undefined });
     setFeedbackSaved(true);
   }
 

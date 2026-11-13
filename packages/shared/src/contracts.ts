@@ -64,9 +64,12 @@ export const analyzeSessionSchema = z.object({
   runMetadata: z.record(z.string(), z.unknown()).optional()
 });
 
+/** CG-FR58: one question after the results, "Did this feel fair to you?". */
+export const fairnessAnswerSchema = z.enum(["yes", "somewhat", "no"]);
+export type FairnessAnswer = z.infer<typeof fairnessAnswerSchema>;
+
 export const feedbackRatingSchema = z.object({
-  faithfulness: z.number().int().min(1).max(5),
-  neutrality: z.number().int().min(1).max(5),
+  fairness: fairnessAnswerSchema,
   comment: z.string().max(1000).optional()
 });
 

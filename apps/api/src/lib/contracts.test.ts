@@ -85,14 +85,14 @@ describe("shared contracts", () => {
   });
 
   describe("feedbackRatingSchema", () => {
-    it("accepts valid ratings", () => {
-      const result = feedbackRatingSchema.safeParse({ faithfulness: 4, neutrality: 3 });
-      expect(result.success).toBe(true);
+    it("accepts an answer to the fairness question, with or without a comment", () => {
+      expect(feedbackRatingSchema.safeParse({ fairness: "somewhat" }).success).toBe(true);
+      expect(feedbackRatingSchema.safeParse({ fairness: "no", comment: "It missed my main point." }).success).toBe(true);
     });
 
-    it("rejects out of range rating", () => {
-      const result = feedbackRatingSchema.safeParse({ faithfulness: 0, neutrality: 6 });
-      expect(result.success).toBe(false);
+    it("rejects any other answer, and the old star ratings", () => {
+      expect(feedbackRatingSchema.safeParse({ fairness: "maybe" }).success).toBe(false);
+      expect(feedbackRatingSchema.safeParse({ faithfulness: 4, neutrality: 3 }).success).toBe(false);
     });
   });
 

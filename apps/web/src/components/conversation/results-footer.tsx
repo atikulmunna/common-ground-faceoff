@@ -2,6 +2,8 @@
 
 import { useId, useState } from "react";
 
+import type { FairnessAnswer } from "@common-ground/shared";
+
 import { apiPost } from "../../lib-api";
 import { getPublicApiBaseUrl } from "../../lib/api-base";
 import { renderMarkdown } from "./markdown";
@@ -137,36 +139,34 @@ function ExportLinks({ sessionId }: { sessionId: string }) {
   );
 }
 
-const SCALES = [
-  { key: "faithfulness", question: "Did the restated views say what people meant?" },
-  { key: "neutrality", question: "Did the summary avoid taking sides?" },
-] as const;
+const FAIRNESS_ANSWERS: Array<[FairnessAnswer, string]> = [["yes", "Yes"], ["somewhat", "Somewhat"], ["no", "No"]];
 
 export function FeedbackPanel({
   onSubmit,
   saved,
 }: {
-  onSubmit: (faithfulness: number, neutrality: number, comment: string) => Promise<void>;
+  onSubmit: (fairness: FairnessAnswer, comment: string) => Promise<void>;
   saved: boolean;
 }) {
-  const [scores, setScores] = useState({ faithfulness: 0, neutrality: 0 });
+  const [answer, setAnswer] = useState<FairnessAnswer | null>(null);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const commentId = useId();
 
   if (saved) {
-    return <p className="notice notice--ok" role="status">Thanks. Your feedback was sent.</p>;
+    return <p className="notice notice--ok" role="status">Thanks. Your answer was saved.</p>;
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (!answer) return;
     setBusy(true);
     setError(null);
     try {
-      await onSubmit(scores.faithfulness, scores.neutrality, comment);
+      await onSubmit(answer, comment);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Your feedback was not sent. Try again.");
+      setError(submitError instanceof Error ? submitError.message : "Your answer was not saved. Try again.");
     } finally {
       setBusy(false);
     }
@@ -174,39 +174,23 @@ export function FeedbackPanel({
 
   return (
     <section className="panel feedback" aria-labelledby="feedback-heading">
-      <h2 id="feedback-heading">Was this fair?</h2>
-      <p className="section-help">Your answers help improve how perspectives are restated.</p>
+      <h2 id="feedback-heading">Did this feel fair to you?</h2>
+      <p className="section-help">Your answer helps improve how perspectives are restated. You can change it later.</p>
       <form onSubmit={submit} className="form-stack">
-        {SCALES.map((scale) => (
-          <div key={scale.key} className="scale" role="group" aria-label={scale.question}>
-            <span className="scale__question">{scale.question}</span>
-            <div className="scale__options">
-              <span className="scale__end" aria-hidden="true">Not at all</span>
-              {[1, 2, 3, 4, 5].map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className="scale__option"
-                  aria-pressed={scores[scale.key] === value}
-                  aria-label={`${value} out of 5`}
-                  onClick={() => setScores((current) => ({ ...current, [scale.key]: value }))}
-                >
-                  {value}
-                </button>
-              ))}
-              <span className="scale__end" aria-hidden="true">Completely</span>
-            </div>
-          </div>
-        ))}
+        <div className="response__row" role="group" aria-labelledby="feedback-heading">
+          {FAIRNESS_ANSWERS.map(([value, label]) => (
+            <button key={value} type="button" className="toggle" aria-pressed={answer === value} onClick={() => setAnswer(value)}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="field">
-          <label htmlFor={commentId}>Anything else? (optional)</label>
-          <textarea id={commentId} rows={2} value={comment} onChange={(event) => setComment(event.target.value)} />
+          <label htmlFor={commentId}>Anything to add? (optional)</label>
+          <textarea id={commentId} rows={2} maxLength={1000} value={comment} onChange={(event) => setComment(event.target.value)} />
         </div>
         {error && <p className="field-error" role="alert">{error}</p>}
         <div className="form-actions">
-          <button type="submit" disabled={busy || scores.faithfulness === 0 || scores.neutrality === 0}>
-            {busy ? "Sending" : "Send feedback"}
-          </button>
+          <button type="submit" disabled={busy || !answer}>{busy ? "Saving" : "Save my answer"}</button>
         </div>
       </form>
     </section>

@@ -212,8 +212,11 @@ model FeedbackRating {
   id            String   @id @default(cuid())
   sessionId      String
   userId         String
-  faithfulness   Int
-  neutrality     Int
+  /// "yes", "somewhat" or "no" to "Did this feel fair to you?". Null on ratings from before the question.
+  fairness       String?
+  /// Star ratings from before the fairness question; null on newer answers.
+  faithfulness   Int?
+  neutrality     Int?
   comment        String?
   createdAt      DateTime @default(now())
   user           User     @relation(fields: [userId], references: [id])

@@ -1046,19 +1046,6 @@ label, legend { font-weight: 700; }
 .export__label { font-weight: 700; }
 
 .feedback { max-width: 44rem; }
-.scale { display: flex; flex-direction: column; gap: 10px; }
-.scale__question { font-weight: 700; }
-.scale__options { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.scale__end { color: var(--muted); font-size: 0.9375rem; }
-button.scale__option {
-  width: 44px;
-  padding: 0;
-  color: var(--ink);
-  background: transparent;
-  border-color: var(--ink);
-}
-button.scale__option:hover:not(:disabled) { color: var(--ink); background: var(--teal-tint); border-color: var(--ink); }
-button.scale__option[aria-pressed="true"] { color: #fff; background: var(--teal); border-color: var(--teal); }
 
 .round-history__pickers { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 24px; }
 .round-history__pickers label { display: flex; gap: 10px; align-items: center; }

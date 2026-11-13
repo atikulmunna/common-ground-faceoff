@@ -11,6 +11,7 @@ import { prisma } from "../lib/prisma.js";
 import { anonymousOrderKey, attributeToViewer, labelOrder, participantLabel } from "../lib/conversationPrivacy.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { requireSessionAccess } from "../middleware/rbac.js";
+import { summarizeFeedback } from "../services/feedbackSummary.js";
 
 export const sessionCollaborationRouter = Router();
 
@@ -51,15 +52,18 @@ sessionCollaborationRouter.post("/:id/feedback", requireSessionAccess, async (re
     return;
   }
 
-  const feedback = await prisma.feedbackRating.create({
-    data: {
-      sessionId: req.params.id,
-      userId: req.user.id,
-      faithfulness: parse.data.faithfulness,
-      neutrality: parse.data.neutrality,
-      comment: parse.data.comment
-    }
-  });
+  // One answer per person: answering again replaces the earlier answer.
+  const [, feedback] = await prisma.$transaction([
+    prisma.feedbackRating.deleteMany({ where: { sessionId: req.params.id, userId: req.user.id } }),
+    prisma.feedbackRating.create({
+      data: {
+        sessionId: req.params.id,
+        userId: req.user.id,
+        fairness: parse.data.fairness,
+        comment: parse.data.comment
+      }
+    }),
+  ]);
 
   res.status(201).json(createSuccessResponse({ feedback }));
 });
@@ -71,18 +75,17 @@ sessionCollaborationRouter.post("/:id/feedback", requireSessionAccess, async (re
 sessionCollaborationRouter.get("/:id/feedback", requireSessionAccess, async (req, res) => {
   const ratings = await prisma.feedbackRating.findMany({
     where: { sessionId: req.params.id },
-    select: { faithfulness: true, neutrality: true, userId: true, comment: true, createdAt: true },
+    select: { fairness: true, faithfulness: true, neutrality: true, userId: true, comment: true, createdAt: true },
     orderBy: { createdAt: "desc" },
   });
 
   const count = ratings.length;
-  const avgFaithfulness = count > 0 ? ratings.reduce((s, r) => s + r.faithfulness, 0) / count : null;
-  const avgNeutrality = count > 0 ? ratings.reduce((s, r) => s + r.neutrality, 0) / count : null;
+  const summary = { count, ...summarizeFeedback(ratings) };
 
   const anonymous = await isAnonymous(req.params.id);
   res.json(createSuccessResponse({
     ratings: attributeToViewer(ratings, req.user.id, anonymous),
-    summary: { count, avgFaithfulness, avgNeutrality },
+    summary,
   }));
 });
 

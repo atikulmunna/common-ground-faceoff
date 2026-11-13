@@ -9,6 +9,7 @@ import {
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { logDeniedAction } from "../middleware/authorization.js";
+import { summarizeFeedback } from "../services/feedbackSummary.js";
 
 export const adminRouter = Router();
 
@@ -332,7 +333,7 @@ adminRouter.get("/analytics", async (req, res) => {
           in: (await prisma.session.findMany({ where: sessionWhere, select: { id: true } })).map((s) => s.id),
         },
       },
-      select: { faithfulness: true, neutrality: true },
+      select: { fairness: true, faithfulness: true, neutrality: true },
     }),
   ]);
 
@@ -361,17 +362,7 @@ adminRouter.get("/analytics", async (req, res) => {
         completionRate: Math.round(completionRate * 100) / 100,
         conflictTypeDistribution: conflictTypes,
         steelmanAcceptanceCount: steelmanAcceptRate,
-        feedbackSummary: {
-          count: allFeedback.length,
-          avgFaithfulness:
-            allFeedback.length > 0
-              ? Math.round((allFeedback.reduce((s, f) => s + f.faithfulness, 0) / allFeedback.length) * 100) / 100
-              : null,
-          avgNeutrality:
-            allFeedback.length > 0
-              ? Math.round((allFeedback.reduce((s, f) => s + f.neutrality, 0) / allFeedback.length) * 100) / 100
-              : null,
-        },
+        feedbackSummary: { count: allFeedback.length, ...summarizeFeedback(allFeedback) },
       },
     })
   );
