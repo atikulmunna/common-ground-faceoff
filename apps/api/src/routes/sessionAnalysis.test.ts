@@ -118,7 +118,7 @@ describe("POST /sessions/:id/analyze", () => {
   });
 
   it("still answers 422 when the input cannot be analyzed", async () => {
-    startAnalysis.mockRejectedValueOnce(new Error("At least 2 participant positions are required for analysis"));
+    startAnalysis.mockRejectedValueOnce(new Error("At least 2 perspectives are needed to find common ground."));
 
     await analyze().expect(422);
   });

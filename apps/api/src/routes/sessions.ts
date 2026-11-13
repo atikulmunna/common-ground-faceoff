@@ -142,7 +142,7 @@ sessionsRouter.post("/:id/invite", requireSessionAccess, requirePermission("invi
   const maxParticipants = participantLimit(creator?.tier);
   const currentCount = await prisma.sessionParticipant.count({ where: { sessionId: req.params.id } });
   if (currentCount >= maxParticipants) {
-    res.status(403).json(createErrorResponse("limit_reached", `Participant limit reached (${maxParticipants} for ${creator?.tier ?? "free"} tier)`));
+    res.status(403).json(createErrorResponse("limit_reached", `This conversation is full: it allows ${maxParticipants} people.`));
     return;
   }
 
@@ -222,7 +222,7 @@ sessionsRouter.post("/:id/email-invite", requireSessionAccess, requirePermission
   const maxParticipants = participantLimit(creator?.tier);
   const currentCount = await prisma.sessionParticipant.count({ where: { sessionId: req.params.id } });
   if (currentCount >= maxParticipants) {
-    res.status(403).json(createErrorResponse("limit_reached", `Participant limit reached (${maxParticipants})`));
+    res.status(403).json(createErrorResponse("limit_reached", `This conversation is full: it allows ${maxParticipants} people.`));
     return;
   }
 
@@ -287,13 +287,13 @@ sessionsRouter.post("/:id/positions", requireSessionAccess, async (req, res) => 
   }
   const lockedStatuses = ["queued", "running", "completed"];
   if (lockedStatuses.includes(session.status)) {
-    res.status(409).json(createErrorResponse("async_state_error", "Positions cannot be edited after analysis has been triggered"));
+    res.status(409).json(createErrorResponse("async_state_error", "Perspectives cannot change once the analysis has started."));
     return;
   }
 
   // CG-FR12: Enforce submission deadline
   if (session.deadline && new Date(session.deadline) < new Date()) {
-    res.status(409).json(createErrorResponse("async_state_error", "The position submission deadline has passed"));
+    res.status(409).json(createErrorResponse("async_state_error", "The deadline for perspectives has passed."));
     return;
   }
 

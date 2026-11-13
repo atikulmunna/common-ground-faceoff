@@ -648,12 +648,12 @@ export async function startAnalysis(
   }
 
   if (positions.length < 2) {
-    throw new Error("At least 2 participant positions are required for analysis");
+    throw new Error("At least 2 perspectives are needed to find common ground.");
   }
 
   const combined = positions.map((p) => p.positionText).join("\n\n");
   if (combined.length > 30000) {
-    throw new Error("Combined payload exceeds asynchronous max threshold");
+    throw new Error("Together the perspectives are too long to analyze. Shorten one and try again.");
   }
 
   // CG-FR51: critical content suspends the conversation until a moderator has reviewed it.
@@ -732,7 +732,7 @@ export async function runClaimedAnalysis(sessionId: string): Promise<void> {
   try {
     const { session, participants, positions } = await loadPositions(sessionId);
     if (positions.length < 2) {
-      throw new Error("At least 2 participant positions are required for analysis");
+      throw new Error("At least 2 perspectives are needed to find common ground.");
     }
 
     const redacted = redactForModel(session.topic, positions);
