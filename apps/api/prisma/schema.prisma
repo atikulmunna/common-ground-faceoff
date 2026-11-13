@@ -164,6 +164,9 @@ model AnalysisResult {
   conflictMap                Json
   sharedFoundations          String
   trueDisagreements          String
+  /// Each point with its supporting quotes. Null for results saved before points were kept.
+  sharedFoundationPoints     Json?
+  disagreementPoints         Json?
   confidenceScores           Json
   llmProvider                String
   modelVersion               String

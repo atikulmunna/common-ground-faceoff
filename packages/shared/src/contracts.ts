@@ -225,6 +225,13 @@ export type CohortMemberInput = z.infer<typeof cohortMemberSchema>;
 export type AdminCreateSessionInput = z.infer<typeof adminCreateSessionSchema>;
 export type AnalyticsExportInput = z.infer<typeof analyticsExportSchema>;
 
+/** One shared foundation or disagreement, with the quotes from restated views that support it. */
+export const groundedPointSchema = z.object({
+  statement: z.string().min(1),
+  evidence: z.array(z.object({ label: z.string().min(1), quote: z.string().min(1) })),
+});
+export type GroundedPoint = z.infer<typeof groundedPointSchema>;
+
 export interface AnalysisResultDto {
   sessionId: string;
   pipelineRunId: string;
@@ -236,6 +243,9 @@ export interface AnalysisResultDto {
   status: AnalysisStatus;
   sharedFoundations: string;
   trueDisagreements: string;
+  /** Null for results saved before points were kept; render the text fields instead. */
+  sharedFoundationPoints: GroundedPoint[] | null;
+  disagreementPoints: GroundedPoint[] | null;
   conflictMap: Record<string, unknown>;
   steelmans: Record<string, unknown>;
   confidenceScores: Record<string, number>;

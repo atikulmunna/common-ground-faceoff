@@ -1,5 +1,7 @@
+import { groundedPointSchema, type GroundedPoint } from "@common-ground/shared";
 import { Router } from "express";
 import PDFDocument from "pdfkit";
+import { z } from "zod";
 
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse } from "../lib/response.js";
@@ -8,6 +10,35 @@ import { requireSessionAccess } from "../middleware/rbac.js";
 import { uploadExport } from "../services/storageService.js";
 
 export const sessionExportsRouter = Router();
+
+const storedPointsSchema = z.array(groundedPointSchema);
+
+/** Stored points, or null for results saved before points were kept (or if they do not parse). */
+function pointsOrNull(value: unknown): GroundedPoint[] | null {
+  const parsed = storedPointsSchema.safeParse(value);
+  return parsed.success && parsed.data.length > 0 ? parsed.data : null;
+}
+
+function markdownPoints(points: GroundedPoint[] | null, fallback: string): string {
+  if (!points) return `${fallback}\n\n`;
+  return points
+    .map((point) => [`- ${point.statement}`, ...point.evidence.map((item) => `  - ${item.label}: "${item.quote}"`)].join("\n"))
+    .join("\n") + "\n\n";
+}
+
+function writePdfPoints(doc: PDFKit.PDFDocument, points: GroundedPoint[] | null, fallback: string): void {
+  if (!points) {
+    doc.fontSize(10).fillColor("#333").text(fallback);
+    return;
+  }
+  for (const point of points) {
+    doc.fontSize(10).fillColor("#000").text(`- ${point.statement}`);
+    for (const item of point.evidence) {
+      doc.fontSize(9).fillColor("#555").text(`${item.label}: "${item.quote}"`, { indent: 14 });
+    }
+    doc.moveDown(0.3);
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /*  Export (CG-FR37, CG-FR40)                                          */
@@ -68,6 +99,8 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
       conflictMap: analysis.conflictMap,
       sharedFoundations: analysis.sharedFoundations,
       trueDisagreements: analysis.trueDisagreements,
+      sharedFoundationPoints: analysis.sharedFoundationPoints,
+      disagreementPoints: analysis.disagreementPoints,
       confidenceScores: analysis.confidenceScores,
       createdAt: analysis.createdAt,
     },
@@ -87,6 +120,9 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
   const steelmans = (analysis.steelmans as Record<string, string>) ?? {};
   const conflicts = (analysis.conflictMap as Record<string, string[]>) ?? {};
   const confidence = (analysis.confidenceScores as { sharedFoundations?: number; disagreements?: number }) ?? {};
+  // Each point with its quotes when the result has them; older results only have the joined text.
+  const sharedPoints = pointsOrNull(analysis.sharedFoundationPoints);
+  const disagreementPoints = pointsOrNull(analysis.disagreementPoints);
 
   if (format === "pdf") {
     res.setHeader("Content-Type", "application/pdf");
@@ -131,7 +167,7 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
     if (confidence.sharedFoundations != null) {
       doc.fontSize(9).fillColor("#888").text(`Confidence: ${Math.round(confidence.sharedFoundations * 100)}%`);
     }
-    doc.fontSize(10).fillColor("#333").text(analysis.sharedFoundations);
+    writePdfPoints(doc, sharedPoints, analysis.sharedFoundations);
     doc.fillColor("#000").moveDown(0.5);
 
     // True Disagreements
@@ -139,7 +175,7 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
     if (confidence.disagreements != null) {
       doc.fontSize(9).fillColor("#888").text(`Confidence: ${Math.round(confidence.disagreements * 100)}%`);
     }
-    doc.fontSize(10).fillColor("#333").text(analysis.trueDisagreements);
+    writePdfPoints(doc, disagreementPoints, analysis.trueDisagreements);
     doc.fillColor("#000").moveDown(0.5);
 
     // Conflict Classification
@@ -183,13 +219,13 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
   if (confidence.sharedFoundations != null) {
     md += `*Confidence: ${Math.round(confidence.sharedFoundations * 100)}%*\n\n`;
   }
-  md += `${analysis.sharedFoundations}\n\n`;
+  md += markdownPoints(sharedPoints, analysis.sharedFoundations);
 
   md += `## True Points of Disagreement\n\n`;
   if (confidence.disagreements != null) {
     md += `*Confidence: ${Math.round(confidence.disagreements * 100)}%*\n\n`;
   }
-  md += `${analysis.trueDisagreements}\n\n`;
+  md += markdownPoints(disagreementPoints, analysis.trueDisagreements);
 
   if (Object.keys(conflicts).length > 0) {
     md += `## Conflict Classification\n\n`;

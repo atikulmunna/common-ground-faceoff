@@ -152,6 +152,41 @@ describe("analysis worker steps", () => {
     expect(db.state.events.map((event) => event.eventType)).toEqual(["analysis_started", "analysis_completed"]);
   });
 
+  it("saves each common point with the quotes that support it", async () => {
+    answerEveryStage();
+    const synthesis = STAGE_OUTPUT.find(([marker]) => marker === "# Stage 5")!;
+    const original = synthesis[1];
+    synthesis[1] = {
+      sharedFoundations: [{
+        statement: "Both care about how well the team works.",
+        evidence: [
+          { label: "Participant A", quote: "help new hires learn quickly" },
+          { label: "Participant B", quote: "protect time for focused work" },
+        ],
+      }],
+      trueDisagreements: [],
+      confidenceScores: { sharedFoundations: 0.8, disagreements: 0.5 },
+    };
+
+    try {
+      await runClaimedAnalysis("session-1");
+    } finally {
+      synthesis[1] = original;
+    }
+
+    expect(db.state.results[0]).toMatchObject({
+      sharedFoundations: "Both care about how well the team works.",
+      sharedFoundationPoints: [{
+        statement: "Both care about how well the team works.",
+        evidence: [
+          { label: "Participant A", quote: "help new hires learn quickly" },
+          { label: "Participant B", quote: "protect time for focused work" },
+        ],
+      }],
+      disagreementPoints: [],
+    });
+  });
+
   it("redacts the topic as well as the perspectives, and logs what was found without the values", async () => {
     answerEveryStage();
     db.state.sessions[0].topic = "Should jane@example.com decide how many office days we keep?";

@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from "node:crypto";
+import type { GroundedPoint } from "@common-ground/shared";
 import { z } from "zod";
 
 import { prisma } from "../lib/prisma.js";
@@ -21,6 +22,8 @@ export interface AnalysisPipelineOutput {
   conflictMap: Record<string, string[]>;
   sharedFoundations: string;
   trueDisagreements: string;
+  sharedFoundationPoints: GroundedPoint[];
+  disagreementPoints: GroundedPoint[];
   confidenceScores: { sharedFoundations: number; disagreements: number };
   llmProvider: string;
   modelVersion: string;
@@ -336,10 +339,27 @@ function isEvidenceQuoteSupported(quote: string, steelman: string): boolean {
   return normalizedQuote.length >= 8 && normalizedEvidenceText(steelman).includes(normalizedQuote);
 }
 
+/** The point with only its supported quotes, one per participant, in the order given. */
+function supportedPoint(item: GroundedSynthesisItem, steelmans: Record<string, string>): GroundedPoint {
+  const evidence: GroundedPoint["evidence"] = [];
+  for (const entry of item.evidence ?? []) {
+    if (evidence.some((kept) => kept.label === entry.label)) continue;
+    if (steelmans[entry.label] && isEvidenceQuoteSupported(entry.quote, steelmans[entry.label])) {
+      evidence.push({ label: entry.label, quote: entry.quote.trim() });
+    }
+  }
+  return { statement: item.statement.trim(), evidence };
+}
+
 export function groundSynthesisResult(
   synthesis: SynthesisResult,
   steelmans: Record<string, string>,
-): { sharedFoundations: string; trueDisagreements: string } {
+): {
+  sharedFoundations: string;
+  trueDisagreements: string;
+  sharedFoundationPoints: GroundedPoint[];
+  disagreementPoints: GroundedPoint[];
+} {
   const labels = Object.keys(steelmans);
   const sharedItems = Array.isArray(synthesis.sharedFoundations) ? synthesis.sharedFoundations : [];
   const disagreementItems = Array.isArray(synthesis.trueDisagreements) ? synthesis.trueDisagreements : [];
@@ -366,11 +386,17 @@ export function groundSynthesisResult(
     return supportedLabels.size >= 2;
   });
 
+  const sharedFoundationPoints = validShared.map((item) => supportedPoint(item, steelmans));
+  const disagreementPoints = validDisagreements.map((item) => supportedPoint(item, steelmans));
+
   return {
-    sharedFoundations: validShared.map((item) => item.statement.trim()).join(" ") ||
+    // The joined text stays for exports, round comparison and results saved before points were kept.
+    sharedFoundations: sharedFoundationPoints.map((point) => point.statement).join(" ") ||
       "No explicit shared foundation was identified.",
-    trueDisagreements: validDisagreements.map((item) => item.statement.trim()).join(" ") ||
+    trueDisagreements: disagreementPoints.map((point) => point.statement).join(" ") ||
       "No explicit disagreement was identified.",
+    sharedFoundationPoints,
+    disagreementPoints,
   };
 }
 
@@ -524,6 +550,8 @@ async function runPipeline(
     conflictMap,
     sharedFoundations: groundedSynthesis.sharedFoundations,
     trueDisagreements: groundedSynthesis.trueDisagreements,
+    sharedFoundationPoints: groundedSynthesis.sharedFoundationPoints,
+    disagreementPoints: groundedSynthesis.disagreementPoints,
     confidenceScores: synthData.confidenceScores,
     llmProvider: synthRes.provider,
     // The Auto Router may answer stages with different models; record each one, in stage order.
@@ -803,6 +831,8 @@ export async function runClaimedAnalysis(sessionId: string): Promise<void> {
         conflictMap: pipelineOutput.conflictMap,
         sharedFoundations: pipelineOutput.sharedFoundations,
         trueDisagreements: pipelineOutput.trueDisagreements,
+        sharedFoundationPoints: pipelineOutput.sharedFoundationPoints,
+        disagreementPoints: pipelineOutput.disagreementPoints,
         confidenceScores: pipelineOutput.confidenceScores,
         llmProvider: pipelineOutput.llmProvider,
         modelVersion: pipelineOutput.modelVersion,

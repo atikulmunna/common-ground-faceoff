@@ -12,6 +12,8 @@ const goodOutput: AnalysisPipelineOutput = {
   conflictMap: { policy: ["They disagree about the frequency of office attendance."] },
   sharedFoundations: "Both value flexibility, retention, team cohesion, and collaboration.",
   trueDisagreements: "They differ on frequency: remote-first versus three days in the office.",
+  sharedFoundationPoints: [],
+  disagreementPoints: [],
   confidenceScores: { sharedFoundations: 0.9, disagreements: 0.88 },
   llmProvider: "test",
   modelVersion: "fixture",
