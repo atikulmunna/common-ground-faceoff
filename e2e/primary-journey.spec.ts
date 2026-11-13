@@ -85,14 +85,16 @@ test("signs in, starts a conversation, shares a perspective, reviews common grou
   await page.getByLabel("Participant email address").fill(invitedEmail);
   await page.getByLabel("Personal message for invitation").fill("Please add your perspective to this release check.");
   await page.getByRole("button", { name: "Send invitation" }).click();
-  await expect(page.getByText(`Invitation sent to ${invitedEmail}`)).toBeVisible();
+  // The test environment has no email transport, so the page may report that the email was not sent.
+  await expect(page.getByRole("status").filter({ hasText: invitedEmail })).toBeVisible();
+  await expect(page.getByText("This conversation is full: 2 of 2 places are taken.")).toBeVisible();
 
   await page.getByRole("button", { name: "Report this conversation" }).click();
   await page.getByLabel("What is wrong?").fill("This is a disposable browser moderation report.");
   await page.getByRole("button", { name: "Send report" }).click();
   await expect(page.getByText("Report sent. A moderator will review it.")).toBeVisible();
 
-  await page.getByLabel("Your perspective").fill(position);
+  await page.getByLabel("Your perspective", { exact: true }).fill(position);
   await page.getByRole("button", { name: "Submit your perspective" }).click();
   await expect(page.getByRole("button", { name: "Find common ground" })).toBeVisible();
 
