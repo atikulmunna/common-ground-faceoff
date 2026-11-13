@@ -93,11 +93,11 @@ describe("moderation removes deleted content", () => {
     db.state.latestCompletedRound = null;
   });
 
-  function submit(positionText: string) {
+  function submit(positionText: string, changeMind?: string) {
     return request(createApp())
       .post("/sessions/session-1/positions")
       .set("Authorization", asAuthor)
-      .send({ positionText });
+      .send({ positionText, changeMind });
   }
 
   function review(flagId: string, action: "approve" | "delete") {
@@ -122,8 +122,14 @@ describe("moderation removes deleted content", () => {
     expect(response.body.data.flags[0].flaggedText).toBe(FLAGGED_TEXT);
   });
 
+  it("saves what could change the author's mind with their perspective", async () => {
+    await submit("I think we should keep two office days a week, because new colleagues learn faster when they can ask in person.", "  Data showing remote hires learn just as fast.  ").expect(200);
+
+    expect(db.state.participants.find((row) => row.id === "p-author")?.positionChangeMind).toBe("Data showing remote hires learn just as fast.");
+  });
+
   it("clears the author's perspective when a moderator deletes it", async () => {
-    await submit(FLAGGED_TEXT).expect(200);
+    await submit(FLAGGED_TEXT, "Nothing would.").expect(200);
     db.state.latestCompletedRound = 1;
     db.state.snapshots = [
       { sessionId: "session-1", userId: "author", roundNumber: 1, positionText: "Round one text." },
@@ -133,7 +139,7 @@ describe("moderation removes deleted content", () => {
     await review("flag-1", "delete").expect(200);
 
     const author = db.state.participants.find((row) => row.id === "p-author");
-    expect(author).toMatchObject({ positionText: null, positionSubmittedAt: null });
+    expect(author).toMatchObject({ positionText: null, positionChangeMind: null, positionSubmittedAt: null });
     expect(author?.positionRemovedAt).toBeInstanceOf(Date);
     // The unfinished round's copy goes; the completed round's history stays.
     expect(db.state.snapshots.map((row) => row.roundNumber)).toEqual([1]);

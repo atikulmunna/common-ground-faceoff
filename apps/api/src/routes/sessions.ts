@@ -316,6 +316,7 @@ sessionsRouter.post("/:id/positions", requireSessionAccess, async (req, res) => 
     where: { id: participant.id },
     data: {
       positionText: parse.data.positionText,
+      positionChangeMind: parse.data.changeMind || null,
       positionSubmittedAt: new Date(),
       // A rewrite answers a moderator's removal, so analysis no longer waits on it.
       positionRemovedAt: null
@@ -323,7 +324,7 @@ sessionsRouter.post("/:id/positions", requireSessionAccess, async (req, res) => 
   });
 
   // CG-FR50, CG-FR64: Auto-flag for High/Critical severity content
-  const check = detectSeverity(parse.data.positionText);
+  const check = detectSeverity([parse.data.positionText, parse.data.changeMind].filter(Boolean).join("\n\n"));
   if (check.flagged && (check.severity === "high" || check.severity === "critical")) {
     await prisma.moderationFlag.create({
       data: {
@@ -449,7 +450,7 @@ sessionsRouter.get("/:id", requireSessionAccess, async (req, res) => {
     pause,
     // The creator invited people by email, so they may see who was invited (but, when anonymous, not who wrote what).
     ...(invitations ? { invitations } : {}),
-    participants: participants.map((participant: { userId: string; positionText: string | null; positionRemovedAt: Date | null; user: { id: string; email: string; displayName: string } }, index: number) => {
+    participants: participants.map((participant: { userId: string; positionText: string | null; positionChangeMind?: string | null; positionRemovedAt: Date | null; user: { id: string; email: string; displayName: string } }, index: number) => {
       const isViewer = participant.userId === req.user.id;
       const hideIdentity = session.anonymousMode && !isViewer;
       const canSeeRaw = isViewer || (session.status === "completed" && !session.anonymousMode);
@@ -460,6 +461,7 @@ sessionsRouter.get("/:id", requireSessionAccess, async (req, res) => {
         // The label the analysis uses for this person, so the page can match restated views to people.
         label: participantLabel(index),
         positionText: canSeeRaw ? participant.positionText : null,
+        positionChangeMind: canSeeRaw ? participant.positionChangeMind : null,
         // Only the author learns that a moderator removed their perspective.
         positionRemovedAt: isViewer ? participant.positionRemovedAt : null,
         // An account id is the same in every conversation, so it would identify an anonymous participant.

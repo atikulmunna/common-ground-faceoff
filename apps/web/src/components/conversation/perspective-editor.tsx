@@ -9,6 +9,8 @@ import { ReadabilityMeter } from "../readability-meter";
 export function PerspectiveEditor({
   text,
   onChange,
+  changeMind = "",
+  onChangeMindChange = () => {},
   hasSubmitted,
   editing,
   onEdit,
@@ -22,6 +24,9 @@ export function PerspectiveEditor({
 }: {
   text: string;
   onChange: (text: string) => void;
+  /** Optional answer to "What could change your mind?". */
+  changeMind?: string;
+  onChangeMindChange?: (text: string) => void;
   hasSubmitted: boolean;
   editing: boolean;
   onEdit: () => void;
@@ -44,6 +49,9 @@ export function PerspectiveEditor({
       <section className="panel" aria-labelledby="mine-heading">
         <h2 id="mine-heading">Your perspective</h2>
         <blockquote className="own-words">{text}</blockquote>
+        {changeMind && (
+          <p className="own-change-mind"><strong>What could change your mind:</strong> {changeMind}</p>
+        )}
         {deadlinePassed ? (
           <p className="field__help">The deadline has passed, so perspectives can no longer change.</p>
         ) : (
@@ -107,6 +115,25 @@ export function PerspectiveEditor({
               onChange={(event) => { onChange(event.target.value); setConfirmingWarnings(false); }}
             />
             <ReadabilityMeter text={text} />
+          </div>
+
+          <div className="field">
+            <label htmlFor="change-mind">What could change your mind? (optional)</label>
+            <textarea
+              id="change-mind"
+              rows={3}
+              maxLength={1000}
+              placeholder="For example, a fact or a result that would make you think again."
+              value={changeMind}
+              onChange={(event) => onChangeMindChange(event.target.value)}
+              aria-describedby="change-mind-help"
+            />
+            <p id="change-mind-help" className="field__help">
+              This helps the results say what would settle a difference about facts.{" "}
+              {anonymous
+                ? "Like your perspective, nobody else sees these words."
+                : "Like your perspective, others can read it once the results are ready."}
+            </p>
           </div>
 
           {warnings.length > 0 && (

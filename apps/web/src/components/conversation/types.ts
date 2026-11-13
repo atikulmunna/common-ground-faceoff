@@ -8,6 +8,8 @@ export type Participant = {
   /** The label the analysis uses for this person, such as "Participant B". */
   label?: string;
   positionText: string | null;
+  /** The viewer's own answer to "What could change your mind?"; null for others before results. */
+  positionChangeMind?: string | null;
   positionSubmittedAt: string | null;
   /** Set on the viewer's own entry when a moderator removed their perspective. */
   positionRemovedAt?: string | null;

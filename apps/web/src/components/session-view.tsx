@@ -30,6 +30,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const { session, analysis, status, isAnalyzing } = conversation;
 
   const [positionText, setPositionText] = useState("");
+  const [changeMind, setChangeMind] = useState("");
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -56,6 +57,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     const self = session.participants.find((participant) => participant.userId === currentUserId);
     if (self?.positionText) {
       setPositionText(self.positionText);
+      setChangeMind(self.positionChangeMind ?? "");
       setHasSubmitted(true);
     }
   }, [session, currentUserId]);
@@ -115,7 +117,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     setBusy(true);
     setActionError(null);
     try {
-      await apiPost(`/sessions/${sessionId}/positions`, { positionText, roundNumber: 1 });
+      await apiPost(`/sessions/${sessionId}/positions`, {
+        positionText,
+        ...(changeMind.trim() ? { changeMind: changeMind.trim() } : {}),
+        roundNumber: 1,
+      });
       setHasSubmitted(true);
       setEditing(false);
       localStorage.removeItem(draftKey);
@@ -225,6 +231,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
                 <PerspectiveEditor
                   text={positionText}
                   onChange={updatePositionText}
+                  changeMind={changeMind}
+                  onChangeMindChange={setChangeMind}
                   hasSubmitted={hasSubmitted}
                   editing={editing}
                   onEdit={() => setEditing(true)}

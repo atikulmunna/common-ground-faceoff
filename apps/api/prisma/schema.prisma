@@ -127,6 +127,8 @@ model SessionParticipant {
   role                  ParticipantRole  @default(session_participant)
   canExport             Boolean           @default(false)
   positionText          String?
+  /// Optional answer to "What could change your mind?". Private like positionText.
+  positionChangeMind    String?
   positionSubmittedAt   DateTime?
   positionRemovedAt     DateTime?         // set when a moderator deletes the position; cleared when the author resubmits
   session               Session           @relation(fields: [sessionId], references: [id], onDelete: Cascade)

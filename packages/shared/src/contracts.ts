@@ -54,6 +54,8 @@ export const inviteParticipantSchema = z.object({
 
 export const submitPositionSchema = z.object({
   positionText: z.string().min(100).max(5000),
+  /** Optional: "What could change your mind?" Private like the perspective itself. */
+  changeMind: z.string().trim().max(1000).optional(),
   roundNumber: z.number().int().positive().default(1)
 });
 
@@ -237,6 +239,8 @@ export const groundedPointSchema = z.object({
   statement: z.string().min(1),
   /** Disagreements only; absent on results saved before differences had a kind. */
   category: differenceCategorySchema.optional(),
+  /** Factual disagreements only: what evidence would settle it, from what people said could change their minds. */
+  settledBy: z.string().min(1).optional(),
   evidence: z.array(z.object({ label: z.string().min(1), quote: z.string().min(1) })),
 });
 export type GroundedPoint = z.infer<typeof groundedPointSchema>;

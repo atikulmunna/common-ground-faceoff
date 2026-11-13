@@ -262,6 +262,9 @@ function DifferenceCard({ point, ownerOf }: { point: GroundedPoint; ownerOf: (la
           );
         })}
       </div>
+      {point.settledBy && (
+        <p className="settled-by"><strong>What could change minds:</strong> {point.settledBy}</p>
+      )}
     </li>
   );
 }

@@ -238,7 +238,7 @@ moderationRouter.post("/:flagId/review", async (req, res) => {
 async function removeFlaggedPosition(sessionId: string, participantId: string): Promise<void> {
   const participant = await prisma.sessionParticipant.update({
     where: { id: participantId },
-    data: { positionText: null, positionSubmittedAt: null, positionRemovedAt: new Date() },
+    data: { positionText: null, positionChangeMind: null, positionSubmittedAt: null, positionRemovedAt: new Date() },
   });
 
   // Copies saved when an analysis started become readable once that round completes,

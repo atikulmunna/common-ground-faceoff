@@ -177,6 +177,47 @@ describe("analysis worker steps", () => {
     expect(Object.keys(db.state.results[0].participantValues as object)).toEqual(["Participant A", "Participant B"]);
   });
 
+  it("gives synthesis what could change each mind, with personal data removed", async () => {
+    answerEveryStage();
+    db.state.participants[1].positionChangeMind = "Proof that focus time drops in the office. Call 555-444-3333.";
+
+    await runClaimedAnalysis("session-1");
+
+    const synthesisPrompt = String(callLlm.mock.calls.find((call) => String(call[1]).includes("# Stage 5"))?.[1]);
+    expect(synthesisPrompt).toContain("Proof that focus time drops in the office.");
+    expect(synthesisPrompt).not.toContain("555-444-3333");
+    expect(String(callLlm.mock.calls[0][1])).not.toContain("Proof that focus time drops");
+  });
+
+  it("says what would settle a factual difference, and only a factual one", async () => {
+    answerEveryStage();
+    const synthesis = STAGE_OUTPUT.find(([marker]) => marker === "# Stage 5")!;
+    const original = synthesis[1];
+    const evidence = [
+      { label: "Participant A", quote: "help new hires learn quickly" },
+      { label: "Participant B", quote: "protect time for focused work" },
+    ];
+    synthesis[1] = {
+      sharedFoundations: [],
+      trueDisagreements: [
+        { statement: "They differ on whether focus suffers.", category: "empirical", settledBy: " Measured focus time in each setting. ", evidence },
+        { statement: "They differ on how many days.", category: "policy", settledBy: "A vote.", evidence },
+      ],
+      confidenceScores: { sharedFoundations: 0.5, disagreements: 0.8 },
+    };
+
+    try {
+      await runClaimedAnalysis("session-1");
+    } finally {
+      synthesis[1] = original;
+    }
+
+    expect(db.state.results[0].disagreementPoints).toEqual([
+      { statement: "They differ on whether focus suffers.", category: "empirical", settledBy: "Measured focus time in each setting.", evidence },
+      { statement: "They differ on how many days.", category: "policy", evidence },
+    ]);
+  });
+
   it("saves the kind of each difference, and drops a kind it does not know instead of failing", async () => {
     answerEveryStage();
     const synthesis = STAGE_OUTPUT.find(([marker]) => marker === "# Stage 5")!;

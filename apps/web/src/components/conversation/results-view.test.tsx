@@ -23,7 +23,10 @@ const RESULT: AnalysisResult = {
     { statement: "Both want new people supported.", evidence: quotes },
     { statement: "Both want fewer pointless meetings.", evidence: quotes },
   ],
-  disagreementPoints: [{ statement: "They differ on how many days.", category: "policy", evidence: quotes }],
+  disagreementPoints: [
+    { statement: "They differ on how many days.", category: "policy", evidence: quotes },
+    { statement: "They differ on whether focus suffers.", category: "empirical", settledBy: "Measured focus time in each setting.", evidence: quotes },
+  ],
   participantValues: { "Participant A": [{ name: "growth", description: "" }], "Participant B": [{ name: "focus", description: "" }] },
   verification: { sharedProposed: 5, sharedVerified: 4, differencesProposed: 1, differencesVerified: 1 },
 };
@@ -37,7 +40,7 @@ describe("ResultsView", () => {
   it("opens with a one-line summary and the measured check", () => {
     render(<ResultsView result={RESULT} owners={owners} />);
 
-    expect(screen.queryByText("You agree on 4 points and differ on 1.")).not.toBeNull();
+    expect(screen.queryByText("You agree on 4 points and differ on 2.")).not.toBeNull();
     expect(screen.queryByText(/4 of 5 proposed common points held up/)).not.toBeNull();
   });
 
@@ -60,8 +63,15 @@ describe("ResultsView", () => {
 
     expect(within(differ).queryByRole("heading", { name: "They differ on how many days." })).not.toBeNull();
     expect(within(differ).queryByText("Approach")).not.toBeNull();
-    expect(within(differ).queryByText("Val:")).not.toBeNull();
-    expect(within(differ).queryByText("You:")).not.toBeNull();
+    expect(within(differ).getAllByText("Val:")).toHaveLength(2);
+    expect(within(differ).getAllByText("You:")).toHaveLength(2);
+  });
+
+  it("says what could change minds on a factual difference", () => {
+    render(<ResultsView result={RESULT} owners={owners} />);
+
+    expect(screen.queryByText("Measured focus time in each setting.")).not.toBeNull();
+    expect(screen.getAllByText("What could change minds:")).toHaveLength(1);
   });
 
   it("names what matters to each person under their restated view", () => {
@@ -74,7 +84,7 @@ describe("ResultsView", () => {
   it("words the page for a reader outside the conversation", () => {
     render(<ResultsView result={RESULT} audience="public" />);
 
-    expect(screen.queryByText("They agree on 4 points and differ on 1.")).not.toBeNull();
+    expect(screen.queryByText("They agree on 4 points and differ on 2.")).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "Where they agree" })).not.toBeNull();
     expect(screen.getAllByText("From Participant A's view").length).toBeGreaterThan(0);
   });
@@ -134,6 +144,6 @@ describe("ResultsView", () => {
   it("says so when no common point held up", () => {
     render(<ResultsView result={{ ...RESULT, sharedFoundationPoints: [] }} owners={owners} />);
 
-    expect(screen.queryByText("No common point held up this round. You differ on 1 point.")).not.toBeNull();
+    expect(screen.queryByText("No common point held up this round. You differ on 2 points.")).not.toBeNull();
   });
 });

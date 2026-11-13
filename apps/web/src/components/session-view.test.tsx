@@ -189,6 +189,23 @@ describe("SessionView live updates", () => {
     expect(editor.value).toBe(`${SAVED_POSITION} I have since changed my mind on one point.`);
   });
 
+  it("sends what could change the author's mind with their perspective", async () => {
+    await renderConversation();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit perspective" }));
+    const revised = `${SAVED_POSITION} Focus matters most to me.`;
+    fireEvent.change(screen.getByLabelText("Your perspective"), { target: { value: revised } });
+    fireEvent.change(screen.getByLabelText("What could change your mind? (optional)"), { target: { value: " New data on focus time. " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await advance(0);
+
+    expect(api.post).toHaveBeenCalledWith("/sessions/s1/positions", {
+      positionText: revised,
+      changeMind: "New data on focus time.",
+      roundNumber: 1,
+    });
+  });
+
   it("tells the author when a moderator removed their perspective, and offers the editor", async () => {
     removedByModeratorAt = "2026-11-12T12:00:00Z";
     await renderConversation();

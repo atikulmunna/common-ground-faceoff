@@ -88,6 +88,7 @@ function participant(userId: string, role: string, extra: Row = {}) {
     role,
     canExport: role === "session_creator",
     positionText: `${userId}'s view of the office question.`,
+    positionChangeMind: `${userId}'s change-mind answer.`,
     positionSubmittedAt: "2026-11-12T10:00:00.000Z",
     positionRemovedAt: null,
     user: { id: userId, email: `${userId}@example.test`, displayName: userId },
@@ -112,6 +113,13 @@ describe("GET /sessions/:id details for the conversation page", () => {
     };
     db.state.flags = [];
     db.state.invitations = [{ email: "other@example.test", status: "sent" }];
+  });
+
+  it("shows people their own answer to what could change their mind, and nobody else's before results", async () => {
+    const listed = (await getConversation("creator")).body.data.session.participants as Row[];
+
+    expect(listed.find((row) => row.id === "participant-creator")?.positionChangeMind).toBe("creator's change-mind answer.");
+    expect(listed.find((row) => row.id === "participant-other")?.positionChangeMind).toBeNull();
   });
 
   it("tells the page who the viewer is and how many people may join", async () => {
@@ -189,6 +197,7 @@ describe("anonymous conversations stay anonymous after results (D1)", () => {
     expect(other).toMatchObject({ userId: null, positionText: null, user: { id: null, displayName: "Anonymous participant" } });
     expect(JSON.stringify(response.body)).not.toContain("other@example.test");
     expect(JSON.stringify(response.body)).not.toContain("other's view");
+    expect(JSON.stringify(response.body)).not.toContain("other's change-mind answer");
   });
 
   it("marks the viewer's own reactions and comments without exposing anyone else's account", async () => {

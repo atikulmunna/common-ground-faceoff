@@ -1000,6 +1000,9 @@ label, legend { font-weight: 700; }
 .carry-note { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 
 .values { color: var(--muted); }
+.settled-by { color: var(--muted); max-width: 48em; }
+.settled-by strong { color: var(--ink); }
+.own-change-mind { max-width: 44em; }
 .values__label { font-weight: 700; color: var(--ink); }
 
 .restated-grid {

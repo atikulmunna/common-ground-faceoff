@@ -21,6 +21,8 @@ import { enqueueAnalysisCompletionEmails, processNotificationEmailOutbox } from 
 export interface ParticipantPosition {
   participantLabel: string;
   positionText: string;
+  /** What could change this participant's mind, if they said. */
+  changeMind?: string;
 }
 
 export interface AnalysisPipelineOutput {
@@ -74,6 +76,8 @@ interface GroundedSynthesisItem {
   statement: string;
   /** Disagreements only: the kind of difference. */
   category?: DifferenceCategory;
+  /** Factual disagreements only: what would settle it. */
+  settledBy?: string;
   evidence: { label: string; quote: string }[];
 }
 
@@ -105,6 +109,7 @@ const synthesisSchema = z.object({
   // A missing or unknown category is dropped rather than failing the whole run.
   trueDisagreements: z.array(groundedSynthesisItemSchema.extend({
     category: z.string().optional().transform((value) => differenceCategorySchema.safeParse(value).data),
+    settledBy: z.string().optional().transform((value) => value?.trim() || undefined),
   })),
   confidenceScores: z.object({
     sharedFoundations: z.number().min(0).max(1),
@@ -246,8 +251,13 @@ function synthesisPrompt(
   topic: string,
   steelmans: SteelmanResult,
   values: ValueExtractionResult,
-  conflicts: ConflictClassificationResult
+  conflicts: ConflictClassificationResult,
+  positions: ParticipantPosition[] = [],
 ): string {
+  const changeMindBlock = positions
+    .filter((p) => p.changeMind?.trim())
+    .map((p) => `### ${p.participantLabel}\n${p.changeMind!.trim()}`)
+    .join("\n\n");
   const stBlock = steelmans.steelmans
     .map((s) => `### ${s.label}\n${s.steelman}`)
     .join("\n\n");
@@ -274,6 +284,8 @@ Given the steelmanned positions, extracted values, and classified conflicts belo
 
 Use exact, unchanged quotes from the steelmans as evidence. Every shared foundation must include valid evidence from every participant; omit it if any participant lacks support. Compatibility or lack of opposition is not shared support. Every disagreement must include valid evidence from at least two participants, and a "category" from the classified conflicts: empirical, value, semantic or policy. Report each distinct disagreement once; do not restate the same policy choice in different words. Report only disagreements actually expressed in the supplied material; do not create possible or implied disputes. Do not introduce new facts, values, evidence, examples, or proposals.
 
+For each empirical disagreement, add "settledBy": the evidence that would settle it, in one neutral sentence, based only on what the participants said could change their minds (below). Do not quote them. Omit "settledBy" when they said nothing relevant, and for every other category.
+
 Return JSON:
 \`\`\`json
 {
@@ -289,6 +301,7 @@ Return JSON:
     {
       "statement": "<one disagreement>",
       "category": "empirical|value|semantic|policy",
+      "settledBy": "<empirical only, optional: what evidence would settle it>",
       "evidence": [
         { "label": "<participant label>", "quote": "<exact quote from that steelman>" }
       ]
@@ -308,7 +321,10 @@ Extracted values:
 ${valBlock}
 
 Classified conflicts:
-${confBlock}`;
+${confBlock}
+
+What could change each participant's mind (in their own words; missing for those who did not say):
+${changeMindBlock || "(nobody said)"}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -339,7 +355,7 @@ export function computePromptTemplateHash(): string {
     steelmanPrompt("TOPIC", normalized),
     valueExtractionPrompt("TOPIC", steelmans),
     conflictClassificationPrompt("TOPIC", steelmans, values),
-    synthesisPrompt("TOPIC", steelmans, values, conflicts),
+    synthesisPrompt("TOPIC", steelmans, values, conflicts, positions.map((p) => ({ ...p, changeMind: `CHANGE MIND ${p.participantLabel}` }))),
   ].join("\n||\n");
   return createHash("sha256").update(rendered).digest("hex").slice(0, 16);
 }
@@ -362,7 +378,13 @@ function supportedPoint(item: GroundedSynthesisItem, steelmans: Record<string, s
       evidence.push({ label: entry.label, quote: entry.quote.trim() });
     }
   }
-  return { statement: item.statement.trim(), ...(item.category ? { category: item.category } : {}), evidence };
+  return {
+    statement: item.statement.trim(),
+    ...(item.category ? { category: item.category } : {}),
+    // What would settle a difference only makes sense for a factual one.
+    ...(item.category === "empirical" && item.settledBy ? { settledBy: item.settledBy } : {}),
+    evidence,
+  };
 }
 
 export function groundSynthesisResult(
@@ -553,7 +575,7 @@ async function runPipeline(
 
   // Stage 5: Synthesis
   await onStage?.(5);
-  const synthPrompt = synthesisPrompt(topic, steelData, valData, confData);
+  const synthPrompt = synthesisPrompt(topic, steelData, valData, confData, positions);
   const synthStart = Date.now();
   const { response: synthRes, data: synthData } = await callStructuredLlm<SynthesisResult>(
     synthPrompt,
@@ -605,15 +627,24 @@ async function runPipeline(
  */
 function redactForModel(topic: string, positions: ParticipantPosition[]) {
   const redactedTopic = redactPII(topic);
-  const redactedPositions = positions.map((position) => ({ position, redaction: redactPII(position.positionText) }));
+  const redactedPositions = positions.map((position) => ({
+    position,
+    redaction: redactPII(position.positionText),
+    changeMind: position.changeMind ? redactPII(position.changeMind) : null,
+  }));
   return {
     topic: redactedTopic.redactedText,
-    positions: redactedPositions.map(({ position, redaction }) => ({ ...position, positionText: redaction.redactedText })),
+    positions: redactedPositions.map(({ position, redaction, changeMind }) => ({
+      ...position,
+      positionText: redaction.redactedText,
+      ...(changeMind ? { changeMind: changeMind.redactedText } : {}),
+    })),
     detected: [
       ...redactedTopic.detected.map((found) => ({ field: "topic", ...found })),
-      ...redactedPositions.flatMap(({ position, redaction }) =>
-        redaction.detected.map((found) => ({ field: position.participantLabel, ...found })),
-      ),
+      ...redactedPositions.flatMap(({ position, redaction, changeMind }) => [
+        ...redaction.detected.map((found) => ({ field: position.participantLabel, ...found })),
+        ...(changeMind?.detected ?? []).map((found) => ({ field: `${position.participantLabel} (could change mind)`, ...found })),
+      ]),
     ],
   };
 }
@@ -640,8 +671,8 @@ export const ANALYSIS_VERSION = "v1";
  * Bump PROMPT_TEMPLATE_VERSION whenever a prompt changes, and set PROMPT_TEMPLATE_HASH to the new
  * computePromptTemplateHash() value; a test fails until the two agree.
  */
-export const PROMPT_TEMPLATE_VERSION = "tpl-v2";
-export const PROMPT_TEMPLATE_HASH = "13032280df2b0259";
+export const PROMPT_TEMPLATE_VERSION = "tpl-v3";
+export const PROMPT_TEMPLATE_HASH = "8afb760ecb0c74fb";
 
 /** A run whose estimated finish is this far in the past is treated as abandoned by a dead worker. */
 const STALE_RUN_GRACE_MS = 15 * 60 * 1000;
@@ -718,7 +749,13 @@ async function loadPositions(sessionId: string) {
   // order people were invited in (the creator knows that order).
   const participants = labelOrder(sessionId, joined, session.anonymousMode);
   const positions: ParticipantPosition[] = participants.flatMap((p, idx) =>
-    p.positionText ? [{ participantLabel: participantLabel(idx), positionText: p.positionText }] : [],
+    p.positionText
+      ? [{
+          participantLabel: participantLabel(idx),
+          positionText: p.positionText,
+          ...(p.positionChangeMind?.trim() ? { changeMind: p.positionChangeMind.trim() } : {}),
+        }]
+      : [],
   );
   return { session, participants, positions };
 }
@@ -828,7 +865,8 @@ export async function runClaimedAnalysis(sessionId: string): Promise<void> {
 
     const redacted = redactForModel(session.topic, positions);
     const inputHash = createHash("sha256")
-      .update(redacted.positions.map((p) => p.positionText).join("\n\n"))
+      // Everything sent about each person: their perspective and what could change their mind.
+      .update(redacted.positions.map((p) => [p.positionText, p.changeMind ?? ""].join("\n")).join("\n\n"))
       .digest("hex");
 
     // CG-FR59 audit: what kinds of values were masked and where, never the values themselves.
