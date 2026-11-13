@@ -90,6 +90,19 @@ describe("exports of common points", () => {
     expect(JSON.parse(response.text).analysis.sharedFoundationPoints).toHaveLength(1);
   });
 
+  it("reports how many points held up instead of the model's own confidence", async () => {
+    db.state.analysis = {
+      ...db.state.analysis,
+      verification: { sharedProposed: 2, sharedVerified: 1, differencesProposed: 0, differencesVerified: 0 },
+    };
+
+    const response = await exportAs("markdown");
+
+    expect(response.text).toContain("*1 of 2 proposed common points held up against every restated view.*");
+    expect(response.text).not.toContain("Confidence");
+    expect(JSON.parse((await exportAs("json")).text).analysis).not.toHaveProperty("confidenceScores");
+  });
+
   it("still exports results saved before points were kept", async () => {
     db.state.analysis = { ...baseResult, sharedFoundationPoints: null, disagreementPoints: null };
 
@@ -97,5 +110,6 @@ describe("exports of common points", () => {
 
     expect(response.text).toContain("Both want new colleagues to learn quickly.\n\n");
     expect(response.text).toContain("They differ on how many days.\n\n");
+    expect(response.text).not.toContain("Confidence");
   });
 });

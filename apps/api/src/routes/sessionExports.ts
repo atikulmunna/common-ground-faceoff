@@ -1,4 +1,4 @@
-import { groundedPointSchema, participantValuesSchema, type GroundedPoint } from "@common-ground/shared";
+import { groundedPointSchema, participantValuesSchema, verificationSchema, type GroundedPoint } from "@common-ground/shared";
 import { Router } from "express";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
@@ -102,7 +102,7 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
       sharedFoundationPoints: analysis.sharedFoundationPoints,
       disagreementPoints: analysis.disagreementPoints,
       participantValues: analysis.participantValues,
-      confidenceScores: analysis.confidenceScores,
+      verification: analysis.verification,
       createdAt: analysis.createdAt,
     },
   };
@@ -120,7 +120,13 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
   // Shared helpers for markdown and PDF
   const steelmans = (analysis.steelmans as Record<string, string>) ?? {};
   const conflicts = (analysis.conflictMap as Record<string, string[]>) ?? {};
-  const confidence = (analysis.confidenceScores as { sharedFoundations?: number; disagreements?: number }) ?? {};
+  const verification = verificationSchema.safeParse(analysis.verification ?? null);
+  const sharedCheck = verification.success
+    ? `${verification.data.sharedVerified} of ${verification.data.sharedProposed} proposed common points held up against every restated view.`
+    : null;
+  const differenceCheck = verification.success
+    ? `${verification.data.differencesVerified} of ${verification.data.differencesProposed} proposed differences held up against the restated views.`
+    : null;
   // Each point with its quotes when the result has them; older results only have the joined text.
   const sharedPoints = pointsOrNull(analysis.sharedFoundationPoints);
   const disagreementPoints = pointsOrNull(analysis.disagreementPoints);
@@ -168,17 +174,13 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
 
     // Shared Foundations
     doc.fontSize(14).fillColor("#000").text("Shared Foundations", { underline: true });
-    if (confidence.sharedFoundations != null) {
-      doc.fontSize(9).fillColor("#888").text(`Confidence: ${Math.round(confidence.sharedFoundations * 100)}%`);
-    }
+    if (sharedCheck) doc.fontSize(9).fillColor("#888").text(sharedCheck);
     writePdfPoints(doc, sharedPoints, analysis.sharedFoundations);
     doc.fillColor("#000").moveDown(0.5);
 
     // True Disagreements
     doc.fontSize(14).fillColor("#000").text("True Points of Disagreement", { underline: true });
-    if (confidence.disagreements != null) {
-      doc.fontSize(9).fillColor("#888").text(`Confidence: ${Math.round(confidence.disagreements * 100)}%`);
-    }
+    if (differenceCheck) doc.fontSize(9).fillColor("#888").text(differenceCheck);
     writePdfPoints(doc, disagreementPoints, analysis.trueDisagreements);
     doc.fillColor("#000").moveDown(0.5);
 
@@ -221,15 +223,11 @@ sessionExportsRouter.get("/:id/export/:format", requireSessionAccess, requirePer
   }
 
   md += `## Shared Foundations\n\n`;
-  if (confidence.sharedFoundations != null) {
-    md += `*Confidence: ${Math.round(confidence.sharedFoundations * 100)}%*\n\n`;
-  }
+  if (sharedCheck) md += `*${sharedCheck}*\n\n`;
   md += markdownPoints(sharedPoints, analysis.sharedFoundations);
 
   md += `## True Points of Disagreement\n\n`;
-  if (confidence.disagreements != null) {
-    md += `*Confidence: ${Math.round(confidence.disagreements * 100)}%*\n\n`;
-  }
+  if (differenceCheck) md += `*${differenceCheck}*\n\n`;
   md += markdownPoints(disagreementPoints, analysis.trueDisagreements);
 
   if (Object.keys(conflicts).length > 0) {

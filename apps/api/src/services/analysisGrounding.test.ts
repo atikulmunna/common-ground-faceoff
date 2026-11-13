@@ -64,6 +64,37 @@ describe("analysis synthesis grounding", () => {
     expect(result.sharedFoundations).toBe("Both support a measured pilot.");
   });
 
+  it("counts how many proposed points held up against the restated views", () => {
+    const result = groundSynthesisResult({
+      sharedFoundations: [
+        {
+          statement: "Both support a measured pilot.",
+          evidence: [
+            { label: "Participant A", quote: "Support a pilot" },
+            { label: "Participant B", quote: "Run a six-month pilot" },
+          ],
+        },
+        {
+          statement: "Both support a permanent rollout.",
+          evidence: [
+            { label: "Participant A", quote: "Support a pilot" },
+            { label: "Participant B", quote: "supports a permanent rollout" },
+          ],
+        },
+      ],
+      trueDisagreements: [{
+        statement: "They differ on when to expand.",
+        evidence: [
+          { label: "Participant A", quote: "before expanding it" },
+          { label: "Participant B", quote: "expand only after improvement" },
+        ],
+      }],
+      confidenceScores: { sharedFoundations: 0.99, disagreements: 0.99 },
+    }, steelmans);
+
+    expect(result.verification).toEqual({ sharedProposed: 2, sharedVerified: 1, differencesProposed: 1, differencesVerified: 1 });
+  });
+
   it("keeps the kind of each difference", () => {
     const result = groundSynthesisResult({
       sharedFoundations: [],

@@ -1,5 +1,11 @@
 import { randomUUID, createHash } from "node:crypto";
-import { differenceCategorySchema, type DifferenceCategory, type GroundedPoint, type ParticipantValues } from "@common-ground/shared";
+import {
+  differenceCategorySchema,
+  type DifferenceCategory,
+  type GroundedPoint,
+  type ParticipantValues,
+  type Verification,
+} from "@common-ground/shared";
 import { z } from "zod";
 
 import { prisma } from "../lib/prisma.js";
@@ -25,6 +31,7 @@ export interface AnalysisPipelineOutput {
   sharedFoundationPoints: GroundedPoint[];
   disagreementPoints: GroundedPoint[];
   participantValues: ParticipantValues;
+  verification: Verification;
   confidenceScores: { sharedFoundations: number; disagreements: number };
   llmProvider: string;
   modelVersion: string;
@@ -366,6 +373,7 @@ export function groundSynthesisResult(
   trueDisagreements: string;
   sharedFoundationPoints: GroundedPoint[];
   disagreementPoints: GroundedPoint[];
+  verification: Verification;
 } {
   const labels = Object.keys(steelmans);
   const sharedItems = Array.isArray(synthesis.sharedFoundations) ? synthesis.sharedFoundations : [];
@@ -404,6 +412,12 @@ export function groundSynthesisResult(
       "No explicit disagreement was identified.",
     sharedFoundationPoints,
     disagreementPoints,
+    verification: {
+      sharedProposed: sharedItems.length,
+      sharedVerified: sharedFoundationPoints.length,
+      differencesProposed: disagreementItems.length,
+      differencesVerified: disagreementPoints.length,
+    },
   };
 }
 
@@ -560,6 +574,7 @@ async function runPipeline(
     trueDisagreements: groundedSynthesis.trueDisagreements,
     sharedFoundationPoints: groundedSynthesis.sharedFoundationPoints,
     disagreementPoints: groundedSynthesis.disagreementPoints,
+    verification: groundedSynthesis.verification,
     participantValues: Object.fromEntries(
       valData.participants.map((participant) => [
         participant.label,
@@ -848,6 +863,7 @@ export async function runClaimedAnalysis(sessionId: string): Promise<void> {
         sharedFoundationPoints: pipelineOutput.sharedFoundationPoints,
         disagreementPoints: pipelineOutput.disagreementPoints,
         participantValues: pipelineOutput.participantValues,
+        verification: pipelineOutput.verification,
         confidenceScores: pipelineOutput.confidenceScores,
         llmProvider: pipelineOutput.llmProvider,
         modelVersion: pipelineOutput.modelVersion,

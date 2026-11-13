@@ -169,6 +169,9 @@ model AnalysisResult {
   disagreementPoints         Json?
   /// What matters to each participant (stage 3), by label. Null for results saved before values were kept.
   participantValues          Json?
+  /// Proposed and verified point counts. Null for results saved before they were counted.
+  verification               Json?
+  /// The model's own confidence. Kept for the record; the measured verification is what people see.
   confidenceScores           Json
   llmProvider                String
   modelVersion               String

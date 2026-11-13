@@ -238,6 +238,18 @@ export const groundedPointSchema = z.object({
 });
 export type GroundedPoint = z.infer<typeof groundedPointSchema>;
 
+/**
+ * How many of the points the model proposed held up when their quotes were checked against the
+ * restated views. Measured, unlike the model's own confidence score.
+ */
+export const verificationSchema = z.object({
+  sharedProposed: z.number().int().min(0),
+  sharedVerified: z.number().int().min(0),
+  differencesProposed: z.number().int().min(0),
+  differencesVerified: z.number().int().min(0),
+});
+export type Verification = z.infer<typeof verificationSchema>;
+
 /** What matters to each participant, by participant label, as found in their restated view. */
 export const participantValuesSchema = z.record(z.array(z.object({ name: z.string().min(1), description: z.string() })));
 export type ParticipantValues = z.infer<typeof participantValuesSchema>;
@@ -258,6 +270,8 @@ export interface AnalysisResultDto {
   disagreementPoints: GroundedPoint[] | null;
   /** Null for results saved before values were kept. */
   participantValues: ParticipantValues | null;
+  /** Null for results saved before verification was counted. */
+  verification: Verification | null;
   conflictMap: Record<string, unknown>;
   steelmans: Record<string, unknown>;
   confidenceScores: Record<string, number>;

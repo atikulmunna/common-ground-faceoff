@@ -15,6 +15,7 @@ const goodOutput: AnalysisPipelineOutput = {
   sharedFoundationPoints: [],
   disagreementPoints: [],
   participantValues: {},
+  verification: { sharedProposed: 1, sharedVerified: 1, differencesProposed: 1, differencesVerified: 1 },
   confidenceScores: { sharedFoundations: 0.9, disagreements: 0.88 },
   llmProvider: "test",
   modelVersion: "fixture",

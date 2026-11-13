@@ -78,6 +78,7 @@ publicShareLinksRouter.get("/view/:token", async (req, res) => {
         sharedFoundationPoints: analysis.sharedFoundationPoints,
         disagreementPoints: analysis.disagreementPoints,
         participantValues: analysis.participantValues,
+        verification: analysis.verification,
         createdAt: analysis.createdAt,
       }
     : null;
