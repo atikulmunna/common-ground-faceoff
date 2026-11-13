@@ -53,7 +53,7 @@ publicShareLinksRouter.get("/view/:token", async (req, res) => {
     orderBy: [{ roundNumber: "desc" }, { createdAt: "desc" }],
   });
 
-  // Build read-only view (hide raw positions for privacy)
+  // Build the read-only view. Raw perspectives and internal details (model, confidence) stay private.
   const readOnlySession = {
     id: session.id,
     topic: session.topic,
@@ -63,7 +63,7 @@ publicShareLinksRouter.get("/view/:token", async (req, res) => {
     analyzedAt: session.analyzedAt,
     participantCount: session.participants.length,
     participants: session.participants.map((p) => ({
-      displayName: session.anonymousMode ? "Anonymous Participant" : p.user.displayName,
+      displayName: session.anonymousMode ? "Anonymous participant" : p.user.displayName,
       role: p.role,
     })),
   };
@@ -75,9 +75,6 @@ publicShareLinksRouter.get("/view/:token", async (req, res) => {
         conflictMap: analysis.conflictMap,
         sharedFoundations: analysis.sharedFoundations,
         trueDisagreements: analysis.trueDisagreements,
-        confidenceScores: analysis.confidenceScores,
-        llmProvider: analysis.llmProvider,
-        modelVersion: analysis.modelVersion,
         createdAt: analysis.createdAt,
       }
     : null;

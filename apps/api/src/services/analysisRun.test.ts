@@ -196,6 +196,22 @@ describe("analysis worker steps", () => {
     expect(normalizationPrompt).toContain("### Participant B\nRemote days protect time for focused work.");
   });
 
+  it("labels anonymous participants in a stable order that does not follow when they joined", async () => {
+    answerEveryStage();
+    db.state.sessions[0].anonymousMode = true;
+    // For these ids the shuffled order is the reverse of the join order.
+    db.state.participants = [
+      { id: "c1-first", sessionId: "session-1", userId: "user-a", positionText: "Office days help new hires learn quickly." },
+      { id: "c2-second", sessionId: "session-1", userId: "user-b", positionText: "Remote days protect time for focused work." },
+    ];
+
+    await runClaimedAnalysis("session-1");
+
+    const normalizationPrompt = String(callLlm.mock.calls[0][1]);
+    expect(normalizationPrompt).toContain("### Participant A\nRemote days protect time for focused work.");
+    expect(normalizationPrompt).toContain("### Participant B\nOffice days help new hires learn quickly.");
+  });
+
   it("keeps everyone's label when a participant has not submitted this round", async () => {
     answerEveryStage();
     db.state.participants = [

@@ -11,6 +11,8 @@ const db = vi.hoisted(() => {
       findUnique: async ({ where }: { where: Row }) =>
         state.session && where.id === state.session.id ? state.session : null,
     },
+    moderationFlag: { findFirst: async () => null },
+    emailInvitation: { findMany: async () => [] },
   };
   return { state, prisma };
 });
@@ -85,14 +87,14 @@ describe("participant identity in GET /sessions/:id", () => {
     expect(entryFor(asAuthor.body, "other").positionRemovedAt).toBe("2026-11-12T12:00:00.000Z");
   });
 
-  it("keeps anonymous participants' account ids out of the response until results exist", async () => {
+  it("keeps anonymous participants' account ids out of the response", async () => {
     db.state.session = { ...db.state.session, anonymousMode: true };
 
     const response = await viewAs("viewer");
 
     expect(entryFor(response.body, "other")).toMatchObject({
       userId: null,
-      user: { id: null, displayName: "Anonymous Participant" },
+      user: { id: null, displayName: "Anonymous participant" },
     });
     expect(JSON.stringify(response.body)).not.toContain("\"other\"");
     expect(entryFor(response.body, "viewer")).toMatchObject({ userId: "viewer" });

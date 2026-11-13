@@ -18,6 +18,7 @@ import {
   startAnalysis,
 } from "../services/analysisService.js";
 import { wakeAnalysisWorker } from "../services/analysisWorker.js";
+import { anonymousOrderKey, participantLimit } from "../lib/conversationPrivacy.js";
 import { detectSeverity } from "./moderation.js";
 import { computeModerationSlaDueAt } from "../lib/moderationSla.js";
 import { sendSessionInvitation } from "../services/emailService.js";
@@ -138,7 +139,7 @@ sessionsRouter.post("/:id/invite", requireSessionAccess, requirePermission("invi
 
   // CG-FR11: Enforce participant limits based on creator's tier
   const creator = await prisma.user.findUnique({ where: { id: session.creatorUserId }, select: { tier: true } });
-  const maxParticipants = creator?.tier === "free" ? 2 : 6;
+  const maxParticipants = participantLimit(creator?.tier);
   const currentCount = await prisma.sessionParticipant.count({ where: { sessionId: req.params.id } });
   if (currentCount >= maxParticipants) {
     res.status(403).json(createErrorResponse("limit_reached", `Participant limit reached (${maxParticipants} for ${creator?.tier ?? "free"} tier)`));
@@ -218,7 +219,7 @@ sessionsRouter.post("/:id/email-invite", requireSessionAccess, requirePermission
 
   // Enforce participant limits
   const creator = await prisma.user.findUnique({ where: { id: session.creatorUserId }, select: { tier: true } });
-  const maxParticipants = creator?.tier === "free" ? 2 : 6;
+  const maxParticipants = participantLimit(creator?.tier);
   const currentCount = await prisma.sessionParticipant.count({ where: { sessionId: req.params.id } });
   if (currentCount >= maxParticipants) {
     res.status(403).json(createErrorResponse("limit_reached", `Participant limit reached (${maxParticipants})`));
@@ -407,13 +408,52 @@ sessionsRouter.get("/:id", requireSessionAccess, async (req, res) => {
   }
 
   const viewerIsCreator = session.creatorUserId === req.user.id;
+  const self = session.participants.find((participant) => participant.userId === req.user.id);
+
+  // CG-FR14 / D1: in an anonymous conversation nobody learns who wrote what, before or after results.
+  // Listing others in a stable shuffled order keeps the list from following the order people joined.
+  const participants = session.anonymousMode
+    ? [...session.participants].sort((a, b) =>
+        anonymousOrderKey(session.id, a.id).localeCompare(anonymousOrderKey(session.id, b.id)))
+    : session.participants;
+
+  const [creator, moderationHold, invitations] = await Promise.all([
+    prisma.user.findUnique({ where: { id: session.creatorUserId }, select: { tier: true } }),
+    prisma.moderationFlag.findFirst({
+      where: { sessionId: session.id, severity: "critical", status: { in: ["pending", "appealed"] } },
+      select: { id: true },
+    }),
+    viewerIsCreator
+      ? prisma.emailInvitation.findMany({
+          where: { sessionId: session.id },
+          select: { email: true, status: true },
+          orderBy: { createdAt: "asc" },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const awaitingRewrite = session.participants.some((participant) => participant.positionRemovedAt);
+  const pause = moderationHold
+    ? { reason: "moderation_review" as const }
+    : awaitingRewrite
+      ? { reason: "awaiting_rewrite" as const }
+      : null;
+
   const sessionWithPrivacy = {
     ...session,
-    participants: session.participants.map((participant: { userId: string; positionText: string | null; positionRemovedAt: Date | null; user: { id: string; email: string; displayName: string } }) => {
+    viewer: {
+      isCreator: viewerIsCreator,
+      isParticipant: Boolean(self),
+      canShare: viewerIsCreator || Boolean(self?.canExport),
+    },
+    participantLimit: participantLimit(creator?.tier),
+    pause,
+    // The creator invited people by email, so they may see who was invited (but, when anonymous, not who wrote what).
+    ...(invitations ? { invitations } : {}),
+    participants: participants.map((participant: { userId: string; positionText: string | null; positionRemovedAt: Date | null; user: { id: string; email: string; displayName: string } }) => {
       const isViewer = participant.userId === req.user.id;
-      const canSeeRaw = isViewer || session.status === "completed";
-      // CG-FR14: In anonymous mode, hide other participant identities until analysis is complete
-      const hideIdentity = session.anonymousMode && session.status !== "completed" && !isViewer;
+      const hideIdentity = session.anonymousMode && !isViewer;
+      const canSeeRaw = isViewer || (session.status === "completed" && !session.anonymousMode);
       // Emails go only to the creator, who invited people by email, and to the viewer about themselves.
       const showEmail = viewerIsCreator || isViewer;
       return {
@@ -424,7 +464,7 @@ sessionsRouter.get("/:id", requireSessionAccess, async (req, res) => {
         // An account id is the same in every conversation, so it would identify an anonymous participant.
         userId: hideIdentity ? null : participant.userId,
         user: hideIdentity
-          ? { id: null, displayName: "Anonymous Participant" }
+          ? { id: null, displayName: "Anonymous participant" }
           : {
               id: participant.user.id,
               displayName: participant.user.displayName,

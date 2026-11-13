@@ -2,6 +2,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 
 import { prisma } from "../lib/prisma.js";
+import { anonymousOrderKey } from "../lib/conversationPrivacy.js";
 import { redactPII } from "./redactionService.js";
 import { callLlm, parseJsonResponse, type LlmResponse } from "./llmProvider.js";
 import { enqueueAnalysisCompletionEmails, processNotificationEmailOutbox } from "./emailOutbox.js";
@@ -617,11 +618,16 @@ export function estimateCompletionSeconds(totalChars: number): number {
  */
 async function loadPositions(sessionId: string) {
   const session = await prisma.session.findUniqueOrThrow({ where: { id: sessionId } });
-  const participants = await prisma.sessionParticipant.findMany({
+  const joined = await prisma.sessionParticipant.findMany({
     where: { sessionId },
     orderBy: { id: "asc" },
     include: { user: { select: { displayName: true } } },
   });
+  // Anonymous conversations use a stable shuffled order instead, so labels do not follow the
+  // order people were invited in (the creator knows that order).
+  const participants = session.anonymousMode
+    ? [...joined].sort((a, b) => anonymousOrderKey(sessionId, a.id).localeCompare(anonymousOrderKey(sessionId, b.id)))
+    : joined;
   const positions: ParticipantPosition[] = participants.flatMap((p, idx) =>
     p.positionText
       ? [{ participantLabel: `Participant ${String.fromCharCode(65 + idx)}`, positionText: p.positionText }]

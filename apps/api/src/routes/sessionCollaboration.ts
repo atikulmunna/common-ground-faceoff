@@ -8,10 +8,16 @@ import {
 } from "@common-ground/shared";
 
 import { prisma } from "../lib/prisma.js";
+import { anonymousOrderKey, attributeToViewer } from "../lib/conversationPrivacy.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { requireSessionAccess } from "../middleware/rbac.js";
 
 export const sessionCollaborationRouter = Router();
+
+async function isAnonymous(sessionId: string): Promise<boolean> {
+  const session = await prisma.session.findUnique({ where: { id: sessionId }, select: { anonymousMode: true } });
+  return Boolean(session?.anonymousMode);
+}
 
 sessionCollaborationRouter.post("/:id/feedback", requireSessionAccess, async (req, res) => {
   const parse = feedbackRatingSchema.safeParse(req.body);
@@ -48,8 +54,9 @@ sessionCollaborationRouter.get("/:id/feedback", requireSessionAccess, async (req
   const avgFaithfulness = count > 0 ? ratings.reduce((s, r) => s + r.faithfulness, 0) / count : null;
   const avgNeutrality = count > 0 ? ratings.reduce((s, r) => s + r.neutrality, 0) / count : null;
 
+  const anonymous = await isAnonymous(req.params.id);
   res.json(createSuccessResponse({
-    ratings,
+    ratings: attributeToViewer(ratings, req.user.id, anonymous),
     summary: { count, avgFaithfulness, avgNeutrality },
   }));
 });
@@ -201,7 +208,14 @@ sessionCollaborationRouter.get("/:id/rounds/:roundNumber/positions", requireSess
     orderBy: { snapshotAt: "asc" },
   });
 
-  res.json(createSuccessResponse({ snapshots }));
+  const anonymous = await isAnonymous(req.params.id);
+  // Snapshots are saved in the order people joined; shuffle them stably when anonymous.
+  const ordered = anonymous
+    ? [...snapshots].sort((a, b) =>
+        anonymousOrderKey(req.params.id, a.userId).localeCompare(anonymousOrderKey(req.params.id, b.userId)))
+    : snapshots;
+
+  res.json(createSuccessResponse({ snapshots: attributeToViewer(ordered, req.user.id, anonymous) }));
 });
 
 /* ------------------------------------------------------------------ */
@@ -253,7 +267,11 @@ sessionCollaborationRouter.get("/:id/reactions", requireSessionAccess, async (re
     mutualAcknowledgments[section] = entries.length >= 2 && entries.every((e) => e.reaction === "represents");
   }
 
-  res.json(createSuccessResponse({ reactions, mutualAcknowledgments }));
+  const anonymous = await isAnonymous(req.params.id);
+  res.json(createSuccessResponse({
+    reactions: attributeToViewer(reactions, req.user.id, anonymous),
+    mutualAcknowledgments,
+  }));
 });
 
 /* ------------------------------------------------------------------ */
@@ -285,5 +303,6 @@ sessionCollaborationRouter.get("/:id/comments", requireSessionAccess, async (req
     orderBy: { createdAt: "asc" },
   });
 
-  res.json(createSuccessResponse({ comments }));
+  const anonymous = await isAnonymous(req.params.id);
+  res.json(createSuccessResponse({ comments: attributeToViewer(comments, req.user.id, anonymous) }));
 });
