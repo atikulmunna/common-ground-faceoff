@@ -10,7 +10,7 @@ const REGISTRATION_ENABLED = process.env.NEXT_PUBLIC_ENABLE_REGISTRATION === "tr
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={<section className="card grid" style={{ maxWidth: "28rem", margin: "0 auto" }}><p>Loading...</p></section>}>
+    <Suspense fallback={<p className="quiet-status" role="status">Loading</p>}>
       <SignInPageContent />
     </Suspense>
   );
@@ -139,51 +139,56 @@ function SignInPageContent() {
 
   if (mfa) {
     return (
-      <section className="card grid" style={{ maxWidth: "28rem", margin: "0 auto" }}>
+      <section className="auth-panel">
         <h1>Enter your verification code</h1>
-        <p className="form-helper">
+        <p className="lede">
           {mfa.mfaType === "sms"
-            ? "We sent a 6-digit code to your phone."
-            : "Open your authenticator app and enter the 6-digit code for Common Ground."}
+            ? "We sent a 6 digit code to your phone."
+            : "Open your authenticator app and enter the 6 digit code for Common Ground."}
         </p>
 
-        <form onSubmit={handleVerify} className="grid">
-          <label htmlFor="mfa-code">Verification code</label>
-          <input
-            id="mfa-code"
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern="[0-9]{6}"
-            maxLength={6}
-            required
-            autoFocus
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-          />
+        <form onSubmit={handleVerify} className="form-stack">
+          <div className="field">
+            <label htmlFor="mfa-code">Verification code</label>
+            <input
+              id="mfa-code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              required
+              autoFocus
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+            />
+          </div>
 
-          {error && <p role="alert" style={{ color: "#b91c1c" }}>{error}</p>}
+          {error && <p role="alert" className="notice notice--error">{error}</p>}
 
           <button type="submit" disabled={busy || code.length !== 6}>
-            {busy ? "Verifying..." : "Verify"}
+            {busy ? "Checking the code" : "Verify"}
           </button>
         </form>
 
-        <button type="button" className="secondary" onClick={leaveVerification}>
+        <button type="button" className="link-button" onClick={leaveVerification}>
           Back to sign in
         </button>
       </section>
     );
   }
 
-  return (
-    <section className="card grid" style={{ maxWidth: "28rem", margin: "0 auto" }}>
-      <h1>{mode === "login" ? "Sign In" : "Create Account"}</h1>
+  const oauthEnabled =
+    process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true" || process.env.NEXT_PUBLIC_MICROSOFT_AUTH_ENABLED === "true";
 
-      <form onSubmit={handleSubmit} className="grid">
+  return (
+    <section className="auth-panel">
+      <h1>{mode === "login" ? "Sign in" : "Create an account"}</h1>
+
+      <form onSubmit={handleSubmit} className="form-stack">
         {mode === "register" && (
-          <>
-            <label htmlFor="displayName">Display Name</label>
+          <div className="field">
+            <label htmlFor="displayName">Your name</label>
             <input
               id="displayName"
               type="text"
@@ -192,80 +197,75 @@ function SignInPageContent() {
               maxLength={100}
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Your name"
+              autoComplete="name"
             />
-          </>
+          </div>
         )}
 
-        <label htmlFor="email">Email</label>
-        <input
-          id="email"
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
-          autoComplete="email"
-        />
+        <div className="field">
+          <label htmlFor="email">Email</label>
+          <input
+            id="email"
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+          />
+        </div>
 
-        <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          required
-          minLength={mode === "register" ? 10 : 1}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder={mode === "register" ? "Min 10 chars, uppercase, digit, special" : "Your password"}
-          autoComplete={mode === "register" ? "new-password" : "current-password"}
-        />
+        <div className="field">
+          <label htmlFor="password">Password</label>
+          <input
+            id="password"
+            type="password"
+            required
+            minLength={mode === "register" ? 10 : 1}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete={mode === "register" ? "new-password" : "current-password"}
+            aria-describedby={mode === "register" ? "password-help" : undefined}
+          />
+          {mode === "register" && (
+            <p id="password-help" className="field__help">At least 10 characters, with an uppercase letter, a digit and a symbol.</p>
+          )}
+        </div>
 
-        {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
-        {info && <p style={{ color: "#166534" }}>{info}</p>}
+        {error && <p role="alert" className="notice notice--error">{error}</p>}
+        {info && <p role="status" className="notice notice--ok">{info}</p>}
 
         <button type="submit" disabled={busy}>
-          {busy ? "Working..." : mode === "login" ? "Sign In" : "Create Account"}
+          {busy ? "Working on it" : mode === "login" ? "Sign in" : "Create account"}
         </button>
       </form>
 
       {REGISTRATION_ENABLED ? (
         <button
-          className="secondary"
+          className="link-button"
           onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}
           type="button"
         >
-          {mode === "login" ? "Need an account? Register" : "Already have an account? Sign In"}
+          {mode === "login" ? "New here? Create an account" : "Already have an account? Sign in"}
         </button>
       ) : (
-        <p className="form-helper">Invite-only beta. Access credentials are provided by the project owner.</p>
+        <p className="field__help">Common Ground is invite only for now. The project owner sends access details.</p>
       )}
 
-      {(process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true" ||
-        process.env.NEXT_PUBLIC_MICROSOFT_AUTH_ENABLED === "true") && (
-        <>
-          <div className="oauth-divider" style={{ textAlign: "center", margin: "0.5rem 0", color: "#888" }}>
-            — or —
-          </div>
+      {oauthEnabled && (
+        <div className="auth-panel__providers">
+          <p className="divider-text"><span>or</span></p>
           {process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true" && (
-            <button
-              className="secondary"
-              onClick={() => signIn("google", { callbackUrl: "/" })}
-              type="button"
-            >
+            <button className="secondary" onClick={() => signIn("google", { callbackUrl: "/" })} type="button">
               Continue with Google
             </button>
           )}
           {process.env.NEXT_PUBLIC_MICROSOFT_AUTH_ENABLED === "true" && (
-            <button
-              className="secondary"
-              onClick={() => signIn("azure-ad", { callbackUrl: "/" })}
-              type="button"
-              style={{ marginTop: "0.4rem" }}
-            >
+            <button className="secondary" onClick={() => signIn("azure-ad", { callbackUrl: "/" })} type="button">
               Continue with Microsoft
             </button>
           )}
-        </>
+        </div>
       )}
     </section>
   );

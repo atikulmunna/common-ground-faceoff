@@ -9,12 +9,12 @@ function estimateSyllables(word: string): number {
   return Math.max(matches?.length ?? 1, 1);
 }
 
-function fleschLabel(score: number): { text: string; color: string } {
-  if (score >= 80) return { text: "Very Easy", color: "#16a34a" };
-  if (score >= 60) return { text: "Easy", color: "#65a30d" };
-  if (score >= 40) return { text: "Moderate", color: "#ca8a04" };
-  if (score >= 20) return { text: "Difficult", color: "#ea580c" };
-  return { text: "Very Difficult", color: "#dc2626" };
+function fleschLabel(score: number): string {
+  if (score >= 80) return "Very easy to read";
+  if (score >= 60) return "Easy to read";
+  if (score >= 40) return "Fairly easy to read";
+  if (score >= 20) return "Hard to read";
+  return "Very hard to read";
 }
 
 export function ReadabilityMeter({ text }: { text: string }) {
@@ -38,30 +38,24 @@ export function ReadabilityMeter({ text }: { text: string }) {
   }, [text]);
 
   const charPct = Math.min(100, (charCount / 5000) * 100);
-  const charColor = charCount < 100 ? "#dc2626" : charCount > 4500 ? "#ea580c" : "#16a34a";
-  const { text: readLabel, color: readColor } = fleschLabel(score);
+  const tooShort = charCount < 100;
+  const nearLimit = charCount > 4500;
+  const readLabel = fleschLabel(score);
 
   return (
-    <div className="readability-meter" aria-live="polite">
-      <div className="readability-meter__item">
-        <span>{charCount} / 5,000 chars</span>
-        <div className="readability-meter__bar" aria-label={`${charCount} of 5000 characters used`}>
-          <div className="readability-meter__fill" style={{ width: `${charPct}%`, background: charColor }} />
+    <div className="text-meter" aria-live="polite">
+      <div className="text-meter__count">
+        <span>{charCount.toLocaleString()} of 5,000 characters</span>
+        <div className="text-meter__bar" aria-hidden="true">
+          <div
+            className={`text-meter__fill${tooShort ? " text-meter__fill--short" : nearLimit ? " text-meter__fill--near" : ""}`}
+            style={{ width: `${charPct}%` }}
+          />
         </div>
-        {charCount > 0 && charCount < 100 && (
-          <span style={{ color: "#dc2626", fontSize: "0.8rem" }}>min 100</span>
-        )}
+        {charCount > 0 && tooShort && <span className="text-meter__hint">{100 - charCount} more to reach the minimum of 100</span>}
       </div>
-      <div className="readability-meter__item">
-        <span>{wordCount} words</span>
-      </div>
-      <div className="readability-meter__item">
-        <span>Readability: {score}</span>
-        <div className="readability-meter__bar" aria-label={`Flesch readability score ${score} — ${readLabel}`}>
-          <div className="readability-meter__fill" style={{ width: `${score}%`, background: readColor }} />
-        </div>
-        <span style={{ color: readColor, fontWeight: 600, fontSize: "0.8rem" }}>{readLabel}</span>
-      </div>
+      <span>{wordCount} {wordCount === 1 ? "word" : "words"}</span>
+      {wordCount > 0 && <span>{readLabel}</span>}
     </div>
   );
 }

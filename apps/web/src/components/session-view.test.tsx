@@ -1,11 +1,12 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const auth = vi.hoisted(() => ({ userId: "user-1", role: "individual_user" }));
 
 vi.mock("../lib-api", () => ({ apiGet: api.get, apiPost: api.post }));
 vi.mock("next-auth/react", () => ({
-  useSession: () => ({ data: { user: { id: "user-1" } }, status: "authenticated" }),
+  useSession: () => ({ data: { user: { id: auth.userId, role: auth.role } }, status: "authenticated" }),
 }));
 
 import { SessionView } from "./session-view";
@@ -13,20 +14,24 @@ import { SessionView } from "./session-view";
 const SAVED_POSITION = "I think remote work helps focus, and the evidence from our own team supports that view strongly.";
 
 const RESULT = {
+  roundNumber: 1,
+  createdAt: "2026-11-12T12:00:00Z",
   sharedFoundations: "Both want a team that can do focused work.",
   trueDisagreements: "They differ on how many office days are needed.",
-  steelmans: { "Participant A": "Remote work helps focus." },
-  conflictMap: {},
-  confidenceScores: { sharedFoundations: 0.9, disagreements: 0.8 },
+  steelmans: { "Participant A": "Remote work helps focus.", "Participant B": "Office days help new hires learn." },
+  conflictMap: { value: ["Autonomy against team cohesion."] },
 };
 
 let status = "collecting_positions";
 let result: typeof RESULT | null = null;
 let removedByModeratorAt: string | null = null;
+let otherSubmitted = true;
+let pause: { reason: string } | null = null;
 
 function serveApi() {
   api.get.mockImplementation(async (path: string) => {
     if (path === "/sessions/s1") {
+      const isCreator = auth.userId === "user-1";
       return {
         success: true,
         data: {
@@ -37,16 +42,29 @@ function serveApi() {
             creatorUserId: "user-1",
             anonymousMode: false,
             deadline: null,
+            viewer: { isCreator, isParticipant: true, canShare: isCreator },
+            participantLimit: 2,
+            pause,
             participants: [
               {
                 id: "p1",
                 userId: "user-1",
                 role: "session_creator",
-                positionText: removedByModeratorAt ? null : SAVED_POSITION,
+                label: "Participant A",
+                positionText: auth.userId === "user-1" && !removedByModeratorAt ? SAVED_POSITION : null,
                 positionSubmittedAt: removedByModeratorAt ? null : "2026-11-12T10:00:00Z",
-                positionRemovedAt: removedByModeratorAt,
+                positionRemovedAt: auth.userId === "user-1" ? removedByModeratorAt : null,
+                user: { id: "user-1", displayName: "Casey" },
               },
-              { id: "p2", userId: "user-2", role: "session_participant", positionText: null, positionSubmittedAt: "2026-11-12T11:00:00Z" },
+              {
+                id: "p2",
+                userId: "user-2",
+                role: "session_participant",
+                label: "Participant B",
+                positionText: auth.userId === "user-2" ? SAVED_POSITION : null,
+                positionSubmittedAt: otherSubmitted ? "2026-11-12T11:00:00Z" : null,
+                user: { id: "user-2", displayName: "Val" },
+              },
             ],
           },
         },
@@ -76,27 +94,31 @@ async function renderConversation() {
   await advance(0);
 }
 
+beforeEach(() => {
+  vi.useFakeTimers();
+  api.get.mockReset();
+  api.post.mockReset().mockResolvedValue({ success: true, data: null });
+  localStorage.clear();
+  auth.userId = "user-1";
+  auth.role = "individual_user";
+  status = "collecting_positions";
+  result = null;
+  removedByModeratorAt = null;
+  otherSubmitted = true;
+  pause = null;
+  serveApi();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("SessionView live updates", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    api.get.mockReset();
-    api.post.mockReset().mockResolvedValue({ success: true, data: null });
-    localStorage.clear();
-    status = "collecting_positions";
-    result = null;
-    removedByModeratorAt = null;
-    serveApi();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   it("makes no periodic requests once results are showing", async () => {
     status = "completed";
     result = RESULT;
     await renderConversation();
-    expect(screen.queryByRole("heading", { name: "Your common ground" })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Where you agree" })).not.toBeNull();
 
     const requestsAfterLoad = api.get.mock.calls.length;
     await advance(120_000);
@@ -134,7 +156,7 @@ describe("SessionView live updates", () => {
     result = RESULT;
     await advance(3_000);
 
-    expect(screen.queryByRole("heading", { name: "Your common ground" })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Where you agree" })).not.toBeNull();
     expect(requestsEndingWith("/reactions")).toBe(1);
     expect(requestsEndingWith("/comments")).toBe(1);
   });
@@ -149,7 +171,7 @@ describe("SessionView live updates", () => {
     await renderConversation();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit perspective" }));
-    const editor = screen.getByPlaceholderText(/Share your perspective/) as HTMLTextAreaElement;
+    const editor = screen.getByLabelText("Your perspective") as HTMLTextAreaElement;
     fireEvent.change(editor, { target: { value: `${SAVED_POSITION} I have since changed my mind on one point.` } });
     await advance(30_000);
 
@@ -161,6 +183,125 @@ describe("SessionView live updates", () => {
     await renderConversation();
 
     expect(screen.queryByText(/A moderator removed your perspective/)).not.toBeNull();
-    expect(screen.queryByPlaceholderText(/Share your perspective/)).not.toBeNull();
+    expect(screen.queryByLabelText("Your perspective")).not.toBeNull();
+  });
+});
+
+describe("SessionView next steps", () => {
+  it("says why the analysis cannot start yet", async () => {
+    otherSubmitted = false;
+    removedByModeratorAt = null;
+    // Only one perspective is in, so the creator has to wait.
+    serveApi();
+    await renderConversation();
+
+    expect((screen.getByRole("button", { name: "Find common ground" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText("Waiting for 1 more perspective. At least 2 are needed.")).not.toBeNull();
+  });
+
+  it("explains a moderator hold to everyone", async () => {
+    pause = { reason: "moderation_review" };
+    auth.userId = "user-2";
+    await renderConversation();
+
+    expect(screen.queryByText(/on hold while a moderator reviews reported content/)).not.toBeNull();
+  });
+
+  it("shows the analysis and next-round controls only to the creator", async () => {
+    auth.userId = "user-2";
+    await renderConversation();
+    expect(screen.queryByRole("button", { name: "Find common ground" })).toBeNull();
+    expect(screen.queryByText(/The host starts the analysis/)).not.toBeNull();
+    expect(screen.queryByLabelText("Participant email address")).toBeNull();
+  });
+
+  it("hides the creator's next-round and share controls from other participants", async () => {
+    status = "completed";
+    result = RESULT;
+    auth.userId = "user-2";
+    await renderConversation();
+
+    expect(screen.queryByRole("button", { name: /Start round/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Share a read-only link" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "JSON" })).not.toBeNull();
+  });
+
+  it("asks before analyzing without someone who has not submitted", async () => {
+    // Three people, two submitted: the creator may go ahead, but is asked first.
+    const original = api.get.getMockImplementation()!;
+    api.get.mockImplementation(async (path: string) => {
+      const response = await original(path);
+      if (path === "/sessions/s1") {
+        response.data.session.participantLimit = 6;
+        response.data.session.participants.push({
+          id: "p3", userId: "user-3", role: "session_participant", label: "Participant C",
+          positionText: null, positionSubmittedAt: null, user: { id: "user-3", displayName: "Sam" },
+        });
+      }
+      return response;
+    });
+    await renderConversation();
+
+    fireEvent.click(screen.getByRole("button", { name: "Find common ground" }));
+    expect(screen.queryByText(/1 person has not submitted a perspective yet/)).not.toBeNull();
+    expect(api.post).not.toHaveBeenCalledWith("/sessions/s1/analyze", {});
+
+    fireEvent.click(screen.getByRole("button", { name: "Find common ground without them" }));
+    await advance(0);
+    expect(api.post).toHaveBeenCalledWith("/sessions/s1/analyze", {});
+  });
+
+  it("keeps the previous round's results readable while a new round gathers perspectives", async () => {
+    result = RESULT;
+    await renderConversation();
+
+    expect(screen.queryByText("Round 1 results, read only")).not.toBeNull();
+    expect(screen.queryByText("Both want a team that can do focused work.")).not.toBeNull();
+  });
+});
+
+describe("SessionView results", () => {
+  beforeEach(() => {
+    status = "completed";
+    result = RESULT;
+  });
+
+  it("names whose view each restatement is, and asks the author if it is right", async () => {
+    await renderConversation();
+
+    expect(screen.queryByRole("heading", { name: "Your view, restated" })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Val's view, restated" })).not.toBeNull();
+    expect(screen.queryByRole("group", { name: "Is this what you meant?" })).not.toBeNull();
+  });
+
+  it("shows an answer at once, and takes it back with an error if it is not saved", async () => {
+    api.post.mockRejectedValue(new Error("offline"));
+    await renderConversation();
+
+    const agree = screen.getByRole("region", { name: "Where you agree" });
+    const yes = within(agree).getByRole("button", { name: "Yes" });
+    fireEvent.click(yes);
+    expect(yes.getAttribute("aria-pressed")).toBe("true");
+
+    await advance(0);
+    expect(yes.getAttribute("aria-pressed")).toBe("false");
+    expect(within(agree).queryByText("Your answer was not saved. Try again.")).not.toBeNull();
+  });
+
+  it("reports a problem through an inline form instead of a browser prompt", async () => {
+    await renderConversation();
+
+    fireEvent.click(screen.getByRole("button", { name: "Report this conversation" }));
+    fireEvent.change(screen.getByLabelText("What is wrong?"), { target: { value: "This conversation contains a personal attack." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send report" }));
+    await advance(0);
+
+    expect(api.post).toHaveBeenCalledWith("/moderation/report/s1", { reason: "This conversation contains a personal attack." });
+    expect(screen.queryByText("Report sent. A moderator will review it.")).not.toBeNull();
+  });
+
+  it("does not load the moderation queue for people who are not moderators", async () => {
+    await renderConversation();
+    expect(api.get.mock.calls.some(([path]) => String(path).includes("/moderation/"))).toBe(false);
   });
 });

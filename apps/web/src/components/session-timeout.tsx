@@ -56,25 +56,12 @@ export function SessionTimeout() {
   const seconds = Math.floor((remaining % 60000) / 1000);
 
   return (
-    <div
-      role="alert"
-      style={{
-        position: "fixed",
-        bottom: "1rem",
-        right: "1rem",
-        background: "#fef3c7",
-        border: "1px solid #f59e0b",
-        borderRadius: "0.5rem",
-        padding: "1rem 1.5rem",
-        zIndex: 9999,
-        maxWidth: "20rem"
-      }}
-    >
-      <p style={{ margin: 0, fontWeight: 600 }}>Session expiring</p>
-      <p style={{ margin: "0.25rem 0" }}>
-        You will be signed out in {minutes}:{seconds.toString().padStart(2, "0")} due to inactivity.
+    <div role="alert" className="timeout-toast">
+      <p className="timeout-toast__title">Still there?</p>
+      <p>
+        You will be signed out in {minutes}:{seconds.toString().padStart(2, "0")} because nothing has happened for a while.
       </p>
-      <button onClick={resetTimer} style={{ marginTop: "0.5rem" }}>
+      <button type="button" onClick={resetTimer}>
         Stay signed in
       </button>
     </div>

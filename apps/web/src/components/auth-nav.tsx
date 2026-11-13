@@ -19,7 +19,7 @@ export function AuthNav() {
       .toUpperCase();
     return (
       <nav className="auth-nav" aria-label="Account navigation">
-        <Link href="/">Conversations</Link>
+        <Link href="/">Your conversations</Link>
         <Link href="/create" className="nav-primary">New conversation</Link>
         <details className="user-menu">
           <summary aria-label="Open account menu"><span className="user-avatar" aria-hidden="true">{initials}</span></summary>

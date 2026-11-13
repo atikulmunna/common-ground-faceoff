@@ -55,24 +55,24 @@ test.afterAll(async () => {
 
 test("signs in, starts a conversation, shares a perspective, reviews common ground, and exports JSON", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Turn disagreement into shared understanding." })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Common Ground home" }).locator("img")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "A clear path through difficult conversations" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Find the ground you share." })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Common Ground home" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Three steps, and nobody has to win." })).toBeVisible();
 
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign In" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL("http://127.0.0.1:3310/");
   await expect(page.getByRole("heading", { name: "Your conversations" })).toBeVisible();
 
   await page.goto("/profile");
-  await expect(page.getByRole("heading", { name: "Profile Settings" })).toBeVisible();
-  await page.getByLabel("Display Name").fill("Browser E2E User Updated");
-  await page.getByRole("button", { name: "Save Changes" }).click();
+  await expect(page.getByRole("heading", { name: "Profile and settings" })).toBeVisible();
+  await page.getByLabel("Display name").fill("Browser E2E User Updated");
+  await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Profile saved.")).toBeVisible();
-  await page.getByRole("button", { name: "Enable MFA" }).click();
-  await expect(page.getByRole("img", { name: "MFA QR Code" })).toBeVisible();
+  await page.getByRole("button", { name: "Set up two-step sign-in" }).click();
+  await expect(page.getByRole("img", { name: "QR code for your authenticator app" })).toBeVisible();
   await page.goto("/");
 
   await page.getByRole("main").getByRole("link", { name: "New conversation" }).click();
@@ -87,11 +87,12 @@ test("signs in, starts a conversation, shares a perspective, reviews common grou
   await page.getByRole("button", { name: "Send invitation" }).click();
   await expect(page.getByText(`Invitation sent to ${invitedEmail}`)).toBeVisible();
 
-  page.once("dialog", async (dialog) => dialog.accept("This is a disposable browser moderation report."));
   await page.getByRole("button", { name: "Report this conversation" }).click();
-  await expect(page.getByRole("button", { name: "Report this conversation" })).toHaveText("Reported");
+  await page.getByLabel("What is wrong?").fill("This is a disposable browser moderation report.");
+  await page.getByRole("button", { name: "Send report" }).click();
+  await expect(page.getByText("Report sent. A moderator will review it.")).toBeVisible();
 
-  await page.getByPlaceholder("Share your perspective in 100–5000 characters").fill(position);
+  await page.getByLabel("Your perspective").fill(position);
   await page.getByRole("button", { name: "Submit your perspective" }).click();
   await expect(page.getByRole("button", { name: "Find common ground" })).toBeVisible();
 
@@ -128,29 +129,30 @@ test("signs in, starts a conversation, shares a perspective, reviews common grou
   });
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Your common ground" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Where you agree" })).toBeVisible();
   await expect(page.getByText("Everyone benefits from reliable and repeatable releases.")).toBeVisible();
 
   const sharedPage = await page.context().newPage();
   await sharedPage.goto(`/shared?token=${encodeURIComponent(shareToken)}`);
-  await expect(sharedPage.getByRole("heading", { name: `Shared Session: ${topic}` })).toBeVisible();
+  await expect(sharedPage.getByRole("heading", { name: topic })).toBeVisible();
   await expect(sharedPage.getByText("Everyone benefits from reliable and repeatable releases.")).toBeVisible();
+  await expect(sharedPage.getByRole("link", { name: "Start your own conversation" })).toBeVisible();
+  await expect(sharedPage.getByText("e2e-fixture")).toHaveCount(0);
   await sharedPage.close();
 
-  const sharedFoundation = page.locator(".cgm-overlap");
-  await sharedFoundation.getByTitle("Represents my view", { exact: true }).click();
-  await expect(sharedFoundation.getByTitle("Represents my view", { exact: true })).toHaveClass(/cgm-reactions__btn--active/);
-  await sharedFoundation.getByRole("button", { name: "Add comment" }).click();
-  await sharedFoundation.getByPlaceholder("Write a comment…").fill("This shared foundation is accurately represented.");
-  await sharedFoundation.getByRole("button", { name: "Post" }).click();
+  const sharedFoundation = page.getByRole("region", { name: "Where you agree" });
+  await sharedFoundation.getByRole("button", { name: "Yes" }).click();
+  await expect(sharedFoundation.getByRole("button", { name: "Yes" })).toHaveAttribute("aria-pressed", "true");
+  await sharedFoundation.getByRole("button", { name: "Add a comment" }).click();
+  await sharedFoundation.getByLabel("Your comment").fill("This shared foundation is accurately represented.");
+  await sharedFoundation.getByRole("button", { name: "Post comment" }).click();
   await expect(sharedFoundation.getByText("This shared foundation is accurately represented.")).toBeVisible();
 
-  const ratings = page.locator(".cgm-rating");
-  await ratings.nth(0).getByRole("button", { name: "5 out of 5" }).click();
-  await ratings.nth(1).getByRole("button", { name: "4 out of 5" }).click();
-  await page.getByPlaceholder("Optional comment…").fill("Clear and balanced analysis.");
-  await page.getByRole("button", { name: "Submit Feedback" }).click();
-  await expect(page.getByText("Feedback submitted. Thank you!")).toBeVisible();
+  await page.getByRole("group", { name: "Did the restated views say what people meant?" }).getByRole("button", { name: "5 out of 5" }).click();
+  await page.getByRole("group", { name: "Did the summary avoid taking sides?" }).getByRole("button", { name: "4 out of 5" }).click();
+  await page.getByLabel("Anything else? (optional)").fill("Clear and balanced analysis.");
+  await page.getByRole("button", { name: "Send feedback" }).click();
+  await expect(page.getByText("Thanks. Your feedback was sent.")).toBeVisible();
 
   for (const [format, extension] of [["JSON", "json"], ["Markdown", "md"], ["PDF", "pdf"]] as const) {
     const downloadPromise = page.waitForEvent("download");
@@ -159,7 +161,7 @@ test("signs in, starts a conversation, shares a perspective, reviews common grou
     expect(download.suggestedFilename()).toBe(`common-ground-${sessionId}.${extension}`);
   }
 
-  await page.getByRole("button", { name: "Revise perspectives" }).click();
+  await page.getByRole("button", { name: "Start round 2" }).click();
   await expect(page.getByRole("heading", { name: "Share your perspective" })).toBeVisible();
   await expect(page.getByRole("list", { name: "Conversation progress" }).getByText("Perspectives")).toBeVisible();
 });

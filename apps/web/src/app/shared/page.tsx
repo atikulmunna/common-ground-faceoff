@@ -1,9 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CommonGroundMap } from "../../components/common-ground-map";
+
+import { ResultsView } from "../../components/conversation/results-view";
+import type { AnalysisResult } from "../../components/conversation/types";
 import { getPublicApiBaseUrl } from "../../lib/api-base";
+import { stageLabel } from "../../lib/conversation-stage";
 
 type SharedSession = {
   id: string;
@@ -16,34 +20,15 @@ type SharedSession = {
   participants: Array<{ displayName: string; role: string }>;
 };
 
-type SharedAnalysis = {
-  roundNumber: number;
-  steelmans: Record<string, string>;
-  conflictMap: Record<string, string[]>;
-  sharedFoundations: string;
-  trueDisagreements: string;
-  confidenceScores?: { sharedFoundations: number; disagreements: number };
-  llmProvider: string;
-  modelVersion: string;
-  createdAt: string;
-} | null;
-
 type SharedViewResponse = {
   success: boolean;
-  data: {
-    session: SharedSession;
-    analysis: SharedAnalysis;
-  } | null;
+  data: { session: SharedSession; analysis: (AnalysisResult & { roundNumber: number; createdAt: string }) | null } | null;
   error?: { code: string; message: string } | null;
 };
 
 export default function SharedViewPage() {
   return (
-    <Suspense fallback={
-      <section className="grid">
-        <article className="card"><p>Loading shared session...</p></article>
-      </section>
-    }>
+    <Suspense fallback={<p className="quiet-status" role="status">Loading the shared results</p>}>
       <SharedViewPageContent />
     </Suspense>
   );
@@ -52,30 +37,26 @@ export default function SharedViewPage() {
 function SharedViewPageContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
-  const [session, setSession] = useState<SharedSession | null>(null);
-  const [analysis, setAnalysis] = useState<SharedAnalysis>(null);
+  const [data, setData] = useState<SharedViewResponse["data"]>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchSharedView = useCallback(async () => {
     if (!token) {
-      setError("No share token provided");
+      setError("This link is incomplete. Ask the person who shared it for the full link.");
       setLoading(false);
       return;
     }
     try {
-      const res = await fetch(`${getPublicApiBaseUrl()}/share-links/view/${encodeURIComponent(token)}`);
-      const json: SharedViewResponse = await res.json();
-
-      if (!res.ok || !json.success) {
-        setError(json.error?.message ?? "Failed to load shared session");
+      const response = await fetch(`${getPublicApiBaseUrl()}/share-links/view/${encodeURIComponent(token)}`);
+      const json: SharedViewResponse = await response.json();
+      if (!response.ok || !json.success) {
+        setError(json.error?.message ?? "These results could not be loaded.");
         return;
       }
-
-      setSession(json.data?.session ?? null);
-      setAnalysis(json.data?.analysis ?? null);
+      setData(json.data);
     } catch {
-      setError("Failed to load shared session");
+      setError("These results could not be loaded. Check your connection and reload the page.");
     } finally {
       setLoading(false);
     }
@@ -85,68 +66,45 @@ function SharedViewPageContent() {
     void fetchSharedView();
   }, [fetchSharedView]);
 
-  if (loading) {
+  if (loading) return <p className="quiet-status" role="status">Loading the shared results</p>;
+
+  if (error || !data) {
     return (
-      <section className="grid">
-        <article className="card"><p>Loading shared session...</p></article>
+      <section className="narrow-page">
+        <h1>These results are not available</h1>
+        <p className="notice notice--error" role="alert">{error ?? "Nothing was found for this link."}</p>
+        <Link href="/" className="button-link">Go to Common Ground</Link>
       </section>
     );
   }
 
-  if (error) {
-    return (
-      <section className="grid">
-        <article className="card">
-          <h1>Shared Session</h1>
-          <p style={{ color: "#ef4444" }}>{error}</p>
-        </article>
-      </section>
-    );
-  }
-
-  if (!session) {
-    return (
-      <section className="grid">
-        <article className="card"><p>Session not found.</p></article>
-      </section>
-    );
-  }
+  const { session, analysis } = data;
+  const day = (value: string) => new Date(value).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
 
   return (
-    <section className="grid">
-      <article className="card">
-        <h1>Shared Session: {session.topic}</h1>
-        <p style={{ color: "#666", fontSize: "0.875rem" }}>
-          Read-only view &middot; {session.participantCount} participants &middot; Created{" "}
-          {new Date(session.createdAt).toLocaleDateString()}
-        </p>
-        <p>
-          <strong>Status:</strong> {session.status}
-          {session.anonymousMode && " · Anonymous Mode"}
-        </p>
-      </article>
+    <div className="conversation shared">
+      <header className="conversation-header">
+        <h1>{session.topic}</h1>
+        <div className="conversation-header__meta">
+          <span>Shared results, read only</span>
+          <span>{session.participantCount} {session.participantCount === 1 ? "person" : "people"} took part</span>
+          {analysis
+            ? <span>Round {analysis.roundNumber}, {day(analysis.createdAt)}</span>
+            : <span>{stageLabel(session.status).label}</span>}
+        </div>
+      </header>
 
       {analysis ? (
-        <article className="card">
-          <CommonGroundMap
-            result={{
-              steelmans: analysis.steelmans,
-              conflictMap: analysis.conflictMap,
-              sharedFoundations: analysis.sharedFoundations,
-              trueDisagreements: analysis.trueDisagreements,
-              confidenceScores: analysis.confidenceScores,
-            }}
-          />
-          <p style={{ fontSize: "0.75rem", color: "#999", marginTop: "1rem" }}>
-            Round {analysis.roundNumber} · {analysis.llmProvider}/{analysis.modelVersion} ·
-            Analyzed {new Date(analysis.createdAt).toLocaleDateString()}
-          </p>
-        </article>
+        <ResultsView result={analysis} />
       ) : (
-        <article className="card">
-          <p>Analysis has not been completed yet for this session.</p>
-        </article>
+        <p className="notice notice--warn">The results for this conversation are not ready yet. Try this link again later.</p>
       )}
-    </section>
+
+      <section className="shared__invite" aria-labelledby="own-heading">
+        <h2 id="own-heading">Have a disagreement of your own?</h2>
+        <p>Common Ground restates each view fairly and shows the ground you share.</p>
+        <Link href="/sign-in" className="button-link">Start your own conversation</Link>
+      </section>
+    </div>
   );
 }

@@ -20,6 +20,13 @@ type ProfileData = {
 
 const SMS_MFA_ENABLED = process.env.NEXT_PUBLIC_ENABLE_SMS_MFA === "true";
 
+const PLAN_NAMES: Record<string, string> = { free: "Free", pro: "Pro", enterprise: "Enterprise" };
+const ROLE_NAMES: Record<string, string> = {
+  individual_user: "Member",
+  institutional_admin: "Organization administrator",
+  moderator: "Moderator",
+};
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [displayName, setDisplayName] = useState("");
@@ -51,7 +58,7 @@ export default function ProfilePage() {
         setSmsPhone(u.smsPhone ?? "");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load profile");
+      setError(e instanceof Error ? e.message : "Your profile could not be loaded. Reload the page to try again.");
     }
   }, []);
 
@@ -73,275 +80,291 @@ export default function ProfilePage() {
       });
       setSaved(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      setError(err instanceof Error ? err.message : "Your changes were not saved. Try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  if (!profile) return <p>Loading profile…</p>;
+  if (!profile) {
+    return error
+      ? <p className="notice notice--error" role="alert">{error}</p>
+      : <p className="quiet-status" role="status">Loading your profile</p>;
+  }
 
   return (
-    <section className="card grid" style={{ maxWidth: "32rem", margin: "0 auto" }}>
-      <h1>Profile Settings</h1>
+    <section className="narrow-page settings">
+      <h1>Profile and settings</h1>
 
-      <form onSubmit={handleSave} className="grid">
-        <label htmlFor="prof-email">Email</label>
-        <input id="prof-email" type="email" value={profile.email} disabled />
+      <form onSubmit={handleSave} className="form-stack">
+        <div className="field">
+          <label htmlFor="prof-email">Email</label>
+          <input id="prof-email" type="email" value={profile.email} disabled />
+        </div>
 
-        <label htmlFor="prof-name">Display Name</label>
-        <input
-          id="prof-name"
-          type="text"
-          required
-          minLength={1}
-          maxLength={100}
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-        />
+        <div className="field">
+          <label htmlFor="prof-name">Display name</label>
+          <input
+            id="prof-name"
+            type="text"
+            required
+            minLength={1}
+            maxLength={100}
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+          />
+        </div>
 
-        <label htmlFor="prof-avatar">Avatar URL</label>
-        <input
-          id="prof-avatar"
-          type="url"
-          maxLength={500}
-          placeholder="https://example.com/avatar.png"
-          value={avatarUrl}
-          onChange={(e) => setAvatarUrl(e.target.value)}
-        />
+        <div className="field">
+          <label htmlFor="prof-avatar">Profile picture URL</label>
+          <input
+            id="prof-avatar"
+            type="url"
+            maxLength={500}
+            placeholder="https://example.com/avatar.png"
+            value={avatarUrl}
+            onChange={(e) => setAvatarUrl(e.target.value)}
+          />
+        </div>
 
-        <fieldset style={{ border: "1px solid var(--border, #e5e7eb)", padding: "0.75rem", borderRadius: "0.5rem" }}>
-          <legend>Notification Preferences</legend>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <input
-              type="checkbox"
-              checked={emailInvites}
-              onChange={(e) => setEmailInvites(e.target.checked)}
-            />
-            Email me when invited to a session
+        <fieldset className="choice-group">
+          <legend>Email notifications</legend>
+          <label className="choice">
+            <input type="checkbox" checked={emailInvites} onChange={(e) => setEmailInvites(e.target.checked)} />
+            <span>Email me when someone invites me to a conversation</span>
           </label>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.25rem" }}>
-            <input
-              type="checkbox"
-              checked={emailAnalysis}
-              onChange={(e) => setEmailAnalysis(e.target.checked)}
-            />
-            Email me when analysis completes
+          <label className="choice">
+            <input type="checkbox" checked={emailAnalysis} onChange={(e) => setEmailAnalysis(e.target.checked)} />
+            <span>Email me when results are ready</span>
           </label>
         </fieldset>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <span>Tier: <strong>{profile.tier}</strong></span>
-          <span>Role: <strong>{profile.role}</strong></span>
+        <p className="field__help">
+          Plan: <strong>{PLAN_NAMES[profile.tier] ?? profile.tier}</strong>. Account type: <strong>{ROLE_NAMES[profile.role] ?? profile.role}</strong>.
+        </p>
+
+        {error && <p className="notice notice--error" role="alert">{error}</p>}
+        {saved && <p className="notice notice--ok" role="status">Profile saved.</p>}
+
+        <div className="form-actions">
+          <button type="submit" disabled={busy}>{busy ? "Saving" : "Save changes"}</button>
         </div>
-
-        {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
-        {saved && <p style={{ color: "#16a34a" }}>Profile saved.</p>}
-
-        <button type="submit" disabled={busy}>
-          {busy ? "Saving..." : "Save Changes"}
-        </button>
       </form>
 
       {/* MFA Settings (CG-FR06) */}
-      <div style={{ marginTop: "1.5rem", borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: "1rem" }}>
-        <h2>Two-Factor Authentication (TOTP)</h2>
+      <section className="settings__section" aria-labelledby="totp-heading">
+        <h2 id="totp-heading">Two-step sign-in with an authenticator app</h2>
         {profile.mfaEnabled ? (
           <>
-            <p style={{ color: "#16a34a" }}>MFA is <strong>enabled</strong>.</p>
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <p className="notice notice--ok">Two-step sign-in is on.</p>
+            <div className="inline-row">
+              <label htmlFor="totp-disable" className="visually-hidden">Code from your authenticator app</label>
               <input
+                id="totp-disable"
+                className="code-input"
                 type="text"
+                inputMode="numeric"
                 maxLength={6}
-                placeholder="Enter TOTP code to disable"
+                placeholder="6 digit code"
                 value={mfaToken}
                 onChange={(e) => setMfaToken(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                style={{ width: "10rem" }}
               />
               <button
+                type="button"
                 className="secondary"
                 disabled={mfaToken.length !== 6}
                 onClick={async () => {
                   setMfaMsg(null);
                   try {
                     await apiPost("/mfa/disable", { token: mfaToken });
-                    setMfaMsg("MFA disabled.");
+                    setMfaMsg("Two-step sign-in is off.");
                     setMfaToken("");
                     await load();
-                  } catch { setMfaMsg("Invalid code."); }
+                  } catch { setMfaMsg("That code did not work. Check your app and try again."); }
                 }}
               >
-                Disable MFA
+                Turn off
               </button>
             </div>
           </>
         ) : mfaQr ? (
           <>
-            <p>Scan this QR code with your authenticator app:</p>
-            <Image
-              src={mfaQr}
-              alt="MFA QR Code"
-              width={200}
-              height={200}
-              unoptimized
-            />
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.5rem" }}>
+            <p>Scan this code with your authenticator app, then enter the 6 digit code it shows.</p>
+            <Image src={mfaQr} alt="QR code for your authenticator app" width={200} height={200} unoptimized />
+            <div className="inline-row">
+              <label htmlFor="totp-setup" className="visually-hidden">Code from your authenticator app</label>
               <input
+                id="totp-setup"
+                className="code-input"
                 type="text"
+                inputMode="numeric"
                 maxLength={6}
-                placeholder="Enter 6-digit code"
+                placeholder="6 digit code"
                 value={mfaToken}
                 onChange={(e) => setMfaToken(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                style={{ width: "10rem" }}
               />
               <button
+                type="button"
                 disabled={mfaToken.length !== 6}
                 onClick={async () => {
                   setMfaMsg(null);
                   try {
                     await apiPost("/mfa/verify-setup", { token: mfaToken });
-                    setMfaMsg("MFA enabled successfully!");
+                    setMfaMsg("Two-step sign-in is on.");
                     setMfaQr(null);
                     setMfaToken("");
                     await load();
-                  } catch { setMfaMsg("Invalid code. Try again."); }
+                  } catch { setMfaMsg("That code did not work. Check your app and try again."); }
                 }}
               >
-                Verify &amp; Enable
+                Turn on
               </button>
             </div>
           </>
         ) : (
           <button
+            type="button"
             onClick={async () => {
               setMfaMsg(null);
               try {
                 const res = await apiPost<{ success: boolean; data: { qrCode: string } | null }>("/mfa/setup", {});
                 if (res.data?.qrCode) setMfaQr(res.data.qrCode);
-              } catch { setMfaMsg("Failed to set up MFA."); }
+              } catch { setMfaMsg("Setup could not start. Try again."); }
             }}
           >
-            Enable MFA
+            Set up two-step sign-in
           </button>
         )}
-        {mfaMsg && <p style={{ marginTop: "0.5rem" }}>{mfaMsg}</p>}
-      </div>
+        {mfaMsg && <p className="field__help" role="status">{mfaMsg}</p>}
+      </section>
 
       {/* SMS MFA Settings (CG-FR06) */}
-      {SMS_MFA_ENABLED && <div style={{ marginTop: "1.5rem", borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: "1rem" }}>
-        <h2>Two-Factor Authentication (SMS)</h2>
+      {SMS_MFA_ENABLED && <section className="settings__section" aria-labelledby="sms-heading">
+        <h2 id="sms-heading">Two-step sign-in by text message</h2>
         {profile.smsMfaEnabled ? (
           <>
-            <p style={{ color: "#16a34a" }}>
-              SMS MFA is <strong>enabled</strong>{profile.smsPhone ? ` (${profile.smsPhone})` : ""}.
+            <p className="notice notice--ok">
+              Text message codes are on{profile.smsPhone ? ` for ${profile.smsPhone}` : ""}.
             </p>
             {!smsDisableSent ? (
               <button
+                type="button"
                 className="secondary"
                 onClick={async () => {
                   setSmsMsg(null);
                   try {
                     await apiPost("/mfa/sms/send-disable-code", {});
                     setSmsDisableSent(true);
-                    setSmsMsg("Disable code sent to your phone.");
+                    setSmsMsg("We sent a code to your phone.");
                   } catch {
-                    setSmsMsg("Failed to send disable code.");
+                    setSmsMsg("The code could not be sent. Try again.");
                   }
                 }}
               >
-                Send Disable Code
+                Send a code to turn this off
               </button>
             ) : (
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <div className="inline-row">
+                <label htmlFor="sms-disable" className="visually-hidden">Code from the text message</label>
                 <input
+                  id="sms-disable"
+                  className="code-input"
                   type="text"
+                  inputMode="numeric"
                   maxLength={6}
-                  placeholder="Enter SMS code"
+                  placeholder="6 digit code"
                   value={smsCode}
                   onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  style={{ width: "10rem" }}
                 />
                 <button
+                  type="button"
                   className="secondary"
                   disabled={smsCode.length !== 6}
                   onClick={async () => {
                     setSmsMsg(null);
                     try {
                       await apiPost("/mfa/sms/disable", { code: smsCode });
-                      setSmsMsg("SMS MFA disabled.");
+                      setSmsMsg("Text message codes are off.");
                       setSmsCode("");
                       setSmsDisableSent(false);
                       await load();
                     } catch {
-                      setSmsMsg("Invalid SMS code.");
+                      setSmsMsg("That code did not work. Try again.");
                     }
                   }}
                 >
-                  Disable SMS MFA
+                  Turn off
                 </button>
               </div>
             )}
           </>
         ) : (
           <>
-            <p>Enable SMS MFA with your mobile number.</p>
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+            <p>Get a sign-in code by text message.</p>
+            <div className="inline-row">
+              <label htmlFor="sms-phone" className="visually-hidden">Mobile number</label>
               <input
+                id="sms-phone"
                 type="tel"
+                autoComplete="tel"
                 placeholder="+15551234567"
                 value={smsPhone}
                 onChange={(e) => setSmsPhone(e.target.value)}
-                style={{ minWidth: "14rem" }}
               />
               <button
+                type="button"
                 disabled={smsPhone.trim().length < 8}
                 onClick={async () => {
                   setSmsMsg(null);
                   try {
                     await apiPost("/mfa/sms/setup", { phone: smsPhone });
                     setSmsSetupSent(true);
-                    setSmsMsg("Verification code sent by SMS.");
+                    setSmsMsg("We sent a code by text message.");
                   } catch {
-                    setSmsMsg("Failed to send verification SMS.");
+                    setSmsMsg("The text message could not be sent. Check the number and try again.");
                   }
                 }}
               >
-                Send Setup Code
+                Send a code
               </button>
             </div>
             {smsSetupSent && (
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.5rem" }}>
+              <div className="inline-row">
+                <label htmlFor="sms-setup" className="visually-hidden">Code from the text message</label>
                 <input
+                  id="sms-setup"
+                  className="code-input"
                   type="text"
+                  inputMode="numeric"
                   maxLength={6}
-                  placeholder="Enter SMS code"
+                  placeholder="6 digit code"
                   value={smsCode}
                   onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  style={{ width: "10rem" }}
                 />
                 <button
+                  type="button"
                   disabled={smsCode.length !== 6}
                   onClick={async () => {
                     setSmsMsg(null);
                     try {
                       await apiPost("/mfa/sms/verify-setup", { code: smsCode });
-                      setSmsMsg("SMS MFA enabled.");
+                      setSmsMsg("Text message codes are on.");
                       setSmsCode("");
                       setSmsSetupSent(false);
                       await load();
                     } catch {
-                      setSmsMsg("Invalid SMS code.");
+                      setSmsMsg("That code did not work. Try again.");
                     }
                   }}
                 >
-                  Verify &amp; Enable
+                  Turn on
                 </button>
               </div>
             )}
           </>
         )}
-        {smsMsg && <p style={{ marginTop: "0.5rem" }}>{smsMsg}</p>}
-      </div>}
+        {smsMsg && <p className="field__help" role="status">{smsMsg}</p>}
+      </section>}
     </section>
   );
 }

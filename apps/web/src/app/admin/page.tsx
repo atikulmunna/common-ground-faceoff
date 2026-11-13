@@ -37,6 +37,14 @@ type Organization = {
   cohorts: Cohort[];
 };
 
+const KIND_NAMES: Record<string, string> = {
+  empirical: "Facts",
+  value: "Values",
+  semantic: "Definitions",
+  policy: "Approach",
+  procedural: "Approach",
+};
+
 export default function AdminDashboardPage() {
   const { data: session } = useSession();
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
@@ -60,7 +68,7 @@ export default function AdminDashboardPage() {
       setOrg(orgRes?.data?.organization ?? null);
       setCohorts(cohortsRes?.data?.cohorts ?? []);
     } catch {
-      setError("Failed to load admin data");
+      setError("The administration data could not be loaded. Reload the page to try again.");
     } finally {
       setLoading(false);
     }
@@ -78,7 +86,7 @@ export default function AdminDashboardPage() {
       setNewCohortName("");
       void fetchData();
     } catch {
-      setError("Failed to create cohort");
+      setError("The cohort was not created. Try again.");
     }
   }
 
@@ -90,7 +98,7 @@ export default function AdminDashboardPage() {
       setAddMemberEmail("");
       void fetchData();
     } catch {
-      setError("Failed to add member");
+      setError("The member was not added. Check the email address and try again.");
     }
   }
 
@@ -109,143 +117,120 @@ export default function AdminDashboardPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      setError("Failed to export CSV");
+      setError("The CSV export failed. Try again.");
     }
   }
 
   if (session?.user?.role !== "institutional_admin") {
     return (
-      <section className="grid">
-        <article className="card">
-          <h1>Admin Dashboard</h1>
-          <p>You must be an institutional admin to access this page.</p>
-        </article>
+      <section className="narrow-page">
+        <h1>Administration</h1>
+        <p>This page is for organization administrators.</p>
       </section>
     );
   }
 
   if (loading) {
-    return (
-      <section className="grid">
-        <article className="card"><p>Loading admin dashboard...</p></article>
-      </section>
-    );
+    return <p className="quiet-status" role="status">Loading the administration page</p>;
   }
 
   return (
-    <section className="grid">
+    <section className="admin">
+      <h1>Administration</h1>
+
       {error && (
-        <article className="card" style={{ borderColor: "#ef4444" }}>
-          <p style={{ color: "#ef4444" }}>{error}</p>
-          <button onClick={() => setError(null)}>Dismiss</button>
-        </article>
+        <div className="notice notice--error" role="alert">
+          <p>{error}</p>
+          <button type="button" className="link-button" onClick={() => setError(null)}>Dismiss</button>
+        </div>
       )}
 
-      {/* Organization Info */}
-      <article className="card">
-        <h1>Admin Dashboard</h1>
-        {org && (
-          <div>
-            <p><strong>Organization:</strong> {org.name} ({org.slug})</p>
-            <p><strong>Members:</strong> {org._count.users}</p>
-            <p><strong>Force Anonymous:</strong> {org.forceAnonymous ? "Yes" : "No"}</p>
-          </div>
-        )}
-      </article>
+      {org && (
+        <dl className="facts">
+          <div><dt>Organization</dt><dd>{org.name} ({org.slug})</dd></div>
+          <div><dt>Members</dt><dd>{org._count.users}</dd></div>
+          <div><dt>Anonymous by default</dt><dd>{org.forceAnonymous ? "Yes, for every conversation" : "No"}</dd></div>
+        </dl>
+      )}
 
       {/* Analytics (CG-FR48) */}
       {analytics && (
-        <article className="card">
-          <h2>Analytics</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "1rem" }}>
-            <div>
-              <strong>{analytics.totalSessions}</strong>
-              <p>Total Sessions</p>
-            </div>
-            <div>
-              <strong>{analytics.completedSessions}</strong>
-              <p>Completed</p>
-            </div>
-            <div>
-              <strong>{Math.round(analytics.completionRate * 100)}%</strong>
-              <p>Completion Rate</p>
-            </div>
-            <div>
-              <strong>{analytics.steelmanAcceptanceCount}</strong>
-              <p>Steelman Accepts</p>
-            </div>
+        <section className="panel" aria-labelledby="analytics-heading">
+          <h2 id="analytics-heading">How conversations are going</h2>
+          <dl className="stats">
+            <div><dt>Conversations</dt><dd>{analytics.totalSessions}</dd></div>
+            <div><dt>With results</dt><dd>{analytics.completedSessions}</dd></div>
+            <div><dt>Reach results</dt><dd>{Math.round(analytics.completionRate * 100)}%</dd></div>
+            <div><dt>Restated views accepted</dt><dd>{analytics.steelmanAcceptanceCount}</dd></div>
             {analytics.feedbackSummary.avgFaithfulness != null && (
-              <div>
-                <strong>{analytics.feedbackSummary.avgFaithfulness.toFixed(1)}/5</strong>
-                <p>Avg Faithfulness</p>
-              </div>
+              <div><dt>Restated views felt faithful</dt><dd>{analytics.feedbackSummary.avgFaithfulness.toFixed(1)} of 5</dd></div>
             )}
             {analytics.feedbackSummary.avgNeutrality != null && (
-              <div>
-                <strong>{analytics.feedbackSummary.avgNeutrality.toFixed(1)}/5</strong>
-                <p>Avg Neutrality</p>
-              </div>
+              <div><dt>Summaries felt neutral</dt><dd>{analytics.feedbackSummary.avgNeutrality.toFixed(1)} of 5</dd></div>
             )}
-          </div>
+          </dl>
 
-          <h3>Conflict Type Distribution</h3>
-          <ul>
+          <h3>Kinds of difference found</h3>
+          <ul className="plain-list">
             {Object.entries(analytics.conflictTypeDistribution).map(([type, count]) => (
-              <li key={type}>{type}: {count}</li>
+              <li key={type}>{KIND_NAMES[type] ?? type}: {count}</li>
             ))}
           </ul>
 
           {/* CG-FR49: CSV Export */}
-          <button onClick={handleExportCSV} style={{ marginTop: "0.5rem" }}>
+          <button type="button" className="secondary" onClick={handleExportCSV}>
             Export as CSV
           </button>
-        </article>
+        </section>
       )}
 
       {/* Cohort Management (CG-FR45) */}
-      <article className="card">
-        <h2>Cohort Management</h2>
+      <section className="panel" aria-labelledby="cohorts-heading">
+        <h2 id="cohorts-heading">Cohorts</h2>
 
-        <form onSubmit={handleCreateCohort} style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+        <form onSubmit={handleCreateCohort} className="inline-row">
+          <label htmlFor="cohort-name" className="visually-hidden">New cohort name</label>
           <input
+            id="cohort-name"
             type="text"
             placeholder="New cohort name"
             value={newCohortName}
             onChange={(e) => setNewCohortName(e.target.value)}
           />
-          <button type="submit">Create Cohort</button>
+          <button type="submit">Create cohort</button>
         </form>
 
-        {cohorts.map((cohort) => (
-          <div key={cohort.id} style={{ border: "1px solid #e5e7eb", borderRadius: "0.25rem", padding: "0.75rem", marginBottom: "0.5rem" }}>
-            <strong>{cohort.name}</strong> ({cohort._count.members} members)
-            <ul style={{ marginTop: "0.25rem" }}>
-              {cohort.members.map((m) => (
-                <li key={m.id}>{m.user.displayName} ({m.user.email})</li>
-              ))}
-            </ul>
-            <button
-              onClick={() => setSelectedCohort(cohort.id)}
-              style={{ fontSize: "0.875rem", marginTop: "0.25rem" }}
-            >
-              Add Member
-            </button>
-          </div>
-        ))}
+        <ul className="cohorts">
+          {cohorts.map((cohort) => (
+            <li key={cohort.id} className="cohort">
+              <h3>{cohort.name} <span className="field__help">({cohort._count.members} {cohort._count.members === 1 ? "member" : "members"})</span></h3>
+              <ul className="plain-list">
+                {cohort.members.map((m) => (
+                  <li key={m.id}>{m.user.displayName} ({m.user.email})</li>
+                ))}
+              </ul>
+              <button type="button" className="link-button" onClick={() => setSelectedCohort(cohort.id)}>
+                Add a member
+              </button>
+            </li>
+          ))}
+        </ul>
 
         {selectedCohort && (
-          <form onSubmit={handleAddMember} style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+          <form onSubmit={handleAddMember} className="inline-row">
+            <label htmlFor="member-email" className="visually-hidden">Member email</label>
             <input
+              id="member-email"
               type="email"
               placeholder="Member email"
               value={addMemberEmail}
               onChange={(e) => setAddMemberEmail(e.target.value)}
             />
             <button type="submit">Add</button>
-            <button type="button" onClick={() => setSelectedCohort(null)}>Cancel</button>
+            <button type="button" className="link-button" onClick={() => setSelectedCohort(null)}>Cancel</button>
           </form>
         )}
-      </article>
+      </section>
     </section>
   );
 }

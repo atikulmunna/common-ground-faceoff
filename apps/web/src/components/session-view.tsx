@@ -1,166 +1,41 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 
-import { ReadabilityMeter } from "./readability-meter";
-import { CommonGroundMap } from "./common-ground-map";
-import { GuidedPrompt } from "./guided-prompt";
-import { apiGet, apiPost } from "../lib-api";
-import { checkContentPolicy } from "../lib/content-policy";
-import { getPublicApiBaseUrl } from "../lib/api-base";
-import { useLiveRefresh } from "../lib/use-live-refresh";
+import { apiPost } from "../lib-api";
+import { ConversationHeader } from "./conversation/conversation-header";
+import { AnalysisProgress, NextStep, PauseNotice } from "./conversation/next-step";
+import { ParticipantsPanel, PeopleChips, participantName } from "./conversation/participants-panel";
+import { PerspectiveEditor } from "./conversation/perspective-editor";
+import { FeedbackPanel, ResultsActions, RoundHistory } from "./conversation/results-footer";
+import { ResultsView, type LabelOwner } from "./conversation/results-view";
+import type { ResultsInteraction, SectionComment } from "./conversation/types";
+import { useConversation } from "./conversation/use-conversation";
 
-/** Check a running analysis often; check a conversation that is still gathering perspectives rarely. */
-const ANALYSIS_POLL_MS = 3_000;
-const GATHERING_POLL_MS = 30_000;
-
-/** Lightweight inline-markdown renderer: **bold**, *italic*, \n → <br/> */
-function renderMarkdown(text: string): React.ReactNode[] {
-  return text.split(/\n/).flatMap((line, li, lines) => {
-    const parts: React.ReactNode[] = [];
-    const regex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
-    let lastIndex = 0;
-    let match;
-    while ((match = regex.exec(line)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(line.slice(lastIndex, match.index));
-      }
-      if (match[2]) {
-        parts.push(<strong key={`${li}-b-${match.index}`}>{match[2]}</strong>);
-      } else if (match[3]) {
-        parts.push(<em key={`${li}-i-${match.index}`}>{match[3]}</em>);
-      }
-      lastIndex = match.index + match[0].length;
-    }
-    if (lastIndex < line.length) {
-      parts.push(line.slice(lastIndex));
-    }
-    if (li < lines.length - 1) {
-      parts.push(<br key={`br-${li}`} />);
-    }
-    return parts;
-  });
-}
-
-type SessionResponse = {
-  success: boolean;
-  data: {
-    session: SessionData;
-  } | null;
-};
-type SessionData = {
-  id: string;
-  topic: string;
-  status: string;
-  creatorUserId: string;
-  anonymousMode: boolean;
-  deadline: string | null;
-  participants: Array<{
-    id: string;
-    /** Null for other participants while anonymous mode hides identities. */
-    userId: string | null;
-    role: string;
-    positionText: string | null;
-    positionSubmittedAt: string | null;
-    /** Set on the viewer's own entry when a moderator removed their perspective. */
-    positionRemovedAt?: string | null;
-  }>;
-};
-
-type AnalysisResponse = {
-  success: boolean;
-  data: {
-    /** The conversation's current status; `result` may belong to an earlier round. */
-    status: string;
-    estimatedCompletionAt: string | null;
-    result: {
-      sharedFoundations: string;
-      trueDisagreements: string;
-      steelmans: Record<string, string>;
-      conflictMap: Record<string, string[]>;
-      confidenceScores?: {
-        sharedFoundations: number;
-        disagreements: number;
-      };
-    } | null;
-  } | null;
-};
-
-type RoundSummary = {
-  id: string;
-  roundNumber: number;
-  parentSessionOrRoundId: string | null;
-  sharedFoundations: string;
-  trueDisagreements: string;
-  steelmans: Record<string, string>;
-  conflictMap: Record<string, string[]>;
-  confidenceScores?: { sharedFoundations: number; disagreements: number };
-  createdAt: string;
-};
-
-type ModerationSlaData = {
-  summary: {
-    pendingCount: number;
-    breachedCount: number;
-    nextDueAt: string | null;
-  };
-  flags: Array<{
-    id: string;
-    severity: "low" | "medium" | "high" | "critical";
-    status: string;
-    createdAt: string;
-    reviewedAt: string | null;
-    slaDueAt: string | null;
-    sla: {
-      targetMinutes: number;
-      isBreached: boolean;
-      remainingSeconds: number | null;
-    };
-  }>;
-};
-
-const JOURNEY_STEPS = ["Set up", "Perspectives", "Analysis", "Common ground"];
-
-function ConversationJourney({ status }: { status: string }) {
-  const activeStep = status === "completed"
-    ? 3
-    : ["queued", "running", "failed", "needs_input"].includes(status)
-      ? 2
-      : 1;
-
-  return (
-    <ol className="conversation-journey" aria-label="Conversation progress">
-      {JOURNEY_STEPS.map((label, index) => (
-        <li key={label} className={index < activeStep ? "is-complete" : index === activeStep ? "is-current" : ""} aria-current={index === activeStep ? "step" : undefined}>
-          <span className="conversation-journey__number" aria-hidden="true">{index < activeStep ? "✓" : index + 1}</span>
-          <span>{label}</span>
-        </li>
-      ))}
-    </ol>
-  );
+function formatDay(value: string | undefined): string | null {
+  return value ? new Date(value).toLocaleDateString(undefined, { day: "numeric", month: "long" }) : null;
 }
 
 export function SessionView({ sessionId }: { sessionId: string }) {
   const { data: authSession, status: authStatus } = useSession();
   const currentUserId = authSession?.user?.id;
-  const [positionText, setPositionText] = useState("");
-  const [session, setSession] = useState<SessionData | null>(null);
-  const [analysis, setAnalysis] = useState<AnalysisResponse["data"] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [feedbackSaved, setFeedbackSaved] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [hasSubmitted, setHasSubmitted] = useState(false);
-  const [myReactions, setMyReactions] = useState<Record<string, "represents" | "misrepresents" | "neutral">>({});
-  const [mutualAcks, setMutualAcks] = useState<Record<string, boolean>>({});
-  const [rounds, setRounds] = useState<RoundSummary[]>([]);
-  const [showComparison, setShowComparison] = useState(false);
-  const [comments, setComments] = useState<Array<{ id: string; userId: string; section: string; text: string; createdAt: string }>>([]);
-  const [reportSent, setReportSent] = useState(false);
-  const [moderationSla, setModerationSla] = useState<ModerationSlaData | null>(null);
+  const role = authSession?.user?.role;
+  const conversation = useConversation(sessionId, {
+    ready: authStatus !== "loading",
+    // The review queue is for moderators, so only they see how long reports have waited.
+    isModerator: role === "moderator" || role === "institutional_admin",
+  });
+  const { session, analysis, status, isAnalyzing } = conversation;
 
-  // CG-NFR08: Persist draft position text in localStorage across refreshes
+  const [positionText, setPositionText] = useState("");
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [feedbackSaved, setFeedbackSaved] = useState(false);
+
+  // CG-NFR08: keep an unsent draft across refreshes.
   const draftKey = `cg-draft-${sessionId}`;
   useEffect(() => {
     const saved = localStorage.getItem(draftKey);
@@ -169,762 +44,214 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 
   function updatePositionText(text: string) {
     setPositionText(text);
-    if (!hasSubmitted) {
-      localStorage.setItem(draftKey, text);
-    }
+    if (!hasSubmitted) localStorage.setItem(draftKey, text);
   }
-
-  function clearDraft() {
-    localStorage.removeItem(draftKey);
-  }
-
-  const refreshSession = useCallback(async () => {
-    try {
-      const response = await apiGet<SessionResponse>(`/sessions/${sessionId}`);
-      setSession(response.data?.session ?? null);
-      setError(null);
-    } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : "Failed to load session");
-    }
-  }, [sessionId]);
 
   // Show the viewer's saved perspective once; later refreshes must not overwrite an edit in progress.
   const positionHydrated = useRef(false);
   useEffect(() => {
     if (positionHydrated.current || !session || !currentUserId) return;
     positionHydrated.current = true;
-    const self = session.participants.find((p) => p.userId === currentUserId);
+    const self = session.participants.find((participant) => participant.userId === currentUserId);
     if (self?.positionText) {
       setPositionText(self.positionText);
       setHasSubmitted(true);
     }
   }, [session, currentUserId]);
 
-  const refreshAnalysis = useCallback(async () => {
-    try {
-      const response = await apiGet<AnalysisResponse>(`/sessions/${sessionId}/analysis`);
-      setAnalysis(response.data ?? null);
-    } catch {
-      // Polling should not spam visible errors.
+  const self = session?.participants.find((participant) => participant.userId === currentUserId);
+  const isCreator = session?.viewer?.isCreator ?? (Boolean(currentUserId) && currentUserId === session?.creatorUserId);
+  const isParticipant = session?.viewer?.isParticipant ?? Boolean(self);
+  const canShare = session?.viewer?.canShare ?? isCreator;
+  const pause = session?.pause?.reason ?? null;
+  const anonymous = Boolean(session?.anonymousMode);
+  const deadlinePassed = session?.deadline ? new Date(session.deadline) < new Date() : false;
+  const submittedCount = session?.participants.filter((participant) => Boolean(participant.positionSubmittedAt)).length ?? 0;
+  const waitingCount = (session?.participants.length ?? 0) - submittedCount;
+  const result = analysis?.result ?? null;
+  const showResults = status === "completed" && Boolean(result);
+  // D6: while a new round gathers perspectives, the previous round's results stay readable.
+  const previousResult = !showResults && !isAnalyzing ? result : null;
+
+  const owners = useMemo(() => {
+    const byLabel: Record<string, LabelOwner> = {};
+    for (const participant of session?.participants ?? []) {
+      if (!participant.label) continue;
+      byLabel[participant.label] = {
+        name: participantName(participant, currentUserId, anonymous),
+        mine: Boolean(currentUserId) && participant.userId === currentUserId,
+      };
     }
-  }, [sessionId]);
+    return byLabel;
+  }, [session?.participants, currentUserId, anonymous]);
 
-  const refreshReactions = useCallback(async () => {
-    try {
-      const res = await apiGet<{
-        success: boolean;
-        data: {
-          reactions: Array<{ userId: string; section: string; reaction: "represents" | "misrepresents" | "neutral" }>;
-          mutualAcknowledgments: Record<string, boolean>;
-        } | null;
-      }>(`/sessions/${sessionId}/reactions`);
-      if (res.data) {
-        const mine: Record<string, "represents" | "misrepresents" | "neutral"> = {};
-        for (const r of res.data.reactions) {
-          if (r.userId === currentUserId) mine[r.section] = r.reaction;
-        }
-        setMyReactions(mine);
-        setMutualAcks(res.data.mutualAcknowledgments);
-      }
-    } catch {
-      // silent
-    }
-  }, [sessionId, currentUserId]);
-
-  async function handleReact(section: string, reaction: "represents" | "misrepresents" | "neutral") {
-    try {
-      await apiPost(`/sessions/${sessionId}/reactions`, { section, reaction });
-      await refreshReactions();
-    } catch {
-      // silent
-    }
-  }
-
-  const fetchRounds = useCallback(async () => {
-    try {
-      const res = await apiGet<{
-        success: boolean;
-        data: { rounds: RoundSummary[] } | null;
-      }>(`/sessions/${sessionId}/rounds`);
-      setRounds(res.data?.rounds ?? []);
-    } catch {
-      // silent
-    }
-  }, [sessionId]);
-
-  const fetchComments = useCallback(async () => {
-    try {
-      const res = await apiGet<{
-        success: boolean;
-        data: { comments: Array<{ id: string; userId: string; section: string; text: string; createdAt: string }> } | null;
-      }>(`/sessions/${sessionId}/comments`);
-      setComments(res.data?.comments ?? []);
-    } catch {
-      // silent
-    }
-  }, [sessionId]);
-
-  const fetchModerationSla = useCallback(async () => {
-    try {
-      const res = await apiGet<{ success: boolean; data: ModerationSlaData | null }>(`/moderation/session/${sessionId}/sla`);
-      setModerationSla(res.data ?? null);
-    } catch {
-      // silent for non-critical polling
-    }
-  }, [sessionId]);
-
-  async function handleComment(section: string, text: string) {
-    try {
-      await apiPost(`/sessions/${sessionId}/comments`, { section, text });
-      await fetchComments();
-    } catch {
-      // silent
-    }
-  }
-
-  // Initial load. Rounds, reactions and comments follow once results exist (see below).
-  useEffect(() => {
-    if (authStatus === "loading") return;
-    void refreshSession();
-    void refreshAnalysis();
-    void fetchModerationSla();
-  }, [authStatus, refreshSession, refreshAnalysis, fetchModerationSla]);
-
-  useEffect(() => {
-    if (authStatus === "loading") return;
-
-    // CG-FR07: Session inactivity should reflect real user activity.
-    // Send heartbeat only on user activity, throttled to once per minute.
-    let lastHeartbeatAt = 0;
-    const sendHeartbeat = () => {
-      const now = Date.now();
-      if (now - lastHeartbeatAt < 60_000) return;
-      lastHeartbeatAt = now;
-      void apiPost(`/sessions/${sessionId}/heartbeat`, {}).catch(() => {});
-    };
-
-    sendHeartbeat(); // mark active on initial page view
-
-    const activityEvents = ["mousedown", "keydown", "scroll", "touchstart"] as const;
-    for (const event of activityEvents) {
-      window.addEventListener(event, sendHeartbeat, { passive: true });
-    }
-
-    return () => {
-      for (const event of activityEvents) {
-        window.removeEventListener(event, sendHeartbeat);
-      }
-    };
-  }, [authStatus, sessionId]);
+  const interaction: ResultsInteraction = {
+    myReactions: conversation.myReactions,
+    mutual: conversation.mutual,
+    reactionErrors: conversation.reactionErrors,
+    onReact: (section, reaction) => void conversation.react(section, reaction),
+    comments: conversation.comments,
+    commentErrors: conversation.commentErrors,
+    onComment: conversation.comment,
+    authorName: (comment: SectionComment) => {
+      if (comment.mine) return "You";
+      if (anonymous || !comment.userId) return "A participant";
+      const author = session?.participants.find((participant) => participant.userId === comment.userId);
+      return author?.user?.displayName ?? "A participant";
+    },
+    myLabel: self?.label ?? null,
+  };
 
   async function submitPosition() {
     setBusy(true);
-    setError(null);
+    setActionError(null);
     try {
-      await apiPost(`/sessions/${sessionId}/positions`, {
-        positionText,
-        roundNumber: 1
-      });
+      await apiPost(`/sessions/${sessionId}/positions`, { positionText, roundNumber: 1 });
       setHasSubmitted(true);
       setEditing(false);
-      clearDraft();
-      await refreshSession();
+      localStorage.removeItem(draftKey);
+      await conversation.refreshSession();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Failed to submit position");
+      setActionError(submitError instanceof Error ? submitError.message : "Your perspective was not saved. Try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function triggerAnalysis() {
+  async function startAnalysis() {
     setBusy(true);
-    setError(null);
+    setActionError(null);
     try {
       // The API queues the analysis and answers at once; the page then follows its progress.
       await apiPost(`/sessions/${sessionId}/analyze`, {});
-      await refreshAnalysis();
+      await conversation.refreshAnalysis();
     } catch (analyzeError) {
-      setError(analyzeError instanceof Error ? analyzeError.message : "Failed to analyze");
+      setActionError(analyzeError instanceof Error ? analyzeError.message : "The analysis could not start. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startNextRound() {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await apiPost(`/sessions/${sessionId}/reenter`, {});
+      setEditing(true);
+      setFeedbackSaved(false);
+      await Promise.all([conversation.refreshSession(), conversation.refreshAnalysis()]);
+    } catch (reenterError) {
+      setActionError(reenterError instanceof Error ? reenterError.message : "The next round could not start. Try again.");
     } finally {
       setBusy(false);
     }
   }
 
   async function submitFeedback(faithfulness: number, neutrality: number, comment: string) {
-    await apiPost(`/sessions/${sessionId}/feedback`, {
-      faithfulness,
-      neutrality,
-      comment: comment || undefined,
-    });
+    await apiPost(`/sessions/${sessionId}/feedback`, { faithfulness, neutrality, comment: comment || undefined });
     setFeedbackSaved(true);
   }
 
-  async function handleReenter() {
-    setBusy(true);
-    setError(null);
-    try {
-      await apiPost(`/sessions/${sessionId}/reenter`, {});
-      setEditing(true);
-      setFeedbackSaved(false);
-      setAnalysis(null);
-      setShowComparison(false);
-      await refreshSession();
-    } catch (reenterError) {
-      setError(reenterError instanceof Error ? reenterError.message : "Failed to initiate re-entry");
-    } finally {
-      setBusy(false);
-    }
-  }
+  const roundNumber = result?.roundNumber ?? 1;
+  const roundNote = showResults
+    ? [`Round ${roundNumber} results`, formatDay(result?.createdAt)].filter(Boolean).join(", ")
+    : previousResult
+      ? `Round ${roundNumber + 1}`
+      : null;
 
-  const status = useMemo(() => analysis?.status ?? session?.status ?? "draft", [analysis?.status, session?.status]);
-  const isLocked = ["queued", "running", "completed"].includes(status);
-  const showEditor = !hasSubmitted || editing;
-  const policyWarnings = useMemo(() => checkContentPolicy(positionText), [positionText]);
-  const deadlinePassed = session?.deadline ? new Date(session.deadline) < new Date() : false;
-  const removedByModerator = Boolean(
-    session?.participants.find((participant) => participant.userId === currentUserId)?.positionRemovedAt,
-  );
-  // Others' text stays hidden until results exist, so count submissions by timestamp.
-  const submittedCount = session?.participants.filter((participant) => Boolean(participant.positionSubmittedAt)).length ?? 0;
-  const isAnalyzing = status === "queued" || status === "running";
-  const showResults = status === "completed" && Boolean(analysis?.result);
-
-  // When results appear (on load, or when an analysis finishes while the page is open),
-  // load what goes with them. Others' perspectives also become visible at that point.
-  const loadedStatus = analysis?.status ?? session?.status ?? null;
-  const previousStatus = useRef<string | null>(null);
-  useEffect(() => {
-    const previous = previousStatus.current;
-    previousStatus.current = loadedStatus;
-    if (loadedStatus !== "completed" || previous === "completed") return;
-    void fetchRounds();
-    void refreshReactions();
-    void fetchComments();
-    if (previous !== null) void refreshSession();
-  }, [loadedStatus, fetchRounds, refreshReactions, fetchComments, refreshSession]);
-
-  // Poll often only while an analysis runs, rarely while perspectives are gathered, and not at
-  // all once results exist; then refresh reactions and comments when the viewer returns to the tab.
-  const refreshLive = useCallback(async () => {
-    if (status === "completed") {
-      await Promise.all([refreshReactions(), fetchComments()]);
-    } else if (isAnalyzing) {
-      await refreshAnalysis();
-    } else {
-      await Promise.all([refreshSession(), refreshAnalysis()]);
-    }
-  }, [status, isAnalyzing, refreshReactions, fetchComments, refreshAnalysis, refreshSession]);
-
-  useLiveRefresh(
-    refreshLive,
-    authStatus === "loading" || status === "completed" ? null : isAnalyzing ? ANALYSIS_POLL_MS : GATHERING_POLL_MS,
-  );
-
-  async function handleReport() {
-    const reason = prompt("Describe the issue (at least 10 characters):");
-    if (!reason || reason.length < 10) return;
-    try {
-      await apiPost(`/moderation/report/${sessionId}`, { reason });
-      setReportSent(true);
-    } catch {
-      setError("Failed to submit report");
-    }
-  }
-
-  return (
-    <section className="grid conversation-page">
-      <article className="card conversation-header">
-        <div className="conversation-header__top">
-          <div>
-            <span className="eyebrow">Conversation</span>
-            <h1>{session?.topic ?? "Conversation"}</h1>
-            <p className="conversation-header__summary">
-              {submittedCount} of {session?.participants.length ?? 0} perspectives submitted
-              {session?.anonymousMode ? " · Anonymous participation" : ""}
-            </p>
-            {session?.deadline && (
-              <p className={deadlinePassed ? "text-muted" : ""}>
-                Deadline: {new Date(session.deadline).toLocaleString()}
-                {deadlinePassed && " (passed)"}
-              </p>
-            )}
-            {moderationSla?.summary.pendingCount ? (
-              <p style={{ color: moderationSla.summary.breachedCount > 0 ? "#b91c1c" : "#92400e" }}>
-                Moderation SLA: {moderationSla.summary.pendingCount} pending
-                {moderationSla.summary.breachedCount > 0 ? `, ${moderationSla.summary.breachedCount} overdue` : ""}
-              </p>
-            ) : null}
-          </div>
-          <button
-            className="button-quiet"
-            onClick={handleReport}
-            disabled={reportSent}
-            style={{ alignSelf: "flex-start" }}
-            aria-label="Report this conversation"
-          >
-            {reportSent ? "Reported" : "Report"}
-          </button>
-        </div>
-        <ConversationJourney status={status} />
-      </article>
-
-      {/* CG-FR10: Email invitation panel (visible to session creator before analysis) */}
-      {session && !isLocked && session.participants.some(
-        (p) => p.userId === currentUserId && p.role === "session_creator"
-      ) && (
-        <InvitePanel sessionId={sessionId} />
-      )}
-
-      <article className="card grid">
-        <div className="section-heading"><span className="eyebrow">Your contribution</span><h2>Share your perspective</h2><p>Explain what you believe, why it matters, and what might change your view.</p></div>
-        {removedByModerator && (
-          <p className="cgm-policy-warning" role="alert">
-            A moderator removed your perspective. Please write it again; the analysis will wait until you do.
-          </p>
-        )}
-        {showEditor ? (
-          <>
-            {!hasSubmitted && (
-              <GuidedPrompt onApply={(text) => updatePositionText(positionText ? positionText + "\n\n" + text : text)} />
-            )}
-            <textarea
-              rows={8}
-              minLength={100}
-              maxLength={5000}
-              placeholder="Share your perspective in 100–5000 characters"
-              value={positionText}
-              onChange={(event) => updatePositionText(event.target.value)}
-            />
-            <ReadabilityMeter text={positionText} />
-            {policyWarnings.length > 0 && (
-              <div className="cgm-policy-warnings" role="alert">
-                {policyWarnings.map((w) => (
-                  <p key={w.category} className="cgm-policy-warning">
-                    ⚠ {w.message}
-                  </p>
-                ))}
-              </div>
-            )}
-            <div style={{ display: "flex", gap: "0.8rem" }}>
-              <button
-                onClick={() => {
-                  // CG-FR19: Require explicit confirmation if content policy warnings exist
-                  if (policyWarnings.length > 0) {
-                    const confirmed = window.confirm(
-                      "Your text has content policy warnings. Are you sure you want to submit?"
-                    );
-                    if (!confirmed) return;
-                  }
-                  submitPosition();
-                }}
-                disabled={busy || positionText.length < 100}
-                aria-label={hasSubmitted ? "Save perspective changes" : "Submit your perspective"}
-              >
-                {busy ? "Saving…" : hasSubmitted ? "Save changes" : "Submit perspective"}
-              </button>
-              {hasSubmitted && (
-                <button className="secondary" onClick={() => setEditing(false)}>
-                  Cancel
-                </button>
-              )}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="cgm-position-preview">
-              <p>{positionText}</p>
-            </div>
-            <div style={{ display: "flex", gap: "0.8rem", alignItems: "center" }}>
-              {!isLocked && (
-                <button onClick={() => setEditing(true)}>Edit perspective</button>
-              )}
-              {currentUserId === session?.creatorUserId ? (
-                <button className="secondary" onClick={triggerAnalysis} disabled={busy || isLocked}>
-                  {isLocked ? "Finding common ground…" : "Find common ground"}
-                </button>
-              ) : (
-                <span style={{ fontSize: "0.9rem", color: "#6b7280", fontStyle: "italic" }}>
-                  {isLocked ? "Finding common ground…" : "Waiting for the conversation host to begin analysis."}
-                </span>
-              )}
-            </div>
-          </>
-        )}
-      </article>
-
-      {(showResults || isAnalyzing) && <article className="card grid results-card">
-        {showResults && analysis?.result ? (
-          <>
-            <CommonGroundMap
-              result={analysis.result}
-              reactions={{ mine: myReactions, mutual: mutualAcks }}
-              onReact={handleReact}
-              comments={comments}
-              onComment={handleComment}
-            />
-
-            {/* Re-entry & round comparison controls */}
-            <div className="cgm-reentry">
-              <button onClick={handleReenter} disabled={busy}>
-                {busy ? "Working…" : "Revise perspectives"}
-              </button>
-              {rounds.length > 1 && (
-                <button
-                  className="secondary"
-                  onClick={() => setShowComparison((v) => !v)}
-                >
-                  {showComparison ? "Hide Round Comparison" : `Compare Rounds (${rounds.length})`}
-                </button>
-              )}
-              {rounds.length <= 1 && (
-                <button className="secondary" onClick={fetchRounds} disabled={busy}>
-                  Load Round History
-                </button>
-              )}
-            </div>
-
-            {showComparison && rounds.length > 1 && (
-              <RoundComparison rounds={rounds} />
-            )}
-
-            <ExportPanel sessionId={sessionId} />
-            <FeedbackPanel
-              onSubmit={submitFeedback}
-              saved={feedbackSaved}
-            />
-          </>
-        ) : (
-          <AnalysisStatus status={status} estimatedCompletionAt={analysis?.estimatedCompletionAt ?? null} />
-        )}
-      </article>}
-
-      {error ? <p style={{ color: "#b91c1c" }}>{error}</p> : null}
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Sub-components                                                     */
-/* ------------------------------------------------------------------ */
-
-const STATUS_MESSAGES: Record<string, { label: string; description: string }> = {
-  draft: { label: "Ready for perspectives", description: "Invite participants and share your perspectives." },
-  collecting_positions: { label: "Gathering perspectives", description: "Participants are sharing what matters to them." },
-  queued: { label: "Preparing analysis", description: "Your conversation is queued and will begin shortly." },
-  running: { label: "Finding common ground", description: "Looking for shared foundations and meaningful differences…" },
-  failed: { label: "Failed", description: "Analysis encountered an error. Please try again." },
-  needs_input: { label: "Needs Input", description: "Additional input is required before analysis can complete." },
-};
-
-function AnalysisStatus({ status, estimatedCompletionAt }: { status: string; estimatedCompletionAt: string | null }) {
-  const info = STATUS_MESSAGES[status] ?? { label: status, description: "" };
-  const isActive = status === "queued" || status === "running";
-
-  // CG-FR57: Compute remaining time for async ETA
-  const [etaLabel, setEtaLabel] = useState<string | null>(null);
-  useEffect(() => {
-    if (!estimatedCompletionAt || !isActive) {
-      setEtaLabel(null);
-      return;
-    }
-    function updateEta() {
-      const remaining = Math.max(0, Math.ceil((new Date(estimatedCompletionAt!).getTime() - Date.now()) / 1000));
-      if (remaining <= 0) {
-        setEtaLabel("completing soon…");
-      } else if (remaining < 60) {
-        setEtaLabel(`~${remaining}s remaining`);
-      } else {
-        setEtaLabel(`~${Math.ceil(remaining / 60)}min remaining`);
-      }
-    }
-    updateEta();
-    const timer = setInterval(updateEta, 5000);
-    return () => clearInterval(timer);
-  }, [estimatedCompletionAt, isActive]);
-
-  return (
-    <div className="cgm-status" role="status" aria-live="polite">
-      <div className="cgm-status__icon" aria-hidden="true">{isActive ? "⏳" : "📋"}</div>
-      <h2 className="cgm-status__label">{info.label}</h2>
-      <p className="cgm-status__desc">{info.description}</p>
-      {isActive && etaLabel && (
-        <p className="cgm-status__eta">{etaLabel}</p>
-      )}
-      {isActive && <div className="cgm-status__pulse" aria-hidden="true" />}
-    </div>
-  );
-}
-
-function FeedbackPanel({
-  onSubmit,
-  saved,
-}: {
-  onSubmit: (faithfulness: number, neutrality: number, comment: string) => Promise<void>;
-  saved: boolean;
-}) {
-  const [faithfulness, setFaithfulness] = useState(0);
-  const [neutrality, setNeutrality] = useState(0);
-  const [comment, setComment] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-
-  if (saved) {
-    return (
-      <div className="cgm-feedback cgm-feedback--saved">
-        <span>✓ Feedback submitted. Thank you!</span>
-      </div>
+  if (!session) {
+    return conversation.loadError ? (
+      <p className="notice notice--error" role="alert">{conversation.loadError}</p>
+    ) : (
+      <p className="quiet-status" role="status">Loading the conversation</p>
     );
   }
 
   return (
-    <div className="cgm-feedback">
-      <h3>Rate this analysis</h3>
-      <div className="cgm-feedback__row">
-        <RatingRow label="Steelman Faithfulness" value={faithfulness} onChange={setFaithfulness} />
-        <RatingRow label="Neutrality" value={neutrality} onChange={setNeutrality} />
-      </div>
-      <textarea
-        className="cgm-feedback__comment"
-        placeholder="Optional comment…"
-        rows={2}
-        value={comment}
-        onChange={(e) => setComment(e.target.value)}
+    <div className="conversation">
+      <ConversationHeader
+        sessionId={sessionId}
+        topic={session.topic}
+        status={status}
+        deadline={session.deadline}
+        anonymous={anonymous}
+        roundNote={roundNote}
+        moderationSla={conversation.moderationSla}
       />
-      {submitError ? <p style={{ color: "#b91c1c", margin: 0 }}>{submitError}</p> : null}
-      <button
-        onClick={async () => {
-          setBusy(true);
-          setSubmitError(null);
-          try {
-            await onSubmit(faithfulness, neutrality, comment);
-          } catch (e) {
-            setSubmitError(e instanceof Error ? e.message : "Failed to submit feedback");
-          } finally {
-            setBusy(false);
-          }
-        }}
-        disabled={busy || faithfulness === 0 || neutrality === 0}
-      >
-        {busy ? "Submitting..." : "Submit Feedback"}
-      </button>
-    </div>
-  );
-}
 
-function RatingRow({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className="cgm-rating">
-      <span className="cgm-rating__label">{label}</span>
-      <div className="cgm-rating__stars">
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button
-            key={n}
-            type="button"
-            className={`cgm-rating__star ${n <= value ? "cgm-rating__star--active" : ""}`}
-            onClick={() => onChange(n)}
-            aria-label={`${n} out of 5`}
-          >
-            ★
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ExportPanel({ sessionId }: { sessionId: string }) {
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
-
-  async function downloadExport(format: "json" | "markdown" | "pdf") {
-    setExporting(true);
-    setExportError(null);
-    try {
-      const { getSession } = await import("next-auth/react");
-      const session = await getSession();
-      const token = session?.user?.accessToken;
-      const res = await fetch(`${getPublicApiBaseUrl()}/sessions/${sessionId}/export/${format}`, {
-        headers: token ? { authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-
-      const blob = await res.blob();
-      const ext = format === "json" ? "json" : format === "pdf" ? "pdf" : "md";
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `common-ground-${sessionId}.${ext}`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setExportError(e instanceof Error ? e.message : "Export failed");
-    } finally {
-      setExporting(false);
-    }
-  }
-
-  return (
-    <div className="cgm-export">
-      <h3>Export</h3>
-      <div className="cgm-export__buttons">
-        <button onClick={() => downloadExport("json")} disabled={exporting}>
-          {exporting ? "Exporting…" : "JSON"}
-        </button>
-        <button onClick={() => downloadExport("markdown")} disabled={exporting}>
-          {exporting ? "Exporting…" : "Markdown"}
-        </button>
-        <button onClick={() => downloadExport("pdf")} disabled={exporting}>
-          {exporting ? "Exporting…" : "PDF"}
-        </button>
-      </div>
-      {exportError ? <p style={{ color: "#b91c1c", margin: 0 }}>{exportError}</p> : null}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  CG-FR10/13: Email Invitation Panel                                 */
-/* ------------------------------------------------------------------ */
-
-function InvitePanel({ sessionId }: { sessionId: string }) {
-  const [email, setEmail] = useState("");
-  const [message, setMessage] = useState("");
-  const [sending, setSending] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
-
-  async function handleInvite(e: React.FormEvent) {
-    e.preventDefault();
-    if (!email) return;
-    setSending(true);
-    setResult(null);
-    try {
-      await apiPost(`/sessions/${sessionId}/email-invite`, {
-        email,
-        message: message || undefined,
-      });
-      setResult(`Invitation sent to ${email}`);
-      setEmail("");
-      setMessage("");
-    } catch (err) {
-      setResult(err instanceof Error ? err.message : "Failed to send invitation");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <article className="card grid">
-      <div className="section-heading"><span className="eyebrow">Build the conversation</span><h3>Invite someone</h3><p>Bring another perspective into this discussion.</p></div>
-      <form onSubmit={handleInvite} className="cgm-invite-form">
-        <label htmlFor="invite-email">Email address</label>
-        <input
-          id="invite-email"
-          type="email"
-          placeholder="participant@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          aria-label="Participant email address"
-        />
-        <label htmlFor="invite-message">Message (optional)</label>
-        <input
-          id="invite-message"
-          type="text"
-          placeholder="Add a personal message…"
-          maxLength={500}
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          aria-label="Personal message for invitation"
-        />
-        <button type="submit" disabled={sending || !email}>
-          {sending ? "Sending…" : "Send invitation"}
-        </button>
-      </form>
-      {result && <p className="cgm-invite-result">{result}</p>}
-    </article>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Round Comparison (CG-FR69)                                         */
-/* ------------------------------------------------------------------ */
-
-function RoundComparison({ rounds }: { rounds: RoundSummary[] }) {
-  const [selectedA, setSelectedA] = useState(0);
-  const [selectedB, setSelectedB] = useState(Math.min(1, rounds.length - 1));
-
-  const roundA = rounds[selectedA];
-  const roundB = rounds[selectedB];
-
-  if (!roundA || !roundB) return null;
-
-  return (
-    <div className="cgm-round-compare">
-      <h3>Round Comparison</h3>
-      <div className="cgm-round-compare__selectors">
-        <label>
-          Left:
-          <select value={selectedA} onChange={(e) => setSelectedA(Number(e.target.value))}>
-            {rounds.map((r, i) => (
-              <option key={r.id} value={i}>Round {r.roundNumber}</option>
-            ))}
-          </select>
-        </label>
-        <span className="cgm-round-compare__vs">vs</span>
-        <label>
-          Right:
-          <select value={selectedB} onChange={(e) => setSelectedB(Number(e.target.value))}>
-            {rounds.map((r, i) => (
-              <option key={r.id} value={i}>Round {r.roundNumber}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <div className="cgm-round-compare__panels">
-        <RoundPanel round={roundA} />
-        <RoundPanel round={roundB} />
-      </div>
-    </div>
-  );
-}
-
-function RoundPanel({ round }: { round: RoundSummary }) {
-  return (
-    <div className="cgm-round-panel">
-      <div className="cgm-round-panel__header">
-        <strong>Round {round.roundNumber}</strong>
-        <span className="cgm-round-panel__date">
-          {new Date(round.createdAt).toLocaleDateString()}
-        </span>
-      </div>
-
-      <div className="cgm-round-panel__section">
-        <h4>Shared Foundations</h4>
-        <p>{renderMarkdown(round.sharedFoundations)}</p>
-      </div>
-
-      <div className="cgm-round-panel__section">
-        <h4>True Disagreements</h4>
-        <p>{renderMarkdown(round.trueDisagreements)}</p>
-      </div>
-
-      <div className="cgm-round-panel__section">
-        <h4>Steelmans</h4>
-        {Object.entries(round.steelmans as Record<string, string>).map(([label, text]) => (
-          <div key={label} className="cgm-round-panel__steelman">
-            <strong>{label}:</strong> <span>{renderMarkdown(text)}</span>
+      {showResults && result ? (
+        <>
+          <PeopleChips session={session} viewerId={currentUserId} />
+          <ResultsView result={result} owners={owners} interaction={isParticipant ? interaction : undefined} />
+          <ResultsActions
+            sessionId={sessionId}
+            nextRound={roundNumber + 1}
+            canStartRound={isCreator}
+            canShare={canShare}
+            canExport={isParticipant}
+            busy={busy}
+            onStartRound={startNextRound}
+          />
+          {isParticipant && <FeedbackPanel onSubmit={submitFeedback} saved={feedbackSaved} />}
+          <RoundHistory rounds={conversation.rounds} />
+          {positionText && (
+            <details className="own-perspective">
+              <summary>Your perspective, as you wrote it</summary>
+              <blockquote className="own-words">{positionText}</blockquote>
+            </details>
+          )}
+        </>
+      ) : isAnalyzing ? (
+        <AnalysisProgress estimatedCompletionAt={analysis?.estimatedCompletionAt ?? null} />
+      ) : (
+        <>
+          <PauseNotice status={status} pause={pause} isCreator={isCreator} />
+          <div className="conversation__columns">
+            <div className="conversation__main">
+              {isParticipant && (
+                <PerspectiveEditor
+                  text={positionText}
+                  onChange={updatePositionText}
+                  hasSubmitted={hasSubmitted}
+                  editing={editing}
+                  onEdit={() => setEditing(true)}
+                  onCancel={() => setEditing(false)}
+                  onSubmit={submitPosition}
+                  busy={busy}
+                  deadlinePassed={deadlinePassed}
+                  removedByModerator={Boolean(self?.positionRemovedAt)}
+                  anonymous={anonymous}
+                />
+              )}
+              {(isCreator || hasSubmitted) && (
+                <NextStep
+                  isCreator={isCreator}
+                  pause={pause}
+                  submittedCount={submittedCount}
+                  waitingCount={waitingCount}
+                  viewerSubmitted={hasSubmitted}
+                  busy={busy}
+                  onAnalyze={startAnalysis}
+                />
+              )}
+            </div>
+            <ParticipantsPanel
+              session={session}
+              viewerId={currentUserId}
+              canInvite={isCreator}
+              onInvited={conversation.refreshSession}
+            />
           </div>
-        ))}
-      </div>
+          {previousResult && (
+            <details className="previous-round">
+              <summary>Round {roundNumber} results, read only</summary>
+              <ResultsView result={previousResult} owners={owners} />
+            </details>
+          )}
+        </>
+      )}
+
+      {actionError && <p className="notice notice--error" role="alert">{actionError}</p>}
     </div>
   );
 }

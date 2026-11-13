@@ -39,21 +39,21 @@ export function checkContentPolicy(text: string): PolicyWarning[] {
   if (testPatterns(text, THREAT_PATTERNS)) {
     warnings.push({
       category: "threats",
-      message: "Your text may contain threatening language. Please revise to focus on your position rather than personal threats.",
+      message: "Your text may contain threatening language. Focus on your view rather than on threats.",
     });
   }
 
   if (testPatterns(text, HATE_PATTERNS)) {
     warnings.push({
       category: "hate_speech",
-      message: "Your text may contain hate speech. Common Ground is designed for constructive discourse — please reframe your argument.",
+      message: "Your text may contain hate speech. Common Ground is for constructive discussion, so please reframe your argument.",
     });
   }
 
   if (testPatterns(text, PERSONAL_INFO_PATTERNS)) {
     warnings.push({
       category: "personal_info",
-      message: "Your text appears to contain personal information (phone number or SSN). This will be visible to other participants.",
+      message: "Your text seems to include personal information, such as a phone or social security number. Other participants may be able to read it.",
     });
   }
 

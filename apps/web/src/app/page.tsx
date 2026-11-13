@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 import { apiGet } from "../lib-api";
+import { OverprintHeading } from "../components/overprint-heading";
+import { stageLabel } from "../lib/conversation-stage";
 
 type SessionRow = {
   id: string;
@@ -19,31 +21,20 @@ type DashboardResponse = {
   data: { sessions: SessionRow[]; total: number; page: number; pageSize: number } | null;
 };
 
-const STATUS_OPTIONS = [
+const STAGE_FILTERS = [
   { value: "all", label: "All stages" },
-  { value: "draft", label: "Draft" },
   { value: "collecting_positions", label: "Gathering perspectives" },
-  { value: "queued", label: "Queued" },
   { value: "running", label: "Finding common ground" },
-  { value: "completed", label: "Ready to review" },
+  { value: "completed", label: "Results ready" },
   { value: "failed", label: "Needs attention" },
+  { value: "draft", label: "Not started" },
 ];
-
-const STATUS_META: Record<string, { label: string; badge: string; action: string }> = {
-  draft: { label: "Draft", badge: "badge--muted", action: "Continue setup" },
-  collecting_positions: { label: "Gathering perspectives", badge: "badge--info", action: "Add perspective" },
-  queued: { label: "Analysis queued", badge: "badge--warn", action: "View progress" },
-  running: { label: "Finding common ground", badge: "badge--warn", action: "View progress" },
-  completed: { label: "Ready to review", badge: "badge--ok", action: "Explore results" },
-  failed: { label: "Needs attention", badge: "badge--err", action: "Review conversation" },
-  needs_input: { label: "Needs more input", badge: "badge--warn", action: "Add input" },
-};
 
 export default function HomePage() {
   const { data: authSession, status: authStatus } = useSession();
 
   if (authStatus === "loading") {
-    return <div className="page-loading" role="status">Opening Common Ground…</div>;
+    return <p className="page-loading" role="status">Opening Common Ground</p>;
   }
 
   if (!authSession?.user) return <LandingPage />;
@@ -53,51 +44,61 @@ export default function HomePage() {
 function LandingPage() {
   return (
     <div className="landing">
-      <section className="landing-hero">
-        <div className="landing-hero__copy">
-          <span className="eyebrow">Better conversations, clearer outcomes</span>
-          <h1>Turn disagreement into shared understanding.</h1>
-          <p>
-            Common Ground helps people express their perspectives, understand the strongest version
-            of each other&apos;s views, and discover where meaningful agreement is possible.
+      <section className="hero">
+        <div className="hero__copy">
+          <OverprintHeading className="hero__title">Find the ground you share.</OverprintHeading>
+          <p className="hero__lede">
+            Everyone writes what they think, in their own words. Common Ground restates each view fairly,
+            then shows the points you share and the few you really differ on.
           </p>
-          <div className="landing-actions">
-            <Link href="/sign-in" className="button-link button-link--primary">Start a conversation</Link>
-            <a href="#how-it-works" className="button-link button-link--secondary">See how it works</a>
+          <div className="hero__actions">
+            <Link href="/sign-in" className="button-link">Start a conversation</Link>
+            <a href="#how-it-works" className="text-link">See how it works</a>
           </div>
-          <p className="landing-note">Designed for thoughtful discussion—not scoring points.</p>
         </div>
-        <div className="landing-preview" aria-label="Example common ground summary">
-          <div className="landing-preview__top">
-            <span className="preview-dot preview-dot--blue" />
-            <span className="preview-dot preview-dot--amber" />
-            <span>Conversation insight</span>
+
+        <figure
+          className="hero-sheets"
+          aria-label="Two perspectives overlapping. Casey: office days help new people learn fast. Val: remote days protect time for deep work. Where they overlap: both want the team to do its best work."
+        >
+          <div className="hero-sheets__canvas" aria-hidden="true">
+            <div className="hero-sheets__sheet hero-sheets__sheet--first" />
+            <div className="hero-sheets__sheet hero-sheets__sheet--second" />
+            <div className="hero-sheets__voice hero-sheets__voice--first">
+              <span className="hero-sheets__name">Casey</span>
+              <span className="hero-sheets__words">Office days help new people learn fast.</span>
+            </div>
+            <div className="hero-sheets__voice hero-sheets__voice--both">
+              <span className="hero-sheets__name">Both</span>
+              <span className="hero-sheets__words">want the team to do its best work.</span>
+            </div>
+            <div className="hero-sheets__voice hero-sheets__voice--second">
+              <span className="hero-sheets__name">Val</span>
+              <span className="hero-sheets__words">Remote days protect time for deep work.</span>
+            </div>
           </div>
-          <div className="landing-preview__section">
-            <span className="landing-preview__icon" aria-hidden="true">✓</span>
-            <div><strong>Shared foundation</strong><p>Both sides value a fair outcome and long-term trust.</p></div>
-          </div>
-          <div className="landing-preview__section landing-preview__section--soft">
-            <span className="landing-preview__icon" aria-hidden="true">↔</span>
-            <div><strong>Important difference</strong><p>The disagreement is about approach, not the desired result.</p></div>
-          </div>
-          <div className="landing-preview__confidence"><span>Common ground identified</span><strong>High confidence</strong></div>
-        </div>
+        </figure>
       </section>
 
-      <section id="how-it-works" className="landing-section">
-        <span className="eyebrow">How it works</span>
-        <h2>A clear path through difficult conversations</h2>
-        <div className="landing-steps">
-          <article><span>01</span><h3>Start with a question</h3><p>Frame the topic and invite the people whose perspectives matter.</p></article>
-          <article><span>02</span><h3>Share perspectives</h3><p>Everyone explains what they believe, why it matters, and what could change their mind.</p></article>
-          <article><span>03</span><h3>Find common ground</h3><p>Review shared foundations, genuine differences, and possible ways forward.</p></article>
-        </div>
-      </section>
-
-      <section className="landing-cta">
-        <div><span className="eyebrow">Ready when you are</span><h2>Make the next disagreement more constructive.</h2></div>
-        <Link href="/sign-in" className="button-link button-link--light">Get started</Link>
+      <section id="how-it-works" className="how">
+        <h2>Three steps, and nobody has to win.</h2>
+        <ol className="how__steps">
+          <li>
+            <span className="how__marker how__marker--first" aria-hidden="true">1</span>
+            <h3>Everyone writes</h3>
+            <p>Each person explains what they believe and why, without seeing anyone else&apos;s answer first.</p>
+          </li>
+          <li>
+            <span className="how__marker how__marker--second" aria-hidden="true">2</span>
+            <h3>Each view is restated</h3>
+            <p>Every perspective is rewritten in its clearest, fairest form, and its author can say whether it got them right.</p>
+          </li>
+          <li>
+            <span className="how__marker how__marker--shared" aria-hidden="true">3</span>
+            <h3>You see the overlap</h3>
+            <p>The points you share, and the differences that are still worth talking about.</p>
+          </li>
+        </ol>
       </section>
     </div>
   );
@@ -112,9 +113,11 @@ function Dashboard() {
   const [query, setQuery] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const params = new URLSearchParams();
       if (statusFilter !== "all") params.set("status", statusFilter);
@@ -126,6 +129,7 @@ function Dashboard() {
       setPageSize(response.data?.pageSize ?? 20);
     } catch {
       setSessions([]);
+      setLoadError("Your conversations could not be loaded. Check your connection and reload the page.");
     } finally {
       setLoading(false);
     }
@@ -134,56 +138,78 @@ function Dashboard() {
   useEffect(() => { void fetchSessions(); }, [fetchSessions]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const filtered = statusFilter !== "all" || query !== "";
 
   return (
-    <section className="dashboard-page">
-      <div className="dashboard-welcome">
-        <div><span className="eyebrow">Your workspace</span><h1>Your conversations</h1><p>Continue an active discussion or create space for a new one.</p></div>
-        <Link href="/create" className="button-link button-link--primary">New conversation</Link>
+    <section className="dashboard">
+      <div className="page-heading">
+        <h1>Your conversations</h1>
+        <Link href="/create" className="button-link">New conversation</Link>
       </div>
 
-      <details className="dash-filter-panel">
-        <summary>Search and filters</summary>
-        <div className="dash-controls">
-          <form onSubmit={(event) => { event.preventDefault(); setPage(1); setQuery(searchInput); }} className="dash-search">
-            <input type="search" placeholder="Search conversation topics" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} aria-label="Search conversations by topic" />
-            <button type="submit">Search</button>
-          </form>
-          <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }} aria-label="Filter by conversation stage">
-            {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-        </div>
-      </details>
+      <form
+        className="dashboard__filters"
+        role="search"
+        onSubmit={(event) => { event.preventDefault(); setPage(1); setQuery(searchInput); }}
+      >
+        <input
+          type="search"
+          placeholder="Search by question"
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
+          aria-label="Search conversations by question"
+        />
+        <select
+          value={statusFilter}
+          onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}
+          aria-label="Show conversations at this stage"
+        >
+          {STAGE_FILTERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+        <button type="submit" className="secondary">Search</button>
+      </form>
 
       {loading ? (
-        <div className="conversation-empty" role="status">Loading your conversations…</div>
+        <p className="quiet-status" role="status">Loading your conversations</p>
+      ) : loadError ? (
+        <p className="notice notice--error" role="alert">{loadError}</p>
       ) : sessions.length === 0 ? (
-        <div className="conversation-empty">
-          <span className="conversation-empty__mark" aria-hidden="true">◎</span>
-          <h2>No conversations here yet</h2>
-          <p>Start with a question where understanding matters more than winning.</p>
-          <Link href="/create" className="button-link button-link--primary">Start your first conversation</Link>
+        <div className="empty-state">
+          <h2>{filtered ? "No conversations match" : "No conversations yet"}</h2>
+          <p>
+            {filtered
+              ? "Try another search, or show all stages."
+              : "Start with a question where understanding each other matters more than winning."}
+          </p>
+          {!filtered && <Link href="/create" className="button-link">Start your first conversation</Link>}
         </div>
       ) : (
-        <div className="conversation-grid">
+        <ol className="conversation-list">
           {sessions.map((conversation) => {
-            const meta = STATUS_META[conversation.status] ?? STATUS_META.draft;
+            const stage = stageLabel(conversation.status);
             return (
-              <article key={conversation.id} className="conversation-card">
-                <div className="conversation-card__meta">
-                  <span className={`badge ${meta.badge}`}>{meta.label}</span>
-                  <span>{conversation.participantCount} {conversation.participantCount === 1 ? "participant" : "participants"}</span>
+              <li key={conversation.id} className={`conversation-row conversation-row--${stage.tone}`}>
+                <Link href={`/session/${conversation.id}`} className="conversation-row__topic">{conversation.topic}</Link>
+                <div className="conversation-row__meta">
+                  <span className="conversation-row__stage">{stage.label}</span>
+                  <span>{conversation.participantCount} {conversation.participantCount === 1 ? "person" : "people"}</span>
+                  <span>
+                    Started {new Date(conversation.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+                  </span>
                 </div>
-                <h2><Link href={`/session/${conversation.id}`}>{conversation.topic}</Link></h2>
-                <p>Created {new Date(conversation.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
-                <Link href={`/session/${conversation.id}`} className="conversation-card__action">{meta.action} <span aria-hidden="true">→</span></Link>
-              </article>
+              </li>
             );
           })}
-        </div>
+        </ol>
       )}
 
-      {totalPages > 1 && <div className="dash-pagination"><button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button><span>Page {page} of {totalPages}</span><button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</button></div>}
+      {totalPages > 1 && (
+        <nav className="pagination" aria-label="Pages">
+          <button type="button" className="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous page</button>
+          <span>Page {page} of {totalPages}</span>
+          <button type="button" className="secondary" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next page</button>
+        </nav>
+      )}
     </section>
   );
 }

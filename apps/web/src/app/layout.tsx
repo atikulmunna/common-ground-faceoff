@@ -1,20 +1,34 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import Image from "next/image";
+import { Atkinson_Hyperlegible_Next, Bricolage_Grotesque } from "next/font/google";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { AuthProvider } from "../components/auth-provider";
 import { AuthNav } from "../components/auth-nav";
+import { BrandMark } from "../components/brand-mark";
+
+const display = Bricolage_Grotesque({
+  subsets: ["latin"],
+  axes: ["opsz", "wdth"],
+  variable: "--font-display",
+  display: "swap",
+});
+
+const body = Atkinson_Hyperlegible_Next({
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+  variable: "--font-body",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: "Common Ground — Shared understanding starts here",
-  description: "A guided space for understanding perspectives and finding meaningful common ground.",
-  icons: { icon: "/logo.png", apple: "/logo.png" }
+  title: "Common Ground: find the ground you share",
+  description: "Everyone writes what they think. Common Ground restates each view fairly, then shows what you share and where you really differ.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${display.variable} ${body.variable}`}>
       <body>
         <AuthProvider>
           {/* CG-NFR20: Skip to main content for keyboard/screen reader users */}
@@ -23,7 +37,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </a>
           <header className="site-header" role="banner">
             <nav aria-label="Main navigation" className="site-nav">
-              <Link href="/" className="brand" aria-label="Common Ground home"><span className="brand-mark" aria-hidden="true"><Image src="/logo.png" alt="" width={44} height={44} priority /></span><span>Common Ground</span></Link>
+              <Link href="/" className="brand" aria-label="Common Ground home">
+                <BrandMark />
+                <span>Common Ground</span>
+              </Link>
               <AuthNav />
             </nav>
           </header>
