@@ -41,7 +41,7 @@ const db = vi.hoisted(() => {
     analysisResult: {
       findFirst: async () => ({
         roundNumber: 1,
-        steelmans: { "Participant A": "View A.", "Participant B": "View B." },
+        steelmans: { "Participant A": "View A.", "Participant B": "View B.", "Participant C": "View C." },
         conflictMap: {},
         sharedFoundations: "Both want the team to do its best work.",
         trueDisagreements: "They differ on how many days.",
@@ -187,6 +187,76 @@ describe("anonymous conversations stay anonymous after results (D1)", () => {
 
     const comments = await request(app).get("/sessions/session-1/comments").set("Authorization", asUser("creator")).expect(200);
     expect(comments.body.data.comments).toEqual([expect.objectContaining({ id: "c1", mine: false, userId: null })]);
+  });
+});
+
+describe("mutual acknowledgment of restated views (4.6)", () => {
+  // Participant A is the creator and Participant B the other person (labels follow join order).
+  beforeEach(() => {
+    db.state.users = { creator: { tier: "pro" }, other: { tier: "pro" } };
+    db.state.session = {
+      id: "session-1",
+      topic: "How many office days should our team keep?",
+      creatorUserId: "creator",
+      status: "completed",
+      anonymousMode: false,
+      participants: [participant("creator", "session_creator"), participant("other", "session_participant")],
+    };
+  });
+
+  async function mutualFor(reactions: Array<[userId: string, section: string, reaction: string]>) {
+    db.state.reactions = reactions.map(([userId, section, reaction], index) => ({ id: `r${index}`, sessionId: "session-1", userId, section, reaction }));
+    const response = await request(createApp()).get("/sessions/session-1/reactions").set("Authorization", asUser("creator")).expect(200);
+    return response.body.data.mutualAcknowledgments as Record<string, boolean>;
+  }
+
+  it("needs the author's confirmation and everyone else's understanding", async () => {
+    expect(await mutualFor([
+      ["creator", "steelman:Participant A", "represents"],
+      ["other", "steelman:Participant A", "represents"],
+    ])).toEqual({ "steelman:Participant A": true });
+  });
+
+  it("is not reached while the author has not confirmed, however many others agree", async () => {
+    expect(await mutualFor([
+      ["creator", "steelman:Participant B", "represents"],
+    ])).toEqual({ "steelman:Participant B": false });
+  });
+
+  describe("with three people", () => {
+    beforeEach(() => {
+      const participants = db.state.session?.participants as Row[];
+      db.state.session = { ...db.state.session, participants: [...participants, participant("third", "session_participant")] };
+    });
+
+    it("is not reached while someone else has not said they understand", async () => {
+      expect(await mutualFor([
+        ["creator", "steelman:Participant A", "represents"],
+        ["other", "steelman:Participant A", "represents"],
+      ])).toEqual({ "steelman:Participant A": false });
+    });
+
+    it("is not reached by two other people agreeing without the author", async () => {
+      expect(await mutualFor([
+        ["other", "steelman:Participant A", "represents"],
+        ["third", "steelman:Participant A", "represents"],
+      ])).toEqual({ "steelman:Participant A": false });
+    });
+
+    it("is reached once the author and both others have answered yes", async () => {
+      expect(await mutualFor([
+        ["creator", "steelman:Participant A", "represents"],
+        ["other", "steelman:Participant A", "represents"],
+        ["third", "steelman:Participant A", "represents"],
+      ])).toEqual({ "steelman:Participant A": true });
+    });
+  });
+
+  it("is not reached when the author says it is not quite right", async () => {
+    expect(await mutualFor([
+      ["creator", "steelman:Participant A", "misrepresents"],
+      ["other", "steelman:Participant A", "represents"],
+    ])).toEqual({ "steelman:Participant A": false });
   });
 });
 

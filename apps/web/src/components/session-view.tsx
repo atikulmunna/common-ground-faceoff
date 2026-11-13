@@ -85,6 +85,14 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     return byLabel;
   }, [session?.participants, currentUserId, anonymous]);
 
+  // D6 and 4.6: a "Not quite" note on the viewer's restated view comes back in the next round's editor.
+  const carryNote = useMemo(() => {
+    if (!previousResult || !self?.label) return null;
+    const notes = conversation.comments.filter((comment) => comment.mine && comment.section === `steelman:${self.label}`);
+    const latest = notes[notes.length - 1];
+    return latest ? { round: previousResult.roundNumber ?? 1, text: latest.text } : null;
+  }, [previousResult, self?.label, conversation.comments]);
+
   const interaction: ResultsInteraction = {
     myReactions: conversation.myReactions,
     mutual: conversation.mutual,
@@ -221,6 +229,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
                   deadlinePassed={deadlinePassed}
                   removedByModerator={Boolean(self?.positionRemovedAt)}
                   anonymous={anonymous}
+                  carryNote={carryNote}
                 />
               )}
               {(isCreator || hasSubmitted) && (

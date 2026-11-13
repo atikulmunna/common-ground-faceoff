@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import { ResultsView } from "./results-view";
 import type { AnalysisResult } from "./types";
@@ -91,6 +91,44 @@ describe("ResultsView", () => {
     expect(screen.queryByText("Both want the team to work well.")).not.toBeNull();
     expect(screen.queryByText("They differ on how many days.")).not.toBeNull();
     expect(screen.queryByText(/agree on .* points/)).toBeNull();
+  });
+
+  it("asks the author what was missed after \"Not quite\", and keeps the note as their comment", async () => {
+    const onComment = vi.fn(async () => true);
+    const interaction = {
+      myReactions: { "steelman:Participant A": "misrepresents" as const },
+      mutual: {},
+      reactionErrors: {},
+      onReact: () => {},
+      comments: [],
+      commentErrors: {},
+      onComment,
+      authorName: () => "You",
+      myLabel: "Participant A",
+    };
+    render(<ResultsView result={RESULT} owners={owners} interaction={interaction} />);
+
+    fireEvent.change(screen.getByLabelText("What did it miss or get wrong?"), { target: { value: "I would accept one day a week." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save note" }));
+    await waitFor(() => expect(onComment).toHaveBeenCalledWith("steelman:Participant A", "I would accept one day a week."));
+  });
+
+  it("shows the saved note instead of the form", () => {
+    const interaction = {
+      myReactions: { "steelman:Participant A": "misrepresents" as const },
+      mutual: {},
+      reactionErrors: {},
+      onReact: () => {},
+      comments: [{ id: "c1", userId: "user-1", mine: true, section: "steelman:Participant A", text: "One day is fine.", createdAt: "2026-11-12T12:00:00Z" }],
+      commentErrors: {},
+      onComment: async () => true,
+      authorName: () => "You",
+      myLabel: "Participant A",
+    };
+    render(<ResultsView result={RESULT} owners={owners} interaction={interaction} />);
+
+    expect(screen.queryByLabelText("What did it miss or get wrong?")).toBeNull();
+    expect(screen.queryByText(/Your note: .One day is fine\./)).not.toBeNull();
   });
 
   it("says so when no common point held up", () => {

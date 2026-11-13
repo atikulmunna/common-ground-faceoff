@@ -138,6 +138,13 @@ export function useConversation(sessionId: string, options: { ready: boolean; is
     if (previous !== null) void refreshSession();
   }, [loadedStatus, fetchRounds, refreshReactions, fetchComments, refreshSession]);
 
+  // While a new round gathers perspectives, the viewer's notes on the previous results are needed
+  // for the editor (a "Not quite" correction comes back there).
+  const hasEarlierResult = status !== "completed" && !isAnalyzing && Boolean(analysis?.result);
+  useEffect(() => {
+    if (hasEarlierResult) void fetchComments();
+  }, [hasEarlierResult, fetchComments]);
+
   const refreshLive = useCallback(async () => {
     if (status === "completed") {
       await Promise.all([refreshReactions(), fetchComments()]);

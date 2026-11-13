@@ -8,11 +8,36 @@ import {
 } from "@common-ground/shared";
 
 import { prisma } from "../lib/prisma.js";
-import { anonymousOrderKey, attributeToViewer } from "../lib/conversationPrivacy.js";
+import { anonymousOrderKey, attributeToViewer, labelOrder, participantLabel } from "../lib/conversationPrivacy.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { requireSessionAccess } from "../middleware/rbac.js";
 
 export const sessionCollaborationRouter = Router();
+
+/**
+ * Who wrote each restated view in the latest results: label to account id, for the people the
+ * analysis included. Uses the same label order as the analysis.
+ */
+async function restatedViewAuthors(sessionId: string): Promise<Map<string, string>> {
+  const [session, latest] = await Promise.all([
+    prisma.session.findUnique({
+      where: { id: sessionId },
+      select: { anonymousMode: true, participants: { select: { id: true, userId: true } } },
+    }),
+    prisma.analysisResult.findFirst({
+      where: { sessionId, status: "completed" },
+      orderBy: { roundNumber: "desc" },
+      select: { steelmans: true },
+    }),
+  ]);
+  const labelled = new Set(Object.keys((latest?.steelmans as Record<string, unknown> | null) ?? {}));
+  const authors = new Map<string, string>();
+  labelOrder(sessionId, session?.participants ?? [], Boolean(session?.anonymousMode)).forEach((participant, index) => {
+    const label = participantLabel(index);
+    if (labelled.has(label)) authors.set(label, participant.userId);
+  });
+  return authors;
+}
 
 async function isAnonymous(sessionId: string): Promise<boolean> {
   const session = await prisma.session.findUnique({ where: { id: sessionId }, select: { anonymousMode: true } });
@@ -266,9 +291,22 @@ sessionCollaborationRouter.get("/:id/reactions", requireSessionAccess, async (re
     bySection[r.section].push({ userId: r.userId, reaction: r.reaction });
   }
 
+  // A restated view is mutually acknowledged when its author confirmed it and everyone else the
+  // analysis included said they understand it. Other sections: everyone who answered said yes.
+  const authors = Object.keys(bySection).some((section) => section.startsWith("steelman:"))
+    ? await restatedViewAuthors(req.params.id)
+    : new Map<string, string>();
   const mutualAcknowledgments: Record<string, boolean> = {};
   for (const [section, entries] of Object.entries(bySection)) {
-    mutualAcknowledgments[section] = entries.length >= 2 && entries.every((e) => e.reaction === "represents");
+    const author = section.startsWith("steelman:") ? authors.get(section.slice("steelman:".length)) : undefined;
+    if (author) {
+      const answers = new Map(entries.map((entry) => [entry.userId, entry.reaction]));
+      const others = [...authors.values()].filter((userId) => userId !== author);
+      mutualAcknowledgments[section] =
+        answers.get(author) === "represents" && others.length > 0 && others.every((userId) => answers.get(userId) === "represents");
+    } else {
+      mutualAcknowledgments[section] = entries.length >= 2 && entries.every((e) => e.reaction === "represents");
+    }
   }
 
   const anonymous = await isAnonymous(req.params.id);

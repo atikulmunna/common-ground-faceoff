@@ -983,6 +983,17 @@ label, legend { font-weight: 700; }
 }
 .side { padding-top: 12px; border-top: 6px solid var(--person-rule, var(--person, var(--teal))); }
 
+.correction {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  background: var(--teal-tint);
+  border-radius: var(--radius);
+}
+.correction-saved { color: var(--muted); }
+.carry-note { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+
 .values { color: var(--muted); }
 .values__label { font-weight: 700; color: var(--ink); }
 

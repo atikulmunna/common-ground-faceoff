@@ -169,12 +169,18 @@ export function ResultsView({
                 )}
                 {interaction && (
                   owner.mine ? (
-                    <SectionResponse
-                      section={section}
-                      question="Is this what you meant?"
-                      options={[["represents", "Yes"], ["misrepresents", "Not quite"]]}
-                      interaction={interaction}
-                    />
+                    <>
+                      <SectionResponse
+                        section={section}
+                        question="Is this what you meant?"
+                        options={[["represents", "Yes"], ["misrepresents", "Not quite"]]}
+                        interaction={interaction}
+                        mutualNote="You confirmed it, and everyone else understands it."
+                      />
+                      {interaction.myReactions[section] === "misrepresents" && (
+                        <CorrectionNote section={section} interaction={interaction} />
+                      )}
+                    </>
                   ) : (
                     <SectionResponse
                       section={section}
@@ -182,6 +188,7 @@ export function ResultsView({
                       options={[["represents", "I understand this view"], ["neutral", "Not sure yet"]]}
                       interaction={interaction}
                       hideQuestion
+                      mutualNote="Its author confirmed it, and everyone else understands it."
                     />
                   )
                 )}
@@ -289,12 +296,15 @@ function SectionResponse({
   options,
   interaction,
   hideQuestion = false,
+  mutualNote = "Everyone who answered said yes.",
 }: {
   section: string;
   question: string;
   options: Array<[ReactionValue, string]>;
   interaction: ResultsInteraction;
   hideQuestion?: boolean;
+  /** Shown once the section is mutually acknowledged. */
+  mutualNote?: string;
 }) {
   const current = interaction.myReactions[section];
   const error = interaction.reactionErrors[section];
@@ -314,9 +324,50 @@ function SectionResponse({
           </button>
         ))}
       </div>
-      {interaction.mutual[section] && <p className="agreed-note">Everyone who answered said yes.</p>}
+      {interaction.mutual[section] && <p className="agreed-note">{mutualNote}</p>}
       {error && <p className="field-error" role="alert">{error}</p>}
     </div>
+  );
+}
+
+/**
+ * After "Not quite", the author says what the restatement missed. The note is posted as their
+ * comment on it, and comes back above their editor when the next round starts.
+ */
+function CorrectionNote({ section, interaction }: { section: string; interaction: ResultsInteraction }) {
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const fieldId = useId();
+  const saved = interaction.comments.find((item) => item.section === section && item.mine);
+
+  if (saved) {
+    return (
+      <p className="correction-saved">
+        Your note: &ldquo;{saved.text}&rdquo; You will see it again when you revise your perspective.
+      </p>
+    );
+  }
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    setSaving(true);
+    const ok = await interaction.onComment(section, text);
+    setSaving(false);
+    if (ok) setDraft("");
+  }
+
+  return (
+    <form className="correction" onSubmit={save}>
+      <label htmlFor={fieldId}>What did it miss or get wrong?</label>
+      <textarea id={fieldId} rows={3} maxLength={2000} value={draft} onChange={(event) => setDraft(event.target.value)} />
+      <p className="field__help">Others in the conversation can read this note.</p>
+      {interaction.commentErrors[section] && <p className="field-error" role="alert">{interaction.commentErrors[section]}</p>}
+      <div className="form-actions">
+        <button type="submit" className="secondary" disabled={saving || !draft.trim()}>{saving ? "Saving" : "Save note"}</button>
+      </div>
+    </form>
   );
 }
 

@@ -251,6 +251,27 @@ describe("SessionView next steps", () => {
     expect(api.post).toHaveBeenCalledWith("/sessions/s1/analyze", {});
   });
 
+  it("brings back the author's \"Not quite\" note when the next round starts", async () => {
+    result = RESULT;
+    const original = api.get.getMockImplementation()!;
+    api.get.mockImplementation(async (path: string) => {
+      if (path.endsWith("/comments")) {
+        return { success: true, data: { comments: [
+          { id: "c1", userId: "user-1", mine: true, section: "steelman:Participant A", text: "I would accept one office day.", createdAt: "2026-11-12T12:00:00Z" },
+          { id: "c2", userId: "user-2", mine: false, section: "steelman:Participant A", text: "Someone else's comment.", createdAt: "2026-11-12T12:01:00Z" },
+        ] } };
+      }
+      return original(path);
+    });
+    await renderConversation();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit perspective" }));
+    expect(screen.queryByText(/In round 1 you said your restated view missed: .I would accept one office day\./)).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add it to my perspective" }));
+    expect((screen.getByLabelText("Your perspective") as HTMLTextAreaElement).value).toBe(`${SAVED_POSITION}\n\nI would accept one office day.`);
+  });
+
   it("keeps the previous round's results readable while a new round gathers perspectives", async () => {
     result = RESULT;
     await renderConversation();

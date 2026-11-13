@@ -18,6 +18,7 @@ export function PerspectiveEditor({
   deadlinePassed,
   removedByModerator,
   anonymous,
+  carryNote = null,
 }: {
   text: string;
   onChange: (text: string) => void;
@@ -30,6 +31,8 @@ export function PerspectiveEditor({
   deadlinePassed: boolean;
   removedByModerator: boolean;
   anonymous: boolean;
+  /** What the viewer said their restated view missed last round. */
+  carryNote?: { round: number; text: string } | null;
 }) {
   const [confirmingWarnings, setConfirmingWarnings] = useState(false);
   const warnings = useMemo(() => checkContentPolicy(text), [text]);
@@ -74,6 +77,17 @@ export function PerspectiveEditor({
         <p className="notice notice--warn" role="alert">
           A moderator removed your perspective. Please write it again; the analysis will wait until you do.
         </p>
+      )}
+
+      {carryNote && !deadlinePassed && (
+        <div className="notice carry-note">
+          <p>In round {carryNote.round} you said your restated view missed: &ldquo;{carryNote.text}&rdquo;</p>
+          {!text.includes(carryNote.text) && (
+            <button type="button" className="link-button" onClick={() => onChange(text ? `${text}\n\n${carryNote.text}` : carryNote.text)}>
+              Add it to my perspective
+            </button>
+          )}
+        </div>
       )}
 
       {deadlinePassed ? (
