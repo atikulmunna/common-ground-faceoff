@@ -1,0 +1,44 @@
+name: Check server
+
+# Read-only checks of the production server: running containers, published ports, and settings
+# by name (secret values are never printed). Started by hand from the Actions tab. SSH is open
+# only to this runner while the job runs.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # lets the job assume the AWS role through GitHub OIDC; no stored AWS keys
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  LIGHTSAIL_INSTANCE: ${{ vars.LIGHTSAIL_INSTANCE || 'common-ground-staging' }}
+
+jobs:
+  check:
+    name: Check the server
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assume the deploy role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Open SSH for this runner
+        run: bash scripts/deploy/lightsail-ssh.sh open
+
+      - name: Check
+        run: ssh lightsail 'bash -s' < scripts/deploy/server-check.sh
+
+      - name: Close SSH
+        if: always()
+        run: bash scripts/deploy/lightsail-ssh.sh close

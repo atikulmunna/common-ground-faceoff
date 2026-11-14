@@ -15,6 +15,7 @@ concurrency:
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  LIGHTSAIL_INSTANCE: ${{ vars.LIGHTSAIL_INSTANCE || 'common-ground-staging' }}
 
 jobs:
   build:
@@ -81,34 +82,28 @@ jobs:
           # The registry address (job output) contains the account id; masking it would drop the output.
           mask-aws-account-id: false
 
-      - name: Configure SSH
-        env:
-          LIGHTSAIL_SSH_KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          LIGHTSAIL_HOST: ${{ vars.LIGHTSAIL_HOST }}
-          LIGHTSAIL_HOST_KEY: ${{ vars.LIGHTSAIL_HOST_KEY }}
-        run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$LIGHTSAIL_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          printf '%s %s\n' "$LIGHTSAIL_HOST" "$LIGHTSAIL_HOST_KEY" > ~/.ssh/known_hosts
+      # Port 22 stays closed except to this runner while the job runs, and SSH uses a short-lived
+      # certificate from Lightsail instead of a stored key.
+      - name: Open SSH for this runner
+        run: bash scripts/deploy/lightsail-ssh.sh open
 
       # A fresh ECR password for the server on every deploy (they expire after 12 hours).
       - name: Log the server in to ECR
         env:
-          LIGHTSAIL_HOST: ${{ vars.LIGHTSAIL_HOST }}
           REGISTRY: ${{ needs.build.outputs.registry }}
         run: |
           aws ecr get-login-password --region "$AWS_REGION" \
-            | ssh -i ~/.ssh/deploy_key -o BatchMode=yes "ubuntu@$LIGHTSAIL_HOST" \
-                "sudo docker login --username AWS --password-stdin $REGISTRY"
+            | ssh lightsail "sudo docker login --username AWS --password-stdin $REGISTRY"
 
       - name: Deploy
         env:
-          LIGHTSAIL_HOST: ${{ vars.LIGHTSAIL_HOST }}
           TAG: ${{ needs.build.outputs.tag }}
           REGISTRY: ${{ needs.build.outputs.registry }}
           PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
           PUBLIC_WEB_URL: ${{ vars.PUBLIC_WEB_URL }}
         run: |
-          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "ubuntu@$LIGHTSAIL_HOST" \
-            "bash -s -- '$TAG' '$REGISTRY' '$PUBLIC_API_URL' '$PUBLIC_WEB_URL'" < scripts/deploy/remote-deploy.sh
+          ssh lightsail "bash -s -- '$TAG' '$REGISTRY' '$PUBLIC_API_URL' '$PUBLIC_WEB_URL'" < scripts/deploy/remote-deploy.sh
+
+      - name: Close SSH
+        if: always()
+        run: bash scripts/deploy/lightsail-ssh.sh close

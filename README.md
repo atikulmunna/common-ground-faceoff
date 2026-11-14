@@ -244,15 +244,19 @@ CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit tests, the build and 
 
 ## Deploying
 
-The `Deploy` workflow (`.github/workflows/deploy.yml`) is started by hand from the Actions tab. It builds both images from the selected commit, pushes them to ECR tagged `release-<commit>`, and runs `scripts/deploy/remote-deploy.sh` on the server over SSH. That script backs up the database, points `/opt/common-ground/docker-compose.yml` at the new images, applies migrations, restarts the API and web containers and checks their health; if any step fails it restores the previous images. Migrations that already ran are not undone, so restore the backup with `scripts/restore-db.sh` if a schema change must be reversed.
+The `Deploy` workflow (`.github/workflows/deploy.yml`) is started by hand from the Actions tab. It builds both images from the selected commit, pushes them to ECR tagged `release-<commit>`, and runs `scripts/deploy/remote-deploy.sh` on the server over SSH. The server's firewall keeps SSH closed: the workflow opens port 22 for its own runner's address, connects with a short-lived certificate that Lightsail issues for the run (no SSH key is stored anywhere), and always closes the port again (`scripts/deploy/lightsail-ssh.sh`). The deploy script backs up the database, points `/opt/common-ground/docker-compose.yml` at the new images, applies migrations, restarts the API and web containers and checks their health; if any step fails it restores the previous images. Migrations that already ran are not undone, so restore the backup with `scripts/restore-db.sh` if a schema change must be reversed.
 
 One-time setup:
 
-1. In AWS IAM, add GitHub's OIDC identity provider (`token.actions.githubusercontent.com`, audience `sts.amazonaws.com`) and a role that trusts it only for this repository's `production` environment (`sub` = `repo:<owner>/<repo>:environment:production`). Allow `ecr:GetAuthorizationToken`, and on the `common-ground-api` and `common-ground-web` repositories `ecr:BatchCheckLayerAvailability`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, `ecr:PutImage`, `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer`.
-2. In GitHub, create a `production` environment (add required reviewers if deploys should need an approval) with:
-   - secret `LIGHTSAIL_SSH_KEY`: the private key for the server's `ubuntu` user;
-   - variables `AWS_DEPLOY_ROLE_ARN`, `LIGHTSAIL_HOST`, `LIGHTSAIL_HOST_KEY` (the server's SSH host key, e.g. `ssh-ed25519 AAAA...`), `PUBLIC_API_URL` and `PUBLIC_WEB_URL`;
-   - optionally `AWS_REGION` (default `us-east-1`) and the `NEXT_PUBLIC_*` flags for the web build (default `false`).
+1. In AWS IAM, add GitHub's OIDC identity provider (`token.actions.githubusercontent.com`, audience `sts.amazonaws.com`) and a role that trusts it only for this repository's `production` environment (`sub` = `repo:<owner>/<repo>:environment:production`). Allow:
+   - `ecr:GetAuthorizationToken`;
+   - on the `common-ground-api` and `common-ground-web` repositories: `ecr:BatchCheckLayerAvailability`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, `ecr:PutImage`, `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer`;
+   - on the Lightsail instance: `lightsail:OpenInstancePublicPorts`, `lightsail:CloseInstancePublicPorts` and `lightsail:GetInstanceAccessDetails`.
+2. In GitHub, create a `production` environment that only the `master` branch can deploy to (add required reviewers if deploys should need an approval), with:
+   - variables `AWS_DEPLOY_ROLE_ARN`, `PUBLIC_API_URL` and `PUBLIC_WEB_URL`;
+   - optionally `LIGHTSAIL_INSTANCE` (default `common-ground-staging`), `AWS_REGION` (default `us-east-1`) and the `NEXT_PUBLIC_*` flags for the web build (default `false`).
+
+The `Check server` workflow (`.github/workflows/server-check.yml`) connects the same way and reports the running containers, their published ports and their settings by name, without printing secret values. Run it before a deploy to see what is on the server.
 
 ## Containers
 
