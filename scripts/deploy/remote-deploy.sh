@@ -61,7 +61,8 @@ PY
 "${compose[@]}" up -d --force-recreate api web
 
 curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors "$api_url/ready" >/dev/null
-test "$(curl --silent --output /dev/null --write-out '%{http_code}' "$web_url/")" = "200"
+# The web app needs a few seconds to start; retry like the API check instead of failing at once.
+curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors --output /dev/null "$web_url/"
 
 trap - ERR
 "${compose[@]}" ps
