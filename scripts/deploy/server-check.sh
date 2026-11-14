@@ -32,6 +32,15 @@ for container in $(sudo docker ps --format '{{.Names}}'); do
 done
 
 echo
+echo "== Compose image lines and settings files (remote-deploy.sh rewrites the api and web image lines)"
+sudo grep -nE '^\s*(image|env_file):|^\s*-\s*\S+\.env\s*$' /opt/common-ground/docker-compose.yml | sed 's/^/  /'
+
+echo
+echo "== Systemd units used by deploys (remote-deploy.sh starts common-ground-backup.service first)"
+systemctl list-unit-files 'common-ground-*' --no-legend 2>/dev/null | sed 's/^/  /'
+systemctl list-timers 'common-ground-*' --no-legend 2>/dev/null | sed 's/^/  /'
+
+echo
 echo "== Host firewall"
 sudo ufw status 2>/dev/null | head -1 || echo "  ufw not installed"
 
