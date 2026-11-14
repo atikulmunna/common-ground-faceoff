@@ -22,8 +22,9 @@ const body = Atkinson_Hyperlegible_Next({
 });
 
 export const metadata: Metadata = {
-  // Link previews need absolute image URLs; NEXTAUTH_URL is already the site's public address.
-  metadataBase: new URL(process.env.NEXTAUTH_URL ?? "http://localhost:3000"),
+  // Link previews need absolute image URLs. NEXTAUTH_URL is the site's address at run time; pages
+  // built ahead of time (such as the landing page) use PUBLIC_WEB_URL, passed in by the image build.
+  metadataBase: new URL(process.env.NEXTAUTH_URL ?? process.env.PUBLIC_WEB_URL ?? "http://localhost:3000"),
   title: "Common Ground: find the ground you share",
   description: "Everyone writes what they think. Common Ground restates each view fairly, then shows what you share and where you really differ.",
 };
