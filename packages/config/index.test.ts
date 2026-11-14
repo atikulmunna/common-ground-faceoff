@@ -26,10 +26,9 @@ describe("parseEnv", () => {
   it("keeps optional launch features disabled by default", () => {
     const env = parseEnv(requiredEnv);
 
-    expect(env.ENABLE_SAML).toBe("false");
     expect(env.ENABLE_PUBLIC_REGISTRATION).toBe("false");
     expect(env.ENABLE_BILLING).toBe("false");
-    expect(featureEnabled(env.ENABLE_SAML)).toBe(false);
+    expect(featureEnabled(env.ENABLE_BILLING)).toBe(false);
     expect(featureEnabled("true")).toBe(true);
   });
 
@@ -44,19 +43,4 @@ describe("parseEnv", () => {
     expect(() => parseEnv({ ...requiredEnv, OPENROUTER_COST_TIER: "balanced" })).toThrow();
   });
 
-  it("refuses to enable experimental SAML in production", () => {
-    expect(() => parseEnv({
-      ...requiredEnv,
-      NODE_ENV: "production",
-      ENABLE_SAML: "true",
-    })).toThrow(/SAML is experimental/);
-  });
-
-  it("allows experimental SAML only outside production", () => {
-    expect(parseEnv({
-      ...requiredEnv,
-      NODE_ENV: "development",
-      ENABLE_SAML: "true",
-    }).ENABLE_SAML).toBe("true");
-  });
 });

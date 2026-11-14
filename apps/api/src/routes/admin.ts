@@ -74,9 +74,6 @@ adminRouter.post("/org", async (req, res) => {
     data: {
       name: parse.data.name,
       slug: parse.data.slug,
-      samlEntryPoint: parse.data.samlEntryPoint,
-      samlCert: parse.data.samlCert,
-      samlIssuer: parse.data.samlIssuer,
       forceAnonymous: parse.data.forceAnonymous,
     },
   });
@@ -98,13 +95,10 @@ adminRouter.patch("/org", async (req, res) => {
     return;
   }
 
-  const { name, forceAnonymous, samlEntryPoint, samlCert, samlIssuer } = req.body as Record<string, unknown>;
+  const { name, forceAnonymous } = req.body as Record<string, unknown>;
   const data: Record<string, unknown> = {};
   if (typeof name === "string" && name.length > 0) data.name = name;
   if (typeof forceAnonymous === "boolean") data.forceAnonymous = forceAnonymous;
-  if (typeof samlEntryPoint === "string") data.samlEntryPoint = samlEntryPoint;
-  if (typeof samlCert === "string") data.samlCert = samlCert;
-  if (typeof samlIssuer === "string") data.samlIssuer = samlIssuer;
 
   const updated = await prisma.organization.update({
     where: { id: user.organizationId },

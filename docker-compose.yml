@@ -32,7 +32,6 @@ services:
       API_BASE_URL: http://localhost:4100
       WEB_BASE_URL: http://localhost:3001
       CORS_ORIGIN: http://localhost:3001
-      ENABLE_SAML: "false"
       ENABLE_PUBLIC_REGISTRATION: "false"
       ENABLE_BILLING: "false"
       ENABLE_SMS_MFA: "false"

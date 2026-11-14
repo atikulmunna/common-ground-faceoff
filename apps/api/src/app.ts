@@ -12,7 +12,6 @@ import { publicShareLinksRouter, shareLinksRouter } from "./routes/shareLinks.js
 import { profileRouter } from "./routes/profile.js";
 import { mfaRouter, publicMfaRouter } from "./routes/mfa.js";
 import { moderationRouter } from "./routes/moderation.js";
-import { samlRouter } from "./routes/saml.js";
 import { adminRouter } from "./routes/admin.js";
 import { billingRouter, billingWebhookHandler } from "./routes/billing.js";
 import { privacyRouter, publicPrivacyRouter } from "./routes/privacy.js";
@@ -98,10 +97,6 @@ export function createApp(): express.Express {
   app.use("/auth", authRouter);
   // MFA verify-login is public; setup/disable need auth (handled below)
   app.use("/mfa", publicMfaRouter);
-  // SAML SSO routes are public (CG-FR03)
-  if (featureEnabled(process.env.ENABLE_SAML)) {
-    app.use("/saml", samlRouter);
-  }
   // Shared link public read-only view (CG-FR38)
   app.use("/share-links", publicShareLinksRouter);
   // CG-NFR33: Public subprocessor inventory

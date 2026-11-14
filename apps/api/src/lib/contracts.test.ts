@@ -7,7 +7,6 @@ import {
   feedbackRatingSchema,
   sectionReactionSchema,
   oauthExchangeSchema,
-  samlLoginSchema,
   createOrganizationSchema,
   createCohortSchema,
   cohortMemberSchema,
@@ -124,18 +123,6 @@ describe("shared contracts", () => {
         displayName: "User",
         provider: "facebook",
       });
-      expect(result.success).toBe(false);
-    });
-  });
-
-  describe("samlLoginSchema", () => {
-    it("accepts valid org slug", () => {
-      const result = samlLoginSchema.safeParse({ orgSlug: "acme-corp" });
-      expect(result.success).toBe(true);
-    });
-
-    it("rejects empty org slug", () => {
-      const result = samlLoginSchema.safeParse({ orgSlug: "" });
       expect(result.success).toBe(false);
     });
   });

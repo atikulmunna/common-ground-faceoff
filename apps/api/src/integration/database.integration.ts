@@ -26,7 +26,6 @@ process.env.NEXTAUTH_SECRET = "integration-nextauth-secret-at-least-32-character
 const oauthExchangeSecret = "integration-oauth-exchange-secret-at-least-32-characters";
 process.env.OAUTH_EXCHANGE_SECRET = oauthExchangeSecret;
 process.env.NODE_ENV = "test";
-process.env.ENABLE_SAML = "false";
 process.env.ENABLE_BILLING = "false";
 process.env.ENABLE_SMS_MFA = "false";
 process.env.ENABLE_EXTERNAL_EXPORT_STORAGE = "false";

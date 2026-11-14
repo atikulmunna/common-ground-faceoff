@@ -31,20 +31,11 @@ export const envSchema = z.object({
   STRIPE_PRICE_PRO: z.string().min(1).optional(),
   STRIPE_PRICE_ENTERPRISE: z.string().min(1).optional(),
   SENTRY_DSN: z.string().min(1).optional(),
-  ENABLE_SAML: z.enum(["true", "false"]).default("false"),
   ENABLE_PUBLIC_REGISTRATION: z.enum(["true", "false"]).default("false"),
   ENABLE_BILLING: z.enum(["true", "false"]).default("false"),
   ENABLE_SMS_MFA: z.enum(["true", "false"]).default("false"),
   ENABLE_EXTERNAL_EXPORT_STORAGE: z.enum(["true", "false"]).default("false"),
   ENABLE_DATADOG: z.enum(["true", "false"]).default("false")
-}).superRefine((env, ctx) => {
-  if (env.NODE_ENV === "production" && env.ENABLE_SAML === "true") {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["ENABLE_SAML"],
-      message: "SAML is experimental and must remain disabled in production",
-    });
-  }
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

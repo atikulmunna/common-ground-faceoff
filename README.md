@@ -110,8 +110,6 @@ The beta deployment uses one AWS Lightsail instance with Caddy, the web and API 
 - Account erasure revokes tokens, pseudonymizes user data, and scrubs authored positions.
 - Free-tier retention cleanup removes expired conversation data and linked records.
 
-SAML exists only as an experimental path and is rejected in production. It requires signed assertion validation, audience and destination validation, request correlation, replay protection, and interoperability testing before launch.
-
 ## Local development
 
 ### Prerequisites
@@ -156,7 +154,7 @@ Default addresses:
 
 The application treats integrations as capabilities: credentials configure a provider, while feature flags decide whether users can access it.
 
-The checked-in container profile is intentionally locked to the invite-only beta: public registration, social OAuth buttons, billing, SMS MFA, SAML, external export storage, and Datadog are disabled. TOTP, the core conversation journey, local exports, sharing, moderation, and privacy controls remain available.
+The checked-in container profile is intentionally locked to the invite-only beta: public registration, social OAuth buttons, billing, SMS MFA, external export storage, and Datadog are disabled. TOTP, the core conversation journey, local exports, sharing, moderation, and privacy controls remain available.
 
 Required API settings:
 
@@ -269,7 +267,6 @@ Local container addresses:
 - The API, analysis worker, and email outbox share a process in the beta profile. Several workers can share the queue safely, but the email outbox has not been checked for running in more than one process.
 - Automated accessibility checks do not replace manual keyboard and screen-reader acceptance testing.
 - Real provider behavior still depends on LLM, email, Stripe, SMS, OAuth, and storage sandbox or production configuration.
-- SAML is not production-ready and must remain disabled.
 
 ## API overview
 

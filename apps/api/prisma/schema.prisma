@@ -63,7 +63,6 @@ model User {
   mfaTicketHash    String?              @unique
   mfaTicketExpiresAt DateTime?
   organizationId   String?
-  samlNameId       String?
   stripeCustomerId String?              @unique
   failedLoginCount Int                  @default(0)
   lockedUntil      DateTime?
@@ -272,9 +271,6 @@ model Organization {
   id              String   @id @default(cuid())
   name            String
   slug            String   @unique
-  samlEntryPoint  String?
-  samlCert        String?
-  samlIssuer      String?
   forceAnonymous  Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

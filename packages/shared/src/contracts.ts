@@ -183,19 +183,12 @@ export type ReportContentInput = z.infer<typeof reportContentSchema>;
 export type ModerationActionInput = z.infer<typeof moderationActionSchema>;
 
 /* ------------------------------------------------------------------ */
-/*  Batch 4: SAML, Institutional Admin, PII pipeline                   */
+/*  Batch 4: Institutional Admin, PII pipeline                         */
 /* ------------------------------------------------------------------ */
-
-export const samlLoginSchema = z.object({
-  orgSlug: z.string().min(1).max(100),
-});
 
 export const createOrganizationSchema = z.object({
   name: z.string().min(1).max(200),
   slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
-  samlEntryPoint: z.string().url().optional(),
-  samlCert: z.string().optional(),
-  samlIssuer: z.string().optional(),
   forceAnonymous: z.boolean().default(false),
 });
 
@@ -223,7 +216,6 @@ export const sessionHeartbeatSchema = z.object({
   sessionId: z.string().min(1),
 });
 
-export type SamlLoginInput = z.infer<typeof samlLoginSchema>;
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export type CreateCohortInput = z.infer<typeof createCohortSchema>;
 export type CohortMemberInput = z.infer<typeof cohortMemberSchema>;

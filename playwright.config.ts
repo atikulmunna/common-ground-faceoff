@@ -37,7 +37,6 @@ export default defineConfig({
         HOST: "127.0.0.1",
         PORT: "4310",
         CORS_ORIGIN: "http://127.0.0.1:3310",
-        ENABLE_SAML: "false",
         ENABLE_BILLING: "false",
         ENABLE_SMS_MFA: "false",
         ENABLE_EXTERNAL_EXPORT_STORAGE: "false",
