@@ -1,0 +1,5 @@
+# Shared results and conversations are reachable by link only; keep them out of search engines.
+User-agent: *
+Disallow: /shared
+Disallow: /session/
+Disallow: /api/
