@@ -132,8 +132,14 @@ describe("POST /profile/password", () => {
 });
 
 describe("first organization admin", () => {
-  const claim = (code: string, id = "member") =>
-    request(createApp()).post("/admin-setup/claim").set("Authorization", tokenFor(id)).send({ code, organizationName: "Demo team" });
+  const PASSWORD = "Admin-pass-2026!";
+  const claim = (code: string, email = "member@example.test") =>
+    request(createApp())
+      .post("/admin-setup/claim")
+      .send({ code, displayName: "Munna", email, password: PASSWORD, organizationName: "Demo team" });
+  const withoutAdmin = () => {
+    db.state.users = db.state.users.filter((user) => user.role !== "institutional_admin");
+  };
 
   it("logs no code while an admin exists", async () => {
     const log = vi.fn();
@@ -141,8 +147,8 @@ describe("first organization admin", () => {
     expect(log).not.toHaveBeenCalled();
   });
 
-  it("makes the person with the logged code the admin of a new organization, once", async () => {
-    db.state.users = db.state.users.filter((user) => user.role !== "institutional_admin");
+  it("makes an existing account the admin of a new organization with a new password, once, without signing in", async () => {
+    withoutAdmin();
     const log = vi.fn();
     const code = (await prepareAdminSetup(log))!;
     expect(log.mock.calls[0][0]).toContain(code);
@@ -150,29 +156,61 @@ describe("first organization admin", () => {
     await claim("WRONG-CODE-0000").expect(403);
     await claim(code.toLowerCase()).expect(200);
 
-    expect(db.state.users.find((user) => user.id === "member")).toMatchObject({ role: "institutional_admin", organizationId: "org-1" });
+    const member = db.state.users.find((user) => user.id === "member")!;
+    expect(member).toMatchObject({ role: "institutional_admin", organizationId: "org-1", passwordChangeRequired: false });
+    await expect(bcrypt.compare(PASSWORD, member.passwordHash as string)).resolves.toBe(true);
     expect(db.state.organizations[0]).toMatchObject({ name: "Demo team" });
+    expect(JSON.stringify(db.state.audit)).not.toContain(PASSWORD);
     await claim(code).expect(409);
   });
 
-  it("finds the code in pasted log text, including a trailing \\n", async () => {
-    db.state.users = db.state.users.filter((user) => user.role !== "institutional_admin");
+  it("creates the admin account when the email is new", async () => {
+    withoutAdmin();
     const code = (await prepareAdminSetup(vi.fn()))!;
 
-    await claim(`${code}\\n`).expect(200);
+    await claim(code, "New.Person@Example.test").expect(200);
+
+    expect(db.state.users.find((user) => user.email === "new.person@example.test")).toMatchObject({
+      displayName: "Munna",
+      role: "institutional_admin",
+      emailVerified: true,
+    });
+  });
+
+  it("applies the password rules and refuses a deleted account", async () => {
+    withoutAdmin();
+    const code = (await prepareAdminSetup(vi.fn()))!;
+
+    const weak = await request(createApp())
+      .post("/admin-setup/claim")
+      .send({ code, displayName: "Munna", email: "member@example.test", password: "short", organizationName: "Demo team" })
+      .expect(400);
+    expect(weak.body.error.message).toMatch(/at least 10 characters/);
+
+    db.state.users.find((user) => user.id === "member")!.accountDeletedAt = new Date();
+    await claim(code).expect(409);
+  });
+
+  it("finds the code in pasted log text, including a trailing \n", async () => {
+    withoutAdmin();
+    const code = (await prepareAdminSetup(vi.fn()))!;
+
+    await claim(`${code}\n`).expect(200);
   });
 
   it("accepts the whole log line as pasted", async () => {
-    db.state.users = db.state.users.filter((user) => user.role !== "institutional_admin");
+    withoutAdmin();
     const log = vi.fn();
     await prepareAdminSetup(log);
-    const line = `{"log":"${log.mock.calls[0][0]}\\n","stream":"stdout"}`;
+    const line = `{"log":"${log.mock.calls[0][0]}\n","stream":"stdout"}`;
 
     await claim(line).expect(200);
   });
+});
 
-  it("tells a signed-out visitor to sign in", async () => {
-    const response = await request(createApp()).post("/admin-setup/claim").send({ code: "ABCD-EF01-2345-6789" }).expect(401);
+describe("signed-out requests", () => {
+  it("are told to sign in, in plain words", async () => {
+    const response = await request(createApp()).post("/admin/accounts").send({}).expect(401);
     expect(response.body.error.message).toBe("You are not signed in. Sign in and try again.");
   });
 });

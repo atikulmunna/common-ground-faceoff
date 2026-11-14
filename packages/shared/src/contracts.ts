@@ -46,6 +46,9 @@ export const changePasswordSchema = z.object({
 /** First organization admin: the one-time code the API writes to its own logs. */
 export const adminSetupClaimSchema = z.object({
   code: z.string().trim().min(8).max(500),
+  displayName: z.string().trim().min(1).max(100),
+  email: z.string().trim().toLowerCase().email().max(254),
+  password: passwordSchema,
   organizationName: z.string().trim().min(1).max(200).default("Common Ground"),
 });
 

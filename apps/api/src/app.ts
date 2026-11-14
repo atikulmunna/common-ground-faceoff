@@ -102,6 +102,8 @@ export function createApp(): express.Express {
   app.use("/share-links", publicShareLinksRouter);
   // CG-NFR33: Public subprocessor inventory
   app.use("/privacy", publicPrivacyRouter);
+  // First admin: the one-time code from the API log stands in for signing in
+  app.use("/admin-setup", adminSetupRouter);
 
   // All routes below require a valid JWT
   app.use(requireAuth);
@@ -110,7 +112,6 @@ export function createApp(): express.Express {
   app.use("/profile", profileRouter);
   app.use("/mfa", mfaRouter);
   app.use("/moderation", moderationRouter);
-  app.use("/admin-setup", adminSetupRouter);
   app.use("/admin", adminRouter);
   if (featureEnabled(process.env.ENABLE_BILLING)) {
     app.use("/billing", billingRouter);

@@ -129,21 +129,14 @@ export default function AdminDashboardPage() {
     return <p className="quiet-status" role="status">Checking that you are signed in</p>;
   }
 
-  if (status === "unauthenticated") {
-    return (
-      <section className="narrow-page">
-        <h1>Administration</h1>
-        <p>Sign in to open Administration.</p>
-        <Link href="/sign-in" className="button-link">Sign in</Link>
-      </section>
-    );
-  }
-
-  if (session?.user?.role !== "institutional_admin") {
+  if (status === "unauthenticated" || session?.user?.role !== "institutional_admin") {
     return (
       <section className="narrow-page">
         <h1>Administration</h1>
         <p>This page is for organization administrators.</p>
+        {status === "unauthenticated" && (
+          <p><Link href="/sign-in" className="button-link">Sign in</Link></p>
+        )}
         <AdminSetupForm />
       </section>
     );

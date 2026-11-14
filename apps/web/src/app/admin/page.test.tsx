@@ -11,13 +11,13 @@ vi.mock("../../lib-api", () => ({ apiGet: vi.fn().mockRejectedValue(new Error("n
 import AdminDashboardPage from "./page";
 
 describe("Administration page", () => {
-  it("asks a signed-out visitor to sign in instead of showing the setup form", () => {
+  it("offers a signed-out visitor both sign-in and first-time setup", () => {
     auth.status = "unauthenticated";
     auth.role = undefined;
     render(<AdminDashboardPage />);
 
-    expect(screen.getByText("Sign in to open Administration.")).toBeTruthy();
-    expect(screen.queryByLabelText("Setup code")).toBeNull();
+    expect(screen.getByRole("link", { name: "Sign in" })).toBeTruthy();
+    expect(screen.getByLabelText("Setup code")).toBeTruthy();
   });
 
   it("offers setup to a signed-in person who is not an admin", () => {

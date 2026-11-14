@@ -69,14 +69,39 @@ describe("ChangePasswordForm", () => {
 });
 
 describe("AdminSetupForm", () => {
-  it("claims administration with the code and asks to sign in again", async () => {
+  function fill(confirm = "Admin-pass-2026!") {
+    fireEvent.change(screen.getByLabelText("Setup code"), { target: { value: "ABCD-EF01-2345-6789" } });
+    fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Munna" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "Me@Example.test" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "Admin-pass-2026!" } });
+    fireEvent.change(screen.getByLabelText("Password again"), { target: { value: confirm } });
+  }
+
+  it("creates the administrator account with the code and points to sign-in", async () => {
     api.post.mockResolvedValue({ data: { organizationId: "org-1" } });
     render(<AdminSetupForm />);
 
-    fireEvent.change(screen.getByLabelText("Setup code"), { target: { value: "ABCD-EF01-2345-6789" } });
+    fill();
     fireEvent.click(screen.getByRole("button", { name: "Become administrator" }));
 
     await waitFor(() => expect(screen.queryByText("You are the administrator now.")).not.toBeNull());
-    expect(api.post).toHaveBeenCalledWith("/admin-setup/claim", { code: "ABCD-EF01-2345-6789", organizationName: "Common Ground" });
+    expect(api.post).toHaveBeenCalledWith("/admin-setup/claim", {
+      code: "ABCD-EF01-2345-6789",
+      displayName: "Munna",
+      email: "Me@Example.test",
+      password: "Admin-pass-2026!",
+      organizationName: "Common Ground",
+    });
+    expect(screen.getByText(/Sign in as me@example.test/)).toBeTruthy();
+  });
+
+  it("checks the two passwords match before sending", () => {
+    render(<AdminSetupForm />);
+
+    fill("Admin-pass-2027!");
+    fireEvent.click(screen.getByRole("button", { name: "Become administrator" }));
+
+    expect(screen.queryByText("The passwords do not match.")).not.toBeNull();
+    expect(api.post).not.toHaveBeenCalled();
   });
 });

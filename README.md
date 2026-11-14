@@ -283,17 +283,19 @@ Local container addresses:
 
 The beta is invite only: public sign-up is off, so an organization administrator gives people their accounts.
 
-1. **Become the administrator (once).** While no administrator exists, the API writes a one-time setup code to its log each time it starts. Read it with the AWS CLI:
+1. **Become the administrator (once).** While no administrator exists, the API writes a one-time setup code to its log each time it starts. Read it with the AWS CLI. The command is one line and works in PowerShell and bash; use the last line it prints, because the code changes every time the API restarts:
 
    ```bash
-   aws logs filter-log-events --log-group-name /common-ground/staging/containers      --filter-pattern '"admin-setup"' --query 'events[-1].message' --output text
+   aws logs filter-log-events --log-group-name /common-ground/staging/containers --filter-pattern 'organization admin exists' --query 'events[].message' --output text
    ```
 
-   Sign in, open `/admin`, enter the code under "Set up administration", then sign in again. The code stops working once an administrator exists.
+   In Git Bash, put `MSYS_NO_PATHCONV=1 ` in front so the log group name is not turned into a Windows path.
+
+   Open `/admin` (you do not need to be signed in). Under "Set up administration", enter the code with your name, email and a password. If an account with that email already exists, it becomes the administrator and gets the new password, so this also works if you have forgotten your own. Then sign in with that email and password. The code stops working once an administrator exists.
 2. **Give someone an account.** On the Administration page, enter their name and email under "Give someone an account". The page shows a temporary password once; send the sign-in details privately. This also activates the account that a conversation invitation created for that email.
 3. **They choose their own password.** After signing in they see a reminder, and change the password under Password in their profile.
 
-
+## Beta limitations
 
 - The public link uses a temporary hostname rather than an owned domain.
 - Email delivery remains restricted by the configured sender/domain status.
