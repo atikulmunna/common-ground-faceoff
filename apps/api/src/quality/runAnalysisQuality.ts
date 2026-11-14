@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,6 +22,7 @@ interface CaseRun {
     sharedFoundations: string;
     trueDisagreements: string;
     confidenceScores: { sharedFoundations: number; disagreements: number };
+    promptTemplateHash?: string;
   };
   error?: string;
   humanReview: ReturnType<typeof blankHumanReview>;
@@ -95,9 +96,34 @@ async function runLiveCase(fixture: AnalysisQualityCase): Promise<CaseRun> {
       sharedFoundations: output.sharedFoundations,
       trueDisagreements: output.trueDisagreements,
       confidenceScores: output.confidenceScores,
+      promptTemplateHash: output.promptTemplateHash,
     },
     humanReview: blankHumanReview(fixture),
   }, fixture);
+}
+
+/**
+ * Scores a saved live run again with the current scorer, without calling any model. Use it after a
+ * scoring change to compare like with like.
+ */
+async function rescore(reportPath: string): Promise<CaseRun[]> {
+  const saved = JSON.parse(await readFile(reportPath, "utf8")) as { runs: CaseRun[] };
+  return saved.runs.map((run) => {
+    const fixture = analysisQualityCases.find((candidate) => candidate.id === run.caseId);
+    if (!fixture || !run.output) return run;
+    const automated = evaluateAnalysisQuality(fixture, {
+      ...run.output,
+      sharedFoundationPoints: [],
+      disagreementPoints: [],
+      participantValues: {},
+      verification: { sharedProposed: 0, sharedVerified: 0, differencesProposed: 0, differencesVerified: 0 },
+      llmProvider: run.provider ?? "",
+      modelVersion: run.model ?? "",
+      // Reports from before the hash was saved still came from a real run.
+      promptTemplateHash: run.output.promptTemplateHash ?? "from-saved-report",
+    });
+    return { ...run, automated };
+  });
 }
 
 function markdownReport(mode: string, generatedAt: string, runs: CaseRun[]): string {
@@ -108,7 +134,7 @@ function markdownReport(mode: string, generatedAt: string, runs: CaseRun[]): str
     : 0;
   const sections = runs.map((run) => {
     const metric = run.automated;
-    const status = run.error ? `ERROR — ${run.error}` : metric ? `${metric.passed ? "PASS" : "FAIL"} — ${metric.score}/100` : "PENDING LIVE RUN";
+    const status = run.error ? `ERROR: ${run.error}` : metric ? `${metric.passed ? "PASS" : "FAIL"} (${metric.score}/100)` : "PENDING LIVE RUN";
     const output = run.output;
     const inputs = run.inputPositions
       .map((position) => `#### ${position.participantLabel}\n\n${position.positionText}`)
@@ -123,14 +149,14 @@ function markdownReport(mode: string, generatedAt: string, runs: CaseRun[]): str
       "",
       `- Category: ${run.category}`,
       `- Status: ${status}`,
-      `- Provider/model: ${run.provider ?? "—"} / ${run.model ?? "—"}`,
-      `- Duration: ${run.durationMs ?? "—"} ms`,
+      `- Provider/model: ${run.provider ?? "n/a"} / ${run.model ?? "n/a"}`,
+      `- Duration: ${run.durationMs ?? "n/a"} ms`,
       `- Hard failures: ${metric?.hardFailures.join(", ") || "none"}`,
       "",
       `### Sanitized source positions\n\n${inputs}`,
       output ? `### Steelmans\n\n${steelmans}\n\n### Shared foundations\n\n${output.sharedFoundations}\n\n### True disagreements\n\n${output.trueDisagreements}` : "",
       "",
-      "### Human review (1–5)",
+      "### Human review (1 to 5)",
       "",
       "Faithfulness per participant: ___ · Neutrality: ___ · Charitable steelmans: ___ · Shared-ground accuracy: ___ · Disagreement accuracy: ___ · Usefulness: ___ · Safety: ___",
       "",
@@ -165,11 +191,26 @@ async function writeReportFiles(
 }
 
 async function main(): Promise<void> {
-  const { live, fixtures } = selectCases();
   const generatedAt = new Date().toISOString();
-  const runs: CaseRun[] = [];
   const outputDir = path.join(repoRoot, ".codex-local/quality");
   await mkdir(outputDir, { recursive: true });
+  const stamp = generatedAt.replaceAll(":", "-").replace(".", "-");
+
+  const rescorePath = readArg("--rescore");
+  if (rescorePath) {
+    const rescored = await rescore(rescorePath);
+    for (const run of rescored) {
+      process.stdout.write(`${run.caseId}: ${run.automated ? `${run.automated.passed ? "PASS" : "FAIL"} (${run.automated.score}/100)` : "not scored"}\n`);
+    }
+    const base = path.join(outputDir, `analysis-quality-rescored-${stamp}`);
+    await writeReportFiles(base, `rescored from ${path.basename(rescorePath)}`, generatedAt, rescored);
+    process.stdout.write(`Report: ${base}.md\n`);
+    if (rescored.some((run) => run.error || !run.automated?.passed)) process.exitCode = 1;
+    return;
+  }
+
+  const { live, fixtures } = selectCases();
+  const runs: CaseRun[] = [];
   const checkpointBase = path.join(outputDir, "analysis-quality-in-progress");
 
   if (live) {
@@ -203,7 +244,6 @@ async function main(): Promise<void> {
     })));
   }
 
-  const stamp = generatedAt.replaceAll(":", "-").replace(".", "-");
   const base = path.join(outputDir, `analysis-quality-${stamp}`);
   const mode = live ? "live" : "validation";
   await writeReportFiles(base, mode, generatedAt, runs);

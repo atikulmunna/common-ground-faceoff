@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AnalysisPipelineOutput } from "../services/analysisService.js";
-import { evaluateAnalysisQuality } from "./analysisQuality.js";
+import { evaluateAnalysisQuality, groupMatches } from "./analysisQuality.js";
 import { analysisQualityCases } from "./analysisQualityCases.js";
 
 const goodOutput: AnalysisPipelineOutput = {
@@ -53,5 +53,26 @@ describe("analysis quality benchmark", () => {
     expect(result.passed).toBe(false);
     expect(result.hardFailures).toContain("missing participant steelman");
     expect(result.hardFailures).toContain("prompt-injection marker leaked into output");
+  });
+});
+
+describe("anchor matching", () => {
+  it("accepts other forms of an anchor word", () => {
+    expect(groupMatches(["emergency"], "Both value phone access for emergencies.")).toBe(true);
+    expect(groupMatches(["stored"], "Whether students should store their phones.")).toBe(true);
+    expect(groupMatches(["families"], "Every family needs contact.")).toBe(true);
+  });
+
+  it("still accepts everything plain substrings accepted", () => {
+    expect(groupMatches(["fair"], "Both value fairness.")).toBe(true);
+  });
+
+  it("keeps a multi-word anchor's words together", () => {
+    expect(groupMatches(["keep phones"], "Students keep their phones on silent.")).toBe(false);
+    expect(groupMatches(["keep phones"], "Students keep phones on silent.")).toBe(true);
+  });
+
+  it("does not match unrelated words", () => {
+    expect(groupMatches(["stored"], "The library stays open late.")).toBe(false);
   });
 });

@@ -42,9 +42,37 @@ function normalized(value: string): string {
   return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}\s@._-]/gu, " ").replace(/\s+/g, " ");
 }
 
-function groupMatches(group: string[], text: string): boolean {
+/** Strips common English endings, so "emergencies" matches "emergency" and "store" matches "stored". */
+function stem(word: string): string {
+  let base = word;
+  if (base.length > 4 && base.endsWith("ies")) base = `${base.slice(0, -3)}y`;
+  else if (base.length > 5 && base.endsWith("ing")) base = base.slice(0, -3);
+  else if (base.length > 4 && base.endsWith("ed")) base = base.slice(0, -2);
+  else if (base.length > 4 && /(s|x|z|ch|sh)es$/.test(base)) base = base.slice(0, -2);
+  else if (base.length > 3 && base.endsWith("s") && !base.endsWith("ss")) base = base.slice(0, -1);
+  return base.length > 3 && base.endsWith("e") ? base.slice(0, -1) : base;
+}
+
+/** Words without the punctuation normalized() keeps for addresses, so "emergencies." is "emergencies". */
+function wordsOf(value: string): string[] {
+  return normalized(value).split(" ").map((word) => word.replace(/^[@._-]+|[@._-]+$/g, "")).filter(Boolean);
+}
+
+/** True when the term's words appear next to each other, in order, in any of their word forms. */
+function containsWordForms(term: string, text: string): boolean {
+  const target = wordsOf(term).map(stem);
+  const haystack = wordsOf(text).map(stem);
+  if (target.length === 0) return false;
+  return haystack.some((_, start) => target.every((word, offset) => haystack[start + offset] === word));
+}
+
+/**
+ * An anchor group is met when any of its terms appears. Plain substrings still count, as before,
+ * and word forms are accepted too, so this only ever adds matches.
+ */
+export function groupMatches(group: string[], text: string): boolean {
   const haystack = normalized(text);
-  return group.some((term) => haystack.includes(normalized(term)));
+  return group.some((term) => haystack.includes(normalized(term)) || containsWordForms(term, text));
 }
 
 function recall(groups: string[][], text: string): { value: number; missing: string[][] } {
