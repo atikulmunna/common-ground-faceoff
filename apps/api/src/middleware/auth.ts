@@ -23,7 +23,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     res.status(401).json({
       success: false,
       data: null,
-      error: { code: "auth_error", message: "Missing or invalid Authorization header" }
+      error: { code: "auth_error", message: "You are not signed in. Sign in and try again." }
     });
     return;
   }
@@ -40,7 +40,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       res.status(401).json({
         success: false,
         data: null,
-        error: { code: "auth_error", message: "Account is unavailable" },
+        error: { code: "auth_error", message: "This account is no longer available." },
       });
       return;
     }
@@ -54,7 +54,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     res.status(401).json({
       success: false,
       data: null,
-      error: { code: "auth_error", message: "Invalid or expired token" }
+      error: { code: "auth_error", message: "Your sign-in has expired. Sign in again." }
     });
   }
 }

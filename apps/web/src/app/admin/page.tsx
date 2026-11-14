@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { apiGet, apiPost } from "../../lib-api";
 import { getPublicApiBaseUrl } from "../../lib/api-base";
@@ -49,7 +50,7 @@ const KIND_NAMES: Record<string, string> = {
 };
 
 export default function AdminDashboardPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [org, setOrg] = useState<Organization | null>(null);
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
@@ -122,6 +123,20 @@ export default function AdminDashboardPage() {
     } catch {
       setError("The CSV export failed. Try again.");
     }
+  }
+
+  if (status === "loading") {
+    return <p className="quiet-status" role="status">Checking that you are signed in</p>;
+  }
+
+  if (status === "unauthenticated") {
+    return (
+      <section className="narrow-page">
+        <h1>Administration</h1>
+        <p>Sign in to open Administration.</p>
+        <Link href="/sign-in" className="button-link">Sign in</Link>
+      </section>
+    );
   }
 
   if (session?.user?.role !== "institutional_admin") {

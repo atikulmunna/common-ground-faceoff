@@ -154,4 +154,25 @@ describe("first organization admin", () => {
     expect(db.state.organizations[0]).toMatchObject({ name: "Demo team" });
     await claim(code).expect(409);
   });
+
+  it("finds the code in pasted log text, including a trailing \\n", async () => {
+    db.state.users = db.state.users.filter((user) => user.role !== "institutional_admin");
+    const code = (await prepareAdminSetup(vi.fn()))!;
+
+    await claim(`${code}\\n`).expect(200);
+  });
+
+  it("accepts the whole log line as pasted", async () => {
+    db.state.users = db.state.users.filter((user) => user.role !== "institutional_admin");
+    const log = vi.fn();
+    await prepareAdminSetup(log);
+    const line = `{"log":"${log.mock.calls[0][0]}\\n","stream":"stdout"}`;
+
+    await claim(line).expect(200);
+  });
+
+  it("tells a signed-out visitor to sign in", async () => {
+    const response = await request(createApp()).post("/admin-setup/claim").send({ code: "ABCD-EF01-2345-6789" }).expect(401);
+    expect(response.body.error.message).toBe("You are not signed in. Sign in and try again.");
+  });
 });

@@ -12,6 +12,11 @@ let codeHash: Buffer | null = null;
 
 const hashCode = (code: string) => createHash("sha256").update(code.trim().toUpperCase()).digest();
 
+/** Picks the code out of whatever was pasted: the code alone, or with log text or "
+" around it. */
+const CODE_PATTERN = /[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}/;
+const extractCode = (input: string) => input.toUpperCase().match(CODE_PATTERN)?.[0] ?? input;
+
 async function adminExists(): Promise<boolean> {
   const count = await prisma.user.count({ where: { role: "institutional_admin", accountDeletedAt: null } });
   return count > 0;
@@ -41,7 +46,7 @@ export async function claimAdminSetup(userId: string, code: string, organization
   if (!codeHash || (await adminExists())) {
     throw new AdminSetupError("Administration is already set up.", 409);
   }
-  const given = hashCode(code);
+  const given = hashCode(extractCode(code));
   if (given.length !== codeHash.length || !timingSafeEqual(given, codeHash)) {
     throw new AdminSetupError("That code is not right. Check the server log and try again.", 403);
   }
