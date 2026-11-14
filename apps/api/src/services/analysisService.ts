@@ -285,7 +285,7 @@ Given the steelmanned positions, extracted values, and classified conflicts belo
 2. **True Disagreements**: irreducible differences that remain after removing misunderstandings and semantic confusion, each supported by short verbatim quotes from at least two participants.
 3. **Confidence Scores**: your confidence (0-1) in the accuracy of the shared foundations and disagreements.
 
-Use exact, unchanged quotes from the steelmans as evidence. Every shared foundation must include valid evidence from every participant; omit it if any participant lacks support. Compatibility or lack of opposition is not shared support.${extraSharedRule ? ` ${extraSharedRule}` : ""} Every disagreement must include valid evidence from at least two participants, and a "category" from the classified conflicts: empirical, value, semantic or policy. Report each distinct disagreement once; do not restate the same policy choice in different words. Report only disagreements actually expressed in the supplied material; do not create possible or implied disputes. Do not introduce new facts, values, evidence, examples, or proposals.
+Use exact, unchanged quotes from the steelmans as evidence. Every shared foundation must include valid evidence from every participant; omit it if any participant lacks support. Compatibility or lack of opposition is not shared support. Shared support can be worded differently: when every participant explicitly asks for a condition, safeguard, or goal of the same kind (for example, one wants regular inspections and another wants public reporting, both safeguards on how a plan is carried out), report it as one shared foundation, stated no more specifically than every participant's own words support.${extraSharedRule ? ` ${extraSharedRule}` : ""} Every disagreement must include valid evidence from at least two participants, and a "category" from the classified conflicts: empirical, value, semantic or policy. Report each distinct disagreement once; do not restate the same policy choice in different words. Report only disagreements actually expressed in the supplied material; do not create possible or implied disputes. Do not introduce new facts, values, evidence, examples, or proposals.
 
 For each empirical disagreement, add "settledBy": the evidence that would settle it, in one neutral sentence, based only on what the participants said could change their minds (below). Do not quote them. Omit "settledBy" when they said nothing relevant, and for every other category.
 
@@ -825,8 +825,8 @@ export const ANALYSIS_VERSION = "v1";
  * Bump PROMPT_TEMPLATE_VERSION whenever a prompt changes, and set PROMPT_TEMPLATE_HASH to the new
  * computePromptTemplateHash() value; a test fails until the two agree.
  */
-export const PROMPT_TEMPLATE_VERSION = "tpl-v4";
-export const PROMPT_TEMPLATE_HASH = "d10c5370088b2ed5";
+export const PROMPT_TEMPLATE_VERSION = "tpl-v5";
+export const PROMPT_TEMPLATE_HASH = "dd72ae6e2c32ace7";
 
 /** A run whose estimated finish is this far in the past is treated as abandoned by a dead worker. */
 const STALE_RUN_GRACE_MS = 15 * 60 * 1000;
