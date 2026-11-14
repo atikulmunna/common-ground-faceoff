@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="assets/logo.png" alt="Common Ground logo" width="120" />
+  <img src="assets/logo.svg" alt="Common Ground logo: two overlapping circles, teal and yellow, overlapping in green" width="120" />
 </p>
 
 <h1 align="center">Common Ground</h1>
 
 <p align="center">
-  AI-mediated conversations that turn disagreement into shared understanding.
+  Find the ground you share. Everyone writes what they think; Common Ground restates each view fairly and shows the points you share and the few you really differ on.
 </p>
 
 <p align="center">
@@ -14,10 +14,15 @@
 </p>
 
 <p align="center">
-  <a href="https://common-ground.100-60-92-23.sslip.io"><img src="assets/common-ground.png" alt="Common Ground landing page" width="100%" /></a>
+  <a href="https://common-ground.100-60-92-23.sslip.io">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/landing-dark.png" />
+      <img src="assets/landing-light.png" alt="Common Ground landing page: the headline Find the ground you share, printed in overlapping teal and yellow" width="100%" />
+    </picture>
+  </a>
 </p>
 
-Common Ground is a structured discourse platform for conversations where people disagree but still want to understand one another. Participants contribute their perspectives, an AI pipeline analyzes the strongest version of each position, and the product produces a Common Ground Map separating shared foundations, important differences, and unresolved disagreements.
+Common Ground is for conversations where people disagree but still want to understand one another. Each person writes their perspective; an analysis restates every view in its clearest, fairest form, then shows the points they share, backed by words from each view, and the differences that remain worth talking about.
 
 The goal is not to score a winner. It is to make the conversation clearer, fairer, and more constructive.
 
@@ -25,41 +30,47 @@ The goal is not to score a winner. It is to make the conversation clearer, faire
 
 ## What you can do
 
-- Create a guided conversation around a shared topic.
-- Invite participants by link or email.
-- Submit and revise perspectives across multiple rounds.
-- Run a five-stage AI analysis, with structured personal data masked before provider calls.
-- Review steelmanned positions, shared values, conflict types, and synthesis.
-- React to individual result sections and leave contextual comments.
-- Report unsafe content and follow moderation status.
-- Share a revocable, read-only result link.
-- Export results as PDF, Markdown, or JSON.
-- Manage profile, MFA, privacy export, and account deletion controls.
-- Enable Stripe billing and external export storage through feature flags.
+- Start a conversation around one question, with an optional deadline and an anonymous mode that stays anonymous after the results.
+- Invite people by email and see who has taken part and who has submitted.
+- Write a perspective by answering three questions (what you believe, why, and what could change your mind), or write freely.
+- Follow the analysis stage by stage while it runs, and get an email when the results are ready.
+- Read the results as cards: each common point with the quote from every person's restated view that backs it, and each difference with its kind (facts, values, definitions or approach) and what could change minds on factual ones.
+- See how many proposed common points held up when checked against every restated view.
+- Confirm your own restated view ("Is this what you meant?"), say you understand the others, and leave comments; a "Not quite" note comes back when you revise your perspective.
+- Answer "Did this feel fair to you?" after the results.
+- Start another round, and see what changed since the last one: new common ground, and differences that were resolved or narrowed.
+- Share a revocable, read-only link that unfurls with the question and a summary in chat apps, and export results as PDF, Markdown or JSON.
+- Report a problem; moderators review reports and can hold a conversation.
+- Manage your profile, two-step sign-in, data export and account deletion. The site follows your system's light or dark setting.
 
 ## Product journey
 
-1. Sign in and create a conversation.
-2. Define the topic, privacy mode, and optional deadline.
-3. Invite the people whose perspectives should be represented.
-4. Each participant submits a position in their own words.
-5. The API redacts sensitive information and runs the analysis pipeline.
-6. Participants explore the Common Ground Map and provide feedback.
-7. The group can revise perspectives and begin another round.
+1. Sign in and start a conversation with a question, an optional deadline and, if you like, anonymity.
+2. Invite the people whose perspectives should be represented.
+3. Each person answers in their own words; nobody sees anyone else's words until the results are ready (and never in an anonymous conversation).
+4. The host finds common ground. The API masks personal data and runs the analysis in the background.
+5. Everyone reads the results, confirms how their view was restated, and says whether it felt fair.
+6. The group can revise their perspectives and start another round.
+
+<p align="center">
+  <img src="assets/results.png" alt="A results page: You agree on 2 points and differ on 2, with each common point shown between a quote from each person's view, and each difference labelled Approach or Facts" width="100%" />
+</p>
 
 ## How analysis works
 
-Before anything is sent to a model, structured personal data is replaced with placeholders in the topic and in every perspective: email addresses, phone numbers, US social security numbers, payment card numbers, IP addresses and dates of birth. This is pattern matching, not language understanding, so names, street addresses and other free-text details are not detected; participants should leave them out. Each run logs which kinds of values were masked and where, never the values themselves.
+Before anything is sent to a model, structured personal data is replaced with placeholders in the topic, every perspective and every "what could change your mind" answer: email addresses, phone numbers, US social security numbers, payment card numbers, IP addresses and dates of birth. This is pattern matching, not language understanding, so names, street addresses and other free-text details are not detected; participants should leave them out. Each run logs which kinds of values were masked and where, never the values themselves.
 
 The analysis then runs five stages:
 
-1. Normalize the submitted positions.
-2. Generate a charitable steelman of each position.
-3. Extract shared and divergent values.
-4. Classify empirical, value, semantic, and policy conflicts.
-5. Synthesize common ground and the remaining disagreements.
+1. Normalize the submitted perspectives.
+2. Restate each one in its clearest, fairest form, without adding anything the person did not say.
+3. Find what matters to each person.
+4. Classify the differences as facts, values, definitions or approach.
+5. Synthesize the shared foundations and the differences that remain, each with a verbatim quote from every restated view it relies on. Factual differences can say what evidence would settle them, based on what people said could change their minds.
 
-Results are stored as structured analysis artifacts with provider, model, version, and lineage metadata. Every analysis runs in the background: the request queues it in PostgreSQL and returns at once, and an analysis worker claims queued conversations, runs them, and puts runs abandoned by a crashed worker back in the queue.
+Every quote is checked against the restated views, and a point whose quotes do not hold up is dropped. The result records how many proposed points held up, which is what the page shows instead of the model's own confidence. From round 2 on, a sixth stage compares the new results with the previous round's.
+
+Results are stored with each point and its quotes, each person's values, the prompt version, and the provider, model and lineage metadata. Every analysis runs in the background: the request queues it in PostgreSQL and returns at once, and an analysis worker claims queued conversations, runs them, and puts runs abandoned by a crashed worker back in the queue.
 
 ## Architecture
 
@@ -78,12 +89,12 @@ flowchart LR
 
 The monorepo contains:
 
-- `apps/web` — Next.js 15 interface and NextAuth integration.
-- `apps/api` — Express API, Prisma data access, workers, and provider services.
-- `packages/shared` — shared Zod contracts and TypeScript types.
-- `packages/config` — runtime environment parsing and validation.
-- `e2e` — Playwright coverage for the primary product journey.
-- `docker` — production API and web image definitions.
+- `apps/web`: Next.js 15 interface and NextAuth integration.
+- `apps/api`: Express API, Prisma data access, workers, and provider services.
+- `packages/shared`: shared Zod contracts and TypeScript types.
+- `packages/config`: runtime environment parsing and validation.
+- `e2e`: Playwright coverage for the primary product journey.
+- `docker`: production API and web image definitions.
 
 The beta deployment uses one AWS Lightsail instance with Caddy, the web and API containers, and PostgreSQL. Images are stored in private ECR. Database backups are encrypted in S3, and container logs are shipped to CloudWatch.
 
@@ -109,6 +120,8 @@ The beta deployment uses one AWS Lightsail instance with Caddy, the web and API 
 - Rate limiting, secure headers, restricted CORS, and HTTPS are enabled in staging.
 - Account erasure revokes tokens, pseudonymizes user data, and scrubs authored positions.
 - Free-tier retention cleanup removes expired conversation data and linked records.
+- Anonymous conversations stay anonymous after the results: other people's accounts and words are never returned, and participant labels do not follow the order people joined.
+- Share links show the results only: never participants' own words, the model used, or confidence scores. Shared pages are kept out of search engines, and link previews never include names.
 
 ## Local development
 
@@ -223,7 +236,9 @@ npm run test:e2e
 
 The E2E runner creates an isolated PostgreSQL container, applies every migration, starts dedicated API and web processes, exercises the core journey, and removes its database afterward. Paid or external boundaries use deterministic fixtures where appropriate.
 
-Current automated coverage includes authentication, profile updates, TOTP setup, conversation creation, invitations, moderation reports, perspective submission and revision, completed analysis rendering, public sharing, reactions, comments, feedback, and PDF/Markdown/JSON exports.
+Current automated coverage includes authentication, profile updates, TOTP setup, conversation creation, invitations, moderation reports, the guided perspective editor, the results cards, public sharing, reactions, comments, the fairness question, PDF/Markdown/JSON exports, and starting another round.
+
+The analysis itself is measured by a 30-case quality benchmark that calls the model and needs an OpenRouter key; see [docs/ANALYSIS_QUALITY.md](docs/ANALYSIS_QUALITY.md) for how to run it and the latest results.
 
 CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit tests, the build and the accessibility smoke check on every pull request and every push to `master`. A second job applies every migration to an empty PostgreSQL 16 database and runs the integration suite against it.
 
@@ -272,14 +287,14 @@ Local container addresses:
 
 Representative route groups:
 
-- `/auth` — registration, login, refresh, verification, and internal OAuth exchange.
-- `/sessions` — conversation lifecycle, positions, analysis, invitations, and exports.
-- `/share-links` — revocable public result sharing.
-- `/moderation` — reports, queue actions, appeals, and SLA information.
-- `/profile` and `/mfa` — account preferences and multi-factor authentication.
-- `/privacy` — data export, account erasure, and subprocessors.
-- `/billing` — Stripe checkout, portal, and webhook handling.
-- `/admin` — institutional administration.
+- `/auth`: registration, login, refresh, verification, and internal OAuth exchange.
+- `/sessions`: conversation lifecycle, perspectives, analysis and its progress, invitations, reactions, comments, feedback, rounds, and exports.
+- `/share-links`: revocable public result sharing.
+- `/moderation`: reports, queue actions, appeals, and SLA information.
+- `/profile` and `/mfa`: account preferences and multi-factor authentication.
+- `/privacy`: data export, account erasure, and subprocessors.
+- `/billing`: Stripe checkout, portal, and webhook handling.
+- `/admin`: institutional administration and analytics.
 
 Exact request and response schemas live in `packages/shared/src/contracts.ts`.
 
