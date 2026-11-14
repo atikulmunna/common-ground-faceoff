@@ -32,6 +32,23 @@ export const registerSchema = z.object({
   displayName: z.string().min(1).max(100)
 });
 
+/** An organization admin gives someone an account; they get a one-time temporary password. */
+export const createAccountSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  displayName: z.string().trim().min(1).max(100),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: passwordSchema,
+});
+
+/** First organization admin: the one-time code the API writes to its own logs. */
+export const adminSetupClaimSchema = z.object({
+  code: z.string().trim().min(8).max(64),
+  organizationName: z.string().trim().min(1).max(200).default("Common Ground"),
+});
+
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1)

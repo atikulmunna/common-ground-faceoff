@@ -49,6 +49,8 @@ model User {
   displayName      String
   passwordHash     String?
   emailVerified    Boolean              @default(false)
+  /// Set when an admin gave this account a temporary password; cleared when the person sets their own.
+  passwordChangeRequired Boolean        @default(false)
   avatarUrl        String?
   notificationPrefs Json?
   tier             UserTier             @default(free)

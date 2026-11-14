@@ -13,6 +13,7 @@ import { profileRouter } from "./routes/profile.js";
 import { mfaRouter, publicMfaRouter } from "./routes/mfa.js";
 import { moderationRouter } from "./routes/moderation.js";
 import { adminRouter } from "./routes/admin.js";
+import { adminSetupRouter } from "./routes/adminSetup.js";
 import { billingRouter, billingWebhookHandler } from "./routes/billing.js";
 import { privacyRouter, publicPrivacyRouter } from "./routes/privacy.js";
 import { createErrorResponse } from "./lib/response.js";
@@ -109,6 +110,7 @@ export function createApp(): express.Express {
   app.use("/profile", profileRouter);
   app.use("/mfa", mfaRouter);
   app.use("/moderation", moderationRouter);
+  app.use("/admin-setup", adminSetupRouter);
   app.use("/admin", adminRouter);
   if (featureEnabled(process.env.ENABLE_BILLING)) {
     app.use("/billing", billingRouter);

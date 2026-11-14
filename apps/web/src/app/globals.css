@@ -1084,6 +1084,19 @@ label, legend { font-weight: 700; }
 
 .values { color: var(--muted); }
 .settled-by { color: var(--muted); max-width: 48em; }
+.account-ready { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.account-ready__details {
+  margin: 0;
+  padding: 12px 14px;
+  width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  background: var(--field-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.temporary-password { margin-bottom: 24px; }
 .settled-by strong { color: var(--ink); }
 .own-change-mind { max-width: 44em; }
 .values__label { font-weight: 700; color: var(--ink); }

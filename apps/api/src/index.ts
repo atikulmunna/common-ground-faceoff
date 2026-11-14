@@ -36,6 +36,14 @@ const server = runsApi
     })
   : null;
 
+// While no organization admin exists, log a one-time code that makes the first one (see adminSetup.ts).
+if (runsApi) {
+  const { prepareAdminSetup } = await import("./services/adminSetup.js");
+  void prepareAdminSetup().catch((err) => {
+    console.error("[admin-setup] Could not check for an admin:", err instanceof Error ? err.message : err);
+  });
+}
+
 // Analyses queue in Postgres. Run at least one process with API_PROCESS_ROLE "all" or "worker",
 // or queued analyses never start.
 let emailOutboxTimer: NodeJS.Timeout | null = null;

@@ -114,6 +114,14 @@ function Dashboard() {
   const [searchInput, setSearchInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [temporaryPassword, setTemporaryPassword] = useState(false);
+
+  // People whose account an admin created start with a temporary password; remind them to change it.
+  useEffect(() => {
+    apiGet<{ data: { user: { passwordChangeRequired?: boolean } } | null }>("/profile")
+      .then((response) => setTemporaryPassword(Boolean(response.data?.user.passwordChangeRequired)))
+      .catch(() => setTemporaryPassword(false));
+  }, []);
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
@@ -146,6 +154,12 @@ function Dashboard() {
         <h1>Your conversations</h1>
         <Link href="/create" className="button-link">New conversation</Link>
       </div>
+
+      {temporaryPassword && (
+        <p className="notice notice--warn temporary-password" role="status">
+          You are using a temporary password. <Link href="/profile">Choose your own in your profile.</Link>
+        </p>
+      )}
 
       <form
         className="dashboard__filters"

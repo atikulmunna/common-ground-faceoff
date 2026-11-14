@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { apiGet, apiPatch, apiPost } from "../../lib-api";
+import { ChangePasswordForm } from "../../components/change-password-form";
 
 type ProfileData = {
   id: string;
@@ -15,6 +16,7 @@ type ProfileData = {
   mfaEnabled: boolean;
   smsMfaEnabled: boolean;
   smsPhone: string | null;
+  passwordChangeRequired?: boolean;
   createdAt: string;
 };
 
@@ -95,6 +97,11 @@ export default function ProfilePage() {
   return (
     <section className="narrow-page settings">
       <h1>Profile and settings</h1>
+      {profile.passwordChangeRequired && (
+        <p className="notice notice--warn" role="status">
+          You signed in with a temporary password. Choose your own under Password below.
+        </p>
+      )}
 
       <form onSubmit={handleSave} className="form-stack">
         <div className="field">
@@ -150,6 +157,10 @@ export default function ProfilePage() {
           <button type="submit" disabled={busy}>{busy ? "Saving" : "Save changes"}</button>
         </div>
       </form>
+
+      <section className="settings__section">
+        <ChangePasswordForm onChanged={() => void load()} />
+      </section>
 
       {/* MFA Settings (CG-FR06) */}
       <section className="settings__section" aria-labelledby="totp-heading">

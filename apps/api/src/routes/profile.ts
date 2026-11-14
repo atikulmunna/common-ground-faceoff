@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { updateProfileSchema } from "@common-ground/shared";
+import { changePasswordSchema, updateProfileSchema } from "@common-ground/shared";
 
+import { hashPassword, verifyPassword } from "../lib/auth.js";
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 
@@ -21,6 +22,7 @@ profileRouter.get("/", async (req, res) => {
       mfaEnabled: true,
       smsMfaEnabled: true,
       smsPhone: true,
+      passwordChangeRequired: true,
       createdAt: true,
     },
   });
@@ -72,4 +74,31 @@ profileRouter.patch("/", async (req, res) => {
   });
 
   res.json(createSuccessResponse({ user }));
+});
+
+// POST /profile/password: change your own password; clears the temporary-password flag.
+profileRouter.post("/password", async (req, res) => {
+  const parse = changePasswordSchema.safeParse(req.body);
+  if (!parse.success) {
+    const message = parse.error.flatten().fieldErrors.newPassword?.[0] ?? "Enter your current password and a new one";
+    res.status(400).json(createErrorResponse("validation_error", message, parse.error.flatten()));
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { passwordHash: true } });
+  if (!user?.passwordHash || !(await verifyPassword(parse.data.currentPassword, user.passwordHash))) {
+    res.status(400).json(createErrorResponse("validation_error", "Your current password is not right."));
+    return;
+  }
+  if (parse.data.newPassword === parse.data.currentPassword) {
+    res.status(400).json(createErrorResponse("validation_error", "Choose a password different from the current one."));
+    return;
+  }
+
+  await prisma.user.update({
+    where: { id: req.user.id },
+    data: { passwordHash: await hashPassword(parse.data.newPassword), passwordChangeRequired: false },
+  });
+  await prisma.auditLog.create({ data: { eventType: "password_changed", actorId: req.user.id, ip: req.ip } });
+  res.json(createSuccessResponse({ changed: true }));
 });

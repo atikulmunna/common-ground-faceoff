@@ -1,11 +1,14 @@
+import { randomBytes } from "node:crypto";
 import { Router } from "express";
 import {
+  createAccountSchema,
   createOrganizationSchema,
   createCohortSchema,
   cohortMemberSchema,
   adminCreateSessionSchema,
 } from "@common-ground/shared";
 
+import { hashPassword } from "../lib/auth.js";
 import { prisma } from "../lib/prisma.js";
 import { createErrorResponse, createSuccessResponse } from "../lib/response.js";
 import { logDeniedAction } from "../middleware/authorization.js";
@@ -28,6 +31,77 @@ function requireAdmin(req: import("express").Request, res: import("express").Res
 }
 
 adminRouter.use(requireAdmin);
+
+/** A random password that meets the password rules: 16 random characters plus each required kind. */
+export function temporaryPassword(): string {
+  return `${randomBytes(12).toString("base64url")}Aa7!`;
+}
+
+/*
+ * POST /admin/accounts: an organization admin gives someone an account, or activates the account a
+ * conversation invitation created (which has no password). Returns a one-time temporary password;
+ * the person is asked to choose their own after signing in. Accounts that already have a password,
+ * or belong to another organization, are left alone.
+ */
+adminRouter.post("/accounts", async (req, res) => {
+  const parse = createAccountSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json(createErrorResponse("validation_error", "Enter a name and a valid email address", parse.error.flatten()));
+    return;
+  }
+  const { email, displayName } = parse.data;
+
+  const admin = await prisma.user.findUnique({ where: { id: req.user.id }, select: { organizationId: true } });
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, passwordHash: true, accountDeletedAt: true, organizationId: true },
+  });
+  if (existing?.accountDeletedAt) {
+    res.status(409).json(createErrorResponse("validation_error", "This account was deleted and cannot be reused."));
+    return;
+  }
+  if (existing?.passwordHash) {
+    res.status(409).json(createErrorResponse("duplicate_request", "This person can already sign in. They can change their password from their profile."));
+    return;
+  }
+  if (existing?.organizationId && existing.organizationId !== admin?.organizationId) {
+    res.status(409).json(createErrorResponse("authz_error", "This person belongs to another organization."));
+    return;
+  }
+
+  const password = temporaryPassword();
+  const passwordHash = await hashPassword(password);
+  const account = await prisma.user.upsert({
+    where: { email },
+    create: {
+      email,
+      displayName,
+      passwordHash,
+      emailVerified: true,
+      passwordChangeRequired: true,
+      organizationId: admin?.organizationId ?? null,
+    },
+    update: {
+      displayName,
+      passwordHash,
+      emailVerified: true,
+      passwordChangeRequired: true,
+      organizationId: admin?.organizationId ?? null,
+    },
+    select: { id: true, email: true, displayName: true },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      eventType: existing ? "admin_activated_account" : "admin_created_account",
+      actorId: req.user.id,
+      ip: req.ip,
+      detail: `user:${account.id}`,
+    },
+  });
+
+  res.status(existing ? 200 : 201).json(createSuccessResponse({ account, temporaryPassword: password }));
+});
 
 /* ------------------------------------------------------------------ */
 /*  Organization CRUD                                                  */

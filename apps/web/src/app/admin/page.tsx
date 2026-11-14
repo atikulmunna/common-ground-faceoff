@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { apiGet, apiPost } from "../../lib-api";
 import { getPublicApiBaseUrl } from "../../lib/api-base";
+import { AdminSetupForm } from "../../components/admin/admin-setup-form";
+import { CreateAccountForm } from "../../components/admin/create-account-form";
 
 type Analytics = {
   totalSessions: number;
@@ -127,6 +129,7 @@ export default function AdminDashboardPage() {
       <section className="narrow-page">
         <h1>Administration</h1>
         <p>This page is for organization administrators.</p>
+        <AdminSetupForm />
       </section>
     );
   }
@@ -190,6 +193,8 @@ export default function AdminDashboardPage() {
           </button>
         </section>
       )}
+
+      <CreateAccountForm />
 
       {/* Cohort Management (CG-FR45) */}
       <section className="panel" aria-labelledby="cohorts-heading">

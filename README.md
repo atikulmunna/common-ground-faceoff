@@ -279,7 +279,21 @@ Local container addresses:
 - API health: `http://localhost:4100/health`
 - API readiness: `http://localhost:4100/ready`
 
-## Beta limitations
+## Giving people access
+
+The beta is invite only: public sign-up is off, so an organization administrator gives people their accounts.
+
+1. **Become the administrator (once).** While no administrator exists, the API writes a one-time setup code to its log each time it starts. Read it with the AWS CLI:
+
+   ```bash
+   aws logs filter-log-events --log-group-name /common-ground/staging/containers      --filter-pattern '"admin-setup"' --query 'events[-1].message' --output text
+   ```
+
+   Sign in, open `/admin`, enter the code under "Set up administration", then sign in again. The code stops working once an administrator exists.
+2. **Give someone an account.** On the Administration page, enter their name and email under "Give someone an account". The page shows a temporary password once; send the sign-in details privately. This also activates the account that a conversation invitation created for that email.
+3. **They choose their own password.** After signing in they see a reminder, and change the password under Password in their profile.
+
+
 
 - The public link uses a temporary hostname rather than an owned domain.
 - Email delivery remains restricted by the configured sender/domain status.
