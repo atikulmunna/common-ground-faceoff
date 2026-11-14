@@ -28,6 +28,22 @@ interface CaseRun {
   humanReview: ReturnType<typeof blankHumanReview>;
 }
 
+interface ComparisonSide {
+  automated: AutomatedQualityResult;
+  sharedFoundations: string;
+  trueDisagreements: string;
+}
+
+interface ComparisonRun {
+  caseId: string;
+  category: string;
+  model?: string;
+  durationMs?: number;
+  baseline?: ComparisonSide;
+  variant?: ComparisonSide;
+  error?: string;
+}
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../../..");
 dotenv.config({ path: path.join(repoRoot, "apps/api/.env") });
@@ -51,6 +67,11 @@ function selectCases(): { live: boolean; fixtures: AnalysisQualityCase[] } {
     fixtures = fixtures.filter((fixture) => fixture.id === caseId);
     if (fixtures.length === 0) throw new Error(`Unknown quality case: ${caseId}`);
   }
+  // --skip <n> starts after the first n cases, so a run can continue where a pilot stopped.
+  const skipValue = readArg("--skip");
+  const skip = skipValue === undefined ? 0 : Number.parseInt(skipValue, 10);
+  if (!Number.isInteger(skip) || skip < 0) throw new Error("--skip must be a whole number");
+  fixtures = fixtures.slice(skip);
   if (limit !== undefined) fixtures = fixtures.slice(0, limit);
   if (live && !caseId && limit === undefined) {
     throw new Error("Live runs require --case <id> or --limit <n> to make provider usage explicit");
@@ -124,6 +145,57 @@ async function rescore(reportPath: string): Promise<CaseRun[]> {
     });
     return { ...run, automated };
   });
+}
+
+/** Stages 1 to 4 once, then synthesis with the production prompt and with the extra rule, on identical input. */
+async function runComparisonCase(fixture: AnalysisQualityCase, extraRule: string): Promise<ComparisonRun> {
+  const { compareSynthesisForQuality } = await import("../services/analysisService.js");
+  const startedAt = Date.now();
+  const { baseline, variant } = await compareSynthesisForQuality(fixture.topic, fixture.positions, extraRule);
+  const side = (output: typeof baseline): ComparisonSide => ({
+    automated: evaluateAnalysisQuality(fixture, output),
+    sharedFoundations: output.sharedFoundations,
+    trueDisagreements: output.trueDisagreements,
+  });
+  return scrubSensitive({
+    caseId: fixture.id,
+    category: fixture.category,
+    model: baseline.modelVersion,
+    durationMs: Date.now() - startedAt,
+    baseline: side(baseline),
+    variant: side(variant),
+  }, fixture);
+}
+
+function comparisonMarkdown(generatedAt: string, runs: ComparisonRun[]): string {
+  const done = runs.filter((run) => run.baseline && run.variant);
+  const summary = (pick: (run: ComparisonRun) => ComparisonSide | undefined) => {
+    const scores = done.map((run) => pick(run)!.automated.score);
+    const mean = scores.length ? (scores.reduce((sum, score) => sum + score, 0) / scores.length).toFixed(1) : "n/a";
+    return `${done.filter((run) => pick(run)!.automated.passed).length}/${done.length} pass, mean ${mean}`;
+  };
+  const rows = runs.map((run) => {
+    if (!run.baseline || !run.variant) return `- ${run.caseId}: ERROR ${run.error ?? ""}`;
+    const delta = run.variant.automated.score - run.baseline.automated.score;
+    const lines = [`- ${run.caseId}: production ${run.baseline.automated.score}, with rule ${run.variant.automated.score} (${delta >= 0 ? "+" : ""}${delta})`];
+    if (run.baseline.sharedFoundations !== run.variant.sharedFoundations) {
+      lines.push(`  - production: ${run.baseline.sharedFoundations}`, `  - with rule: ${run.variant.sharedFoundations}`);
+    }
+    return lines.join("\n");
+  });
+  return [
+    "# Synthesis comparison",
+    "",
+    `Generated: ${generatedAt}`,
+    `Model: ${done[0]?.model ?? "n/a"}`,
+    `Production prompt: ${summary((run) => run.baseline)}`,
+    `With the extra rule: ${summary((run) => run.variant)}`,
+    "",
+    "Both sides use the same stage 1 to 4 output, so only the synthesis prompt differs.",
+    "",
+    ...rows,
+    "",
+  ].join("\n");
 }
 
 function markdownReport(mode: string, generatedAt: string, runs: CaseRun[]): string {
@@ -210,6 +282,32 @@ async function main(): Promise<void> {
   }
 
   const { live, fixtures } = selectCases();
+
+  if (process.argv.includes("--compare-synthesis")) {
+    if (!live) throw new Error("--compare-synthesis calls the model; add --live and --limit <n> or --case <id>");
+    // The rule to test is added to synthesis right after the shared-support rule; both sides share stages 1 to 4.
+    const extraRule = readArg("--rule");
+    if (!extraRule) throw new Error('--compare-synthesis needs --rule "<the extra synthesis rule to test>"');
+    const compared: ComparisonRun[] = [];
+    const base = path.join(outputDir, `synthesis-comparison-${stamp}`);
+    for (const fixture of fixtures) {
+      process.stdout.write(`Comparing ${fixture.id}... `);
+      try {
+        const run = await runComparisonCase(fixture, extraRule);
+        compared.push(run);
+        process.stdout.write(`production ${run.baseline?.automated.score}, with rule ${run.variant?.automated.score}\n`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        compared.push({ caseId: fixture.id, category: fixture.category, error: message });
+        process.stdout.write(`ERROR (${message})\n`);
+      }
+      await writeFile(`${base}.json`, `${JSON.stringify({ generatedAt, runs: compared }, null, 2)}\n`, "utf8");
+      await writeFile(`${base}.md`, comparisonMarkdown(generatedAt, compared), "utf8");
+    }
+    process.stdout.write(`Report: ${base}.md\n`);
+    return;
+  }
+
   const runs: CaseRun[] = [];
   const checkpointBase = path.join(outputDir, "analysis-quality-in-progress");
 

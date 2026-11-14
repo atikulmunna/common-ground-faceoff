@@ -255,6 +255,7 @@ function synthesisPrompt(
   values: ValueExtractionResult,
   conflicts: ConflictClassificationResult,
   positions: ParticipantPosition[] = [],
+  extraSharedRule?: string,
 ): string {
   const changeMindBlock = positions
     .filter((p) => p.changeMind?.trim())
@@ -284,7 +285,7 @@ Given the steelmanned positions, extracted values, and classified conflicts belo
 2. **True Disagreements**: irreducible differences that remain after removing misunderstandings and semantic confusion, each supported by short verbatim quotes from at least two participants.
 3. **Confidence Scores**: your confidence (0-1) in the accuracy of the shared foundations and disagreements.
 
-Use exact, unchanged quotes from the steelmans as evidence. Every shared foundation must include valid evidence from every participant; omit it if any participant lacks support. Compatibility or lack of opposition is not shared support. Every disagreement must include valid evidence from at least two participants, and a "category" from the classified conflicts: empirical, value, semantic or policy. Report each distinct disagreement once; do not restate the same policy choice in different words. Report only disagreements actually expressed in the supplied material; do not create possible or implied disputes. Do not introduce new facts, values, evidence, examples, or proposals.
+Use exact, unchanged quotes from the steelmans as evidence. Every shared foundation must include valid evidence from every participant; omit it if any participant lacks support. Compatibility or lack of opposition is not shared support.${extraSharedRule ? ` ${extraSharedRule}` : ""} Every disagreement must include valid evidence from at least two participants, and a "category" from the classified conflicts: empirical, value, semantic or policy. Report each distinct disagreement once; do not restate the same policy choice in different words. Report only disagreements actually expressed in the supplied material; do not create possible or implied disputes. Do not introduce new facts, values, evidence, examples, or proposals.
 
 For each empirical disagreement, add "settledBy": the evidence that would settle it, in one neutral sentence, based only on what the participants said could change their minds (below). Do not quote them. Omit "settledBy" when they said nothing relevant, and for every other category.
 
@@ -612,6 +613,14 @@ function inParticipantOrder<T extends { label: string }>(items: T[], labels: str
 /** The pipeline's stages, in order. Progress events name the stage by its number (1 to 5). */
 export const ANALYSIS_STAGE_COUNT = 5;
 
+/** What stages 1 to 4 produce; synthesis builds on it. */
+interface EarlyStages {
+  steelData: SteelmanResult;
+  valData: ValueExtractionResult;
+  confData: ConflictClassificationResult;
+  responses: LlmResponse[];
+}
+
 async function runPipeline(
   topic: string,
   positions: ParticipantPosition[],
@@ -620,6 +629,18 @@ async function runPipeline(
   persistPromptLogs = true,
   onStage?: (stage: number) => Promise<void>,
 ): Promise<AnalysisPipelineOutput> {
+  const early = await runEarlyStages(topic, positions, sessionId, pipelineRunId, persistPromptLogs, onStage);
+  return runSynthesisStage(topic, positions, early, sessionId, pipelineRunId, persistPromptLogs, onStage);
+}
+
+async function runEarlyStages(
+  topic: string,
+  positions: ParticipantPosition[],
+  sessionId: string,
+  pipelineRunId: string,
+  persistPromptLogs: boolean,
+  onStage?: (stage: number) => Promise<void>,
+): Promise<EarlyStages> {
   // Every participant must come back exactly once under their own label. Mapping by array
   // position instead would attribute one person's view to another if the model reordered them.
   const labels = positions.map((position) => position.participantLabel);
@@ -674,9 +695,24 @@ async function runPipeline(
   );
   if (persistPromptLogs) await logPrompt(sessionId, pipelineRunId, "conflict_classification", confPrompt, confRes, Date.now() - confStart);
 
+  return { steelData, valData, confData, responses: [normRes, steelRes, valRes, confRes] };
+}
+
+async function runSynthesisStage(
+  topic: string,
+  positions: ParticipantPosition[],
+  early: EarlyStages,
+  sessionId: string,
+  pipelineRunId: string,
+  persistPromptLogs: boolean,
+  onStage?: (stage: number) => Promise<void>,
+  extraSharedRule?: string,
+): Promise<AnalysisPipelineOutput> {
+  const { steelData, valData, confData } = early;
+
   // Stage 5: Synthesis
   await onStage?.(5);
-  const synthPrompt = synthesisPrompt(topic, steelData, valData, confData, positions);
+  const synthPrompt = synthesisPrompt(topic, steelData, valData, confData, positions, extraSharedRule);
   const synthStart = Date.now();
   const { response: synthRes, data: synthData } = await callStructuredLlm<SynthesisResult>(
     synthPrompt,
@@ -716,8 +752,8 @@ async function runPipeline(
     confidenceScores: synthData.confidenceScores,
     llmProvider: synthRes.provider,
     // The Auto Router may answer stages with different models; record each one, in stage order.
-    modelVersion: [...new Set([normRes, steelRes, valRes, confRes, synthRes].map((res) => res.model))].join(", "),
-    promptTemplateHash: PROMPT_TEMPLATE_HASH,
+    modelVersion: [...new Set([...early.responses, synthRes].map((res) => res.model))].join(", "),
+    promptTemplateHash: extraSharedRule ? `${PROMPT_TEMPLATE_HASH}+variant` : PROMPT_TEMPLATE_HASH,
   };
 }
 
@@ -748,6 +784,23 @@ function redactForModel(topic: string, positions: ParticipantPosition[]) {
       ]),
     ],
   };
+}
+
+/**
+ * Quality benchmark only: runs stages 1 to 4 once, then synthesis twice on the same input, with the
+ * production prompt and with one extra shared-ground rule, so a prompt change is compared like for like.
+ */
+export async function compareSynthesisForQuality(
+  topic: string,
+  positions: ParticipantPosition[],
+  extraSharedRule: string,
+): Promise<{ baseline: AnalysisPipelineOutput; variant: AnalysisPipelineOutput }> {
+  const redacted = redactForModel(topic, positions);
+  const runId = randomUUID();
+  const early = await runEarlyStages(redacted.topic, redacted.positions, "quality-benchmark", runId, false);
+  const baseline = await runSynthesisStage(redacted.topic, redacted.positions, early, "quality-benchmark", runId, false);
+  const variant = await runSynthesisStage(redacted.topic, redacted.positions, early, "quality-benchmark", runId, false, undefined, extraSharedRule);
+  return { baseline, variant };
 }
 
 /** Runs the production pipeline, redaction included, without writing benchmark fixtures to PromptLog. */

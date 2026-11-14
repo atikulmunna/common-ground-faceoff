@@ -93,7 +93,7 @@ vi.mock("./llmProvider.js", async (importOriginal) => ({
   callLlm,
 }));
 
-import { claimNextQueuedAnalysis, requeueStaleAnalyses, runClaimedAnalysis } from "./analysisService.js";
+import { claimNextQueuedAnalysis, compareSynthesisForQuality, requeueStaleAnalyses, runClaimedAnalysis } from "./analysisService.js";
 
 const STAGE_OUTPUT: Array<[marker: string, content: unknown]> = [
   ["# Stage 1", { positions: [
@@ -450,6 +450,27 @@ describe("analysis worker steps", () => {
       expect(callLlm.mock.calls.some((call) => String(call[1]).includes("# Stage 6"))).toBe(false);
       expect(db.state.results[0].roundChanges).toBeUndefined();
     });
+  });
+
+  it("compares two synthesis prompts on the same stage 1 to 4 output (quality benchmark)", async () => {
+    answerEveryStage();
+
+    const { baseline, variant } = await compareSynthesisForQuality(
+      "How many office days should we keep?",
+      [
+        { participantLabel: "Participant A", positionText: "Office days help new hires learn quickly." },
+        { participantLabel: "Participant B", positionText: "Remote days protect time for focused work." },
+      ],
+      "EXTRA SHARED RULE.",
+    );
+
+    const prompts = callLlm.mock.calls.map((call) => String(call[1]));
+    const stageCount = (stage: number) => prompts.filter((prompt) => prompt.includes(`# Stage ${stage}`)).length;
+    expect([1, 2, 3, 4].map(stageCount)).toEqual([1, 1, 1, 1]);
+    expect(stageCount(5)).toBe(2);
+    const synthesisPrompts = prompts.filter((prompt) => prompt.includes("# Stage 5"));
+    expect(synthesisPrompts.map((prompt) => prompt.includes("EXTRA SHARED RULE."))).toEqual([false, true]);
+    expect(baseline.steelmans).toEqual(variant.steelmans);
   });
 
   it("lets only one worker claim a queued conversation", async () => {
