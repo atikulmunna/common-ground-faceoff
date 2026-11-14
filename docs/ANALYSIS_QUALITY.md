@@ -36,7 +36,7 @@ Live execution requires `OPENROUTER_API_KEY` in `apps/api/.env`; keys are never 
 
 ## Human review gate
 
-Two reviewers should independently score every release candidate from 1–5 on:
+Two reviewers should independently score every release candidate from 1 to 5 on:
 
 - faithfulness to each participant;
 - neutrality and charitable steelmanning;
@@ -53,6 +53,13 @@ Before public launch, require all 30 cases to complete, zero automated hard fail
 
 ## Current baseline status
 
-On 2026-07-18, all 30 cases passed the automated gate after two malformed provider responses were recovered with targeted retries. The consolidated mean score was 90.3/100 with zero privacy, injection, participant-coverage, confidence, or structural hard failures. The run used Mistral Large and OpenRouter's `openai/gpt-oss-120b` fallback.
+On 2026-11-14 the full suite ran against prompt template `tpl-v4` with OpenRouter's Auto Router at the `medium` cost tier and no model allow-list. All 30 cases completed; 28 passed the automated gate (93%, above the 90% threshold), the mean score was 88.2/100, and there were no hard failures or provider errors. The suite cost about USD 1.16, roughly 4 cents per five-stage analysis.
 
-The audit also led to production changes: exact participant-label restoration, grounded and length-bounded steelmans, evidence-backed synthesis, rejection of silence-as-disagreement, schema validation inside provider retry/fallback, and a configurable current OpenRouter model. This automated result is not the accepted release baseline until two people complete the semantic review rubric.
+The router spread the stages over nine models; the most used were `google/gemini-4-hydrogen` (17 cases), `openai/gpt-6-luna` (11) and `google/gemini-4-carbon` (9), with occasional `openai/gpt-6.1-sol`, `openai/gpt-6-astra`, `anthropic/claude-sonnet-5.5`, `anthropic/claude-opus-5.5`, `anthropic/claude-fable-5.2` and `deepseek/deepseek-v4.1-flash-1017`. The two failures used models that also passed many other cases, so neither points to a model to exclude.
+
+- `school-phone-policy` (73): an anchor false negative. The output says "emergencies" and "store their phones", while the anchors are "emergency" and "stored"; the substring match misses both. The meaning is correct.
+- `ai-hiring` (71): a real recall miss. Both people ask for safeguards on automated screening (an audit and human final decisions; explanations and a way to challenge errors), but synthesis reported no shared foundation. This follows from the strict rule that compatible positions are not shared support, which trades some missed common ground for fewer invented agreements.
+
+This automated result is not the accepted release baseline until two people complete the semantic review rubric above.
+
+Earlier, on 2026-07-18, all 30 cases passed the automated gate (mean 90.3/100) using Mistral Large with OpenRouter's `openai/gpt-oss-120b` fallback, after two malformed responses were recovered with targeted retries. That audit led to exact participant-label restoration, grounded and length-bounded steelmans, evidence-backed synthesis, rejection of silence as disagreement, and schema validation inside provider retries. It no longer applies to the current prompts and routing.
